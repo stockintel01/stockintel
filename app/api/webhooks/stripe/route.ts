@@ -30,31 +30,26 @@ export async function POST(req: NextRequest) {
                 await handleCheckoutCompleted(session);
                 break;
             }
-
             case 'customer.subscription.updated': {
                 const subscription = event.data.object as Stripe.Subscription;
                 await handleSubscriptionUpdated(subscription);
                 break;
             }
-
             case 'customer.subscription.deleted': {
                 const subscription = event.data.object as Stripe.Subscription;
                 await handleSubscriptionDeleted(subscription);
                 break;
             }
-
             case 'invoice.payment_succeeded': {
                 const invoice = event.data.object as Stripe.Invoice;
                 await handlePaymentSucceeded(invoice);
                 break;
             }
-
             case 'invoice.payment_failed': {
                 const invoice = event.data.object as Stripe.Invoice;
                 await handlePaymentFailed(invoice);
                 break;
             }
-
             default:
                 console.log(`Unhandled event type: ${event.type}`);
         }
@@ -74,26 +69,23 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         return;
     }
 
-    // 1. Retrieve the subscription with double assertion to handle Response<Subscription> wrapper
-    const subscription = await stripe.subscriptions.retrieve(
+    // ✅ Use 'any' to bypass Response<Subscription> wrapper
+    const subscription: any = await stripe.subscriptions.retrieve(
         session.subscription as string
-    ) as unknown as Stripe.Subscription;
+    );
 
-    // 2. CHECK: Is it canceled? If so, stop.
     if (subscription.status === 'canceled') {
         console.error('Subscription is canceled');
         return;
     }
 
-    // 3. Access current_period_end with runtime type check
-    const currentPeriodEndValue = (subscription as any).current_period_end as number | undefined;
-    if (typeof currentPeriodEndValue !== 'number') {
+    if (typeof subscription.current_period_end !== 'number') {
         console.error('Subscription missing valid current_period_end');
         return;
     }
-    const currentPeriodEnd = new Date(currentPeriodEndValue * 1000);
 
-    // Update organization in Firestore
+    const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+
     await updateDoc(doc(db, 'organizations', organizationId), {
         'subscription.plan': plan || 'pro',
         'subscription.status': 'active',
@@ -113,12 +105,12 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
         return;
     }
 
-    // Access current_period_end with runtime type check
     const currentPeriodEndValue = (subscription as any).current_period_end as number | undefined;
     if (typeof currentPeriodEndValue !== 'number') {
         console.error('Subscription missing valid current_period_end');
         return;
     }
+
     const currentPeriodEnd = new Date(currentPeriodEndValue * 1000);
     const status = subscription.status === 'active' ? 'active' : 'expired';
 
