@@ -74,10 +74,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         return;
     }
 
-    // 1. Retrieve the subscription with explicit type assertion
+    // 1. Retrieve the subscription
     const subscription = await stripe.subscriptions.retrieve(
         session.subscription as string
-    ) as Stripe.Subscription;
+    );
 
     // 2. CHECK: Is it canceled? If so, stop.
     if (subscription.status === 'canceled') {
@@ -85,13 +85,13 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         return;
     }
 
-    // 3. Safety check: ensure current_period_end exists and is a number
-    if (typeof subscription.current_period_end !== 'number') {
+    // 3. Access current_period_end using bracket notation with type assertion
+    const currentPeriodEndValue = subscription['current_period_end'] as number | undefined;
+    if (typeof currentPeriodEndValue !== 'number') {
         console.error('Subscription missing valid current_period_end');
         return;
     }
-
-    const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+    const currentPeriodEnd = new Date(currentPeriodEndValue * 1000);
 
     // Update organization in Firestore
     await updateDoc(doc(db, 'organizations', organizationId), {
@@ -113,13 +113,13 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
         return;
     }
 
-    // Safety check for current_period_end
-    if (typeof subscription.current_period_end !== 'number') {
+    // Access current_period_end using bracket notation with type assertion
+    const currentPeriodEndValue = subscription['current_period_end'] as number | undefined;
+    if (typeof currentPeriodEndValue !== 'number') {
         console.error('Subscription missing valid current_period_end');
         return;
     }
-
-    const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+    const currentPeriodEnd = new Date(currentPeriodEndValue * 1000);
     const status = subscription.status === 'active' ? 'active' : 'expired';
 
     await updateDoc(doc(db, 'organizations', organizationId), {
@@ -147,10 +147,8 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 
 async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
     console.log(`Payment succeeded for invoice: ${invoice.id}`);
-    // You can send receipt emails here or log for analytics
 }
 
 async function handlePaymentFailed(invoice: Stripe.Invoice) {
     console.log(`Payment failed for invoice: ${invoice.id}`);
-    // You can send notification emails here
 }
