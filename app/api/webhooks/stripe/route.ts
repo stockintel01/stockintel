@@ -74,18 +74,23 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         return;
     }
 
-    // 1. Retrieve the subscription
+    // 1. Retrieve the subscription with explicit type assertion
     const subscription = await stripe.subscriptions.retrieve(
         session.subscription as string
-    );
+    ) as Stripe.Subscription;
 
-    // 2. CHECK: Is it deleted? If so, stop.
+    // 2. CHECK: Is it canceled? If so, stop.
     if (subscription.status === 'canceled') {
         console.error('Subscription is canceled');
         return;
     }
 
-    // 3. Now TypeScript knows current_period_end EXISTS
+    // 3. Safety check: ensure current_period_end exists and is a number
+    if (typeof subscription.current_period_end !== 'number') {
+        console.error('Subscription missing valid current_period_end');
+        return;
+    }
+
     const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
 
     // Update organization in Firestore
@@ -105,6 +110,12 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
 
     if (!organizationId) {
         console.error('No organizationId in subscription metadata');
+        return;
+    }
+
+    // Safety check for current_period_end
+    if (typeof subscription.current_period_end !== 'number') {
+        console.error('Subscription missing valid current_period_end');
         return;
     }
 
