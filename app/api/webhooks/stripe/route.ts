@@ -74,10 +74,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         return;
     }
 
-    // 1. Retrieve the subscription
+    // 1. Retrieve the subscription with double assertion to handle Response<Subscription> wrapper
     const subscription = await stripe.subscriptions.retrieve(
         session.subscription as string
-    );
+    ) as unknown as Stripe.Subscription;
 
     // 2. CHECK: Is it canceled? If so, stop.
     if (subscription.status === 'canceled') {
@@ -85,8 +85,8 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         return;
     }
 
-    // 3. Access current_period_end using bracket notation with type assertion
-    const currentPeriodEndValue = subscription['current_period_end'] as number | undefined;
+    // 3. Access current_period_end with runtime type check
+    const currentPeriodEndValue = (subscription as any).current_period_end as number | undefined;
     if (typeof currentPeriodEndValue !== 'number') {
         console.error('Subscription missing valid current_period_end');
         return;
@@ -113,8 +113,8 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
         return;
     }
 
-    // Access current_period_end using bracket notation with type assertion
-    const currentPeriodEndValue = subscription['current_period_end'] as number | undefined;
+    // Access current_period_end with runtime type check
+    const currentPeriodEndValue = (subscription as any).current_period_end as number | undefined;
     if (typeof currentPeriodEndValue !== 'number') {
         console.error('Subscription missing valid current_period_end');
         return;
