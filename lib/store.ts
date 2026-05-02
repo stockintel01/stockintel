@@ -5,30 +5,37 @@ import { MOCK_INVENTORY, InventoryItem } from './mock-data';
 export type UserRole = 'owner' | 'manager' | 'worker';
 export type IndustryType = 'pharmacy' | 'agriculture' | 'retail';
 
-// ✅ Add StockLocation type
+// ✅ Updated StockLocation type with isDefault and other common fields
 export interface StockLocation {
     id: string;
     name: string;
     address: string;
-    city: string;
-    state: string;
-    postalCode: string;
-    country: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
     phone?: string;
-    isPrimary: boolean;
+    isDefault: boolean;  // ✅ Added - marks primary location
     isActive: boolean;
     createdAt: Date | string;
 }
 
-// ✅ Add StockTransfer type (commonly used with locations)
+// ✅ StockTransfer type (commonly used with locations)
 export interface StockTransfer {
     id: string;
+    organizationId: string;
     fromLocationId: string;
+    fromLocationName: string;
     toLocationId: string;
-    itemId: string;
-    quantity: number;
+    toLocationName: string;
+    items: Array<{
+        itemId: string;
+        itemName: string;
+        sku: string;
+        quantity: number;
+    }>;
     status: 'pending' | 'in_transit' | 'completed' | 'cancelled';
-    requestedBy: string;
+    createdBy: string;
     requestedAt: Date | string;
     completedAt?: Date | string;
     notes?: string;
@@ -79,7 +86,7 @@ interface AppState {
     isAuthenticated: boolean;
     inventory: InventoryItem[];
     
-    // ✅ Add location/transfer state
+    // Location/transfer state
     locations: StockLocation[];
     transfers: StockTransfer[];
 
@@ -95,7 +102,7 @@ interface AppState {
     updateInventoryQuantity: (id: string, quantityChange: number) => void;
     addInventoryItem: (item: InventoryItem) => void;
     
-    // ✅ Add location/transfer actions
+    // Location/transfer actions
     setLocations: (locations: StockLocation[]) => void;
     addLocation: (location: StockLocation) => void;
     updateLocation: (id: string, updates: Partial<StockLocation>) => void;
@@ -129,7 +136,7 @@ export const useAppStore = create<AppState>()(
             isAuthenticated: false,
             inventory: MOCK_INVENTORY,
             
-            // ✅ Initialize location/transfer state
+            // Initialize location/transfer state
             locations: [],
             transfers: [],
 
@@ -176,7 +183,7 @@ export const useAppStore = create<AppState>()(
                 inventory: [...state.inventory, item]
             })),
             
-            // ✅ Location actions
+            // Location actions
             setLocations: (locations) => set({ locations }),
             addLocation: (location) => set((state) => ({
                 locations: [...state.locations, location]
@@ -187,7 +194,7 @@ export const useAppStore = create<AppState>()(
                 )
             })),
             
-            // ✅ Transfer actions
+            // Transfer actions
             setTransfers: (transfers) => set({ transfers }),
             addTransfer: (transfer) => set((state) => ({
                 transfers: [...state.transfers, transfer]
