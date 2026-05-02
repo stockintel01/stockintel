@@ -40,18 +40,18 @@ export async function POST(req: NextRequest) {
         const orgSnap = await getDoc(doc(db, 'organizations', organizationId));
         const existingCustomerId = orgSnap.data()?.subscription?.stripeCustomerId;
 
-        const sessionConfig: Parameters<typeof stripe.checkout.sessions.create>[0] = {
-            mode:                 'subscription',
-            payment_method_types: ['card'],
-            line_items:           [{ price: getPriceId(plan), quantity: 1 }],
-            success_url:          `${APP_URL}/dashboard/billing?success=true&session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url:           `${APP_URL}/dashboard/billing?canceled=true`,
-            metadata:             { organizationId, userId, plan },
-            subscription_data:    { metadata: { organizationId, userId, plan } },
-            allow_promotion_codes: true,
+        
+        const sessionConfig: Stripe.Checkout.SessionCreateParams = {
+            mode:                   'subscription',
+            payment_method_types:   ['card'],
+            line_items:             [{ price: getPriceId(plan), quantity: 1 }],
+            success_url:            `${APP_URL}/dashboard/billing?success=true&session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url:             `${APP_URL}/dashboard/billing?canceled=true`,
+            metadata:               { organizationId, userId, plan },
+            subscription_data:      { metadata: { organizationId, userId, plan } },
+            allow_promotion_codes:  true,
             billing_address_collection: 'auto',
         };
-
         if (existingCustomerId) {
             sessionConfig.customer = existingCustomerId;
         } else if (userEmail) {
