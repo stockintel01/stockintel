@@ -5,6 +5,34 @@ import { MOCK_INVENTORY, InventoryItem } from './mock-data';
 export type UserRole = 'owner' | 'manager' | 'worker';
 export type IndustryType = 'pharmacy' | 'agriculture' | 'retail';
 
+// ✅ Add StockLocation type
+export interface StockLocation {
+    id: string;
+    name: string;
+    address: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+    phone?: string;
+    isPrimary: boolean;
+    isActive: boolean;
+    createdAt: Date | string;
+}
+
+// ✅ Add StockTransfer type (commonly used with locations)
+export interface StockTransfer {
+    id: string;
+    fromLocationId: string;
+    toLocationId: string;
+    itemId: string;
+    quantity: number;
+    status: 'pending' | 'in_transit' | 'completed' | 'cancelled';
+    requestedBy: string;
+    requestedAt: Date | string;
+    completedAt?: Date | string;
+    notes?: string;
+}
 
 export interface Organization {
     id: string;
@@ -30,7 +58,7 @@ export interface User {
 
 interface AppState {
     user: User | null;
-    organization: Organization | null; // Added Organization
+    organization: Organization | null;
     activeIndustry: IndustryType;
     currency: string;
     receiptSettings: {
@@ -50,6 +78,10 @@ interface AppState {
     };
     isAuthenticated: boolean;
     inventory: InventoryItem[];
+    
+    // ✅ Add location/transfer state
+    locations: StockLocation[];
+    transfers: StockTransfer[];
 
     // Actions
     login: (email: string, industry: IndustryType) => void;
@@ -62,6 +94,14 @@ interface AppState {
     updateTaxSettings: (settings: Partial<AppState['taxSettings']>) => void;
     updateInventoryQuantity: (id: string, quantityChange: number) => void;
     addInventoryItem: (item: InventoryItem) => void;
+    
+    // ✅ Add location/transfer actions
+    setLocations: (locations: StockLocation[]) => void;
+    addLocation: (location: StockLocation) => void;
+    updateLocation: (id: string, updates: Partial<StockLocation>) => void;
+    setTransfers: (transfers: StockTransfer[]) => void;
+    addTransfer: (transfer: StockTransfer) => void;
+    updateTransferStatus: (id: string, status: StockTransfer['status']) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -88,12 +128,15 @@ export const useAppStore = create<AppState>()(
             },
             isAuthenticated: false,
             inventory: MOCK_INVENTORY,
+            
+            // ✅ Initialize location/transfer state
+            locations: [],
+            transfers: [],
 
             setStoreUser: (user, org = null) => set({ user, organization: org }),
             setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
 
             login: (email, industry) => {
-                // Mock login
                 const mockUser: User = {
                     id: '1',
                     name: 'Demo User',
@@ -108,10 +151,10 @@ export const useAppStore = create<AppState>()(
                 user: null,
                 organization: null,
                 isAuthenticated: false,
-                // Reset industry to default so next user gets a clean slate
                 activeIndustry: 'pharmacy',
-                // Reset inventory to original mock data on logout
                 inventory: MOCK_INVENTORY,
+                locations: [],
+                transfers: [],
             }),
 
             setIndustry: (industry) => set({ activeIndustry: industry }),
@@ -131,6 +174,28 @@ export const useAppStore = create<AppState>()(
             })),
             addInventoryItem: (item) => set((state) => ({
                 inventory: [...state.inventory, item]
+            })),
+            
+            // ✅ Location actions
+            setLocations: (locations) => set({ locations }),
+            addLocation: (location) => set((state) => ({
+                locations: [...state.locations, location]
+            })),
+            updateLocation: (id, updates) => set((state) => ({
+                locations: state.locations.map(loc =>
+                    loc.id === id ? { ...loc, ...updates } : loc
+                )
+            })),
+            
+            // ✅ Transfer actions
+            setTransfers: (transfers) => set({ transfers }),
+            addTransfer: (transfer) => set((state) => ({
+                transfers: [...state.transfers, transfer]
+            })),
+            updateTransferStatus: (id, status) => set((state) => ({
+                transfers: state.transfers.map(t =>
+                    t.id === id ? { ...t, status } : t
+                )
             })),
         }),
         {
