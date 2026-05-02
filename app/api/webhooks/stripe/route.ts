@@ -74,10 +74,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         return;
     }
 
-    // Get subscription details
+    // Get subscription details - casting as Stripe.Subscription solves the type error
     const subscription = await stripe.subscriptions.retrieve(
         session.subscription as string
-    );
+    ) as Stripe.Subscription;
 
     const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
 
