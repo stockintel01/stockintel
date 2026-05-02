@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowUpRight, DollarSign, Package, AlertTriangle, Activity, Download, TrendingUp, TrendingDown } from 'lucide-react';
 import {
     AreaChart, Area, BarChart, Bar, XAxis, YAxis,
-    CartesianGrid, Tooltip, ResponsiveContainer, TooltipProps
+    CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 
 const revenueData = [
@@ -27,14 +27,21 @@ const recentTransactions = [
     { name: 'Corporate: MedCorp', ref: 'INV-0041', amount: '4,125.00', time: '2h ago', avatar: 'M' },
 ];
 
+// ✅ Fix: Use explicit interface instead of TooltipProps generic (Recharts v3+ typing change)
+interface CustomTooltipProps {
+    active?: boolean;
+    payload?: Array<{ value: number | string; name: string; color?: string }>;
+    label?: string;
+}
+
 // Custom tooltip for the revenue chart
-const RevenueTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
+const RevenueTooltip = ({ active, payload, label }: CustomTooltipProps) => {
     if (!active || !payload?.length) return null;
     return (
         <div className="bg-background border border-border rounded-xl shadow-lg px-4 py-3 text-sm">
             <p className="font-semibold text-foreground mb-1">{label}</p>
             <p className="text-primary font-mono">
-                ₹{payload[0]?.value?.toLocaleString()}
+                ₹{typeof payload[0]?.value === 'number' ? payload[0].value.toLocaleString() : payload[0]?.value}
             </p>
             <p className="text-muted-foreground text-xs mt-0.5">
                 {payload[1]?.value} transactions
@@ -44,7 +51,7 @@ const RevenueTooltip = ({ active, payload, label }: TooltipProps<number, string>
 };
 
 // Custom tooltip for bar chart
-const SalesTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
+const SalesTooltip = ({ active, payload, label }: CustomTooltipProps) => {
     if (!active || !payload?.length) return null;
     return (
         <div className="bg-background border border-border rounded-xl shadow-lg px-4 py-3 text-sm">
