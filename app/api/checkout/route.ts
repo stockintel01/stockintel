@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import Stripe from 'stripe'; // <--- ADD THIS LINE FOR TYPES
 import { stripe, getPriceId } from '@/lib/stripe';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
