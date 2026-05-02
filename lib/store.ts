@@ -5,7 +5,7 @@ import { MOCK_INVENTORY, InventoryItem } from './mock-data';
 export type UserRole = 'owner' | 'manager' | 'worker';
 export type IndustryType = 'pharmacy' | 'agriculture' | 'retail';
 
-// ✅ Updated StockLocation type with isDefault and other common fields
+// ✅ Updated: Make auto-generated fields optional
 export interface StockLocation {
     id: string;
     name: string;
@@ -15,12 +15,12 @@ export interface StockLocation {
     postalCode?: string;
     country?: string;
     phone?: string;
-    isDefault: boolean;  // ✅ Added - marks primary location
-    isActive: boolean;
-    createdAt: Date | string;
+    isDefault: boolean;
+    isActive?: boolean;        // ✅ Optional - defaults to true in service
+    createdAt?: Date | string; // ✅ Optional - auto-generated in service
 }
 
-// ✅ StockTransfer type (commonly used with locations)
+// ✅ StockTransfer type
 export interface StockTransfer {
     id: string;
     organizationId: string;
