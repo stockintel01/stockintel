@@ -1,0 +1,6 @@
+﻿Γû▓ Next.js 16.1.1 (Turbopack)
+- Local:         http://localhost:3002
+- Network:       http://192.168.43.165:3002
+
+Γ£ô Starting...
+Γ£ô Ready in 3.1s
