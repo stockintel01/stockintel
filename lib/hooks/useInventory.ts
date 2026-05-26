@@ -22,8 +22,7 @@ interface UseInventoryReturn {
 }
 
 export function useInventory(): UseInventoryReturn {
-    const { organization, user } = useAppStore();
-    const setInventory = useAppStore(s => s.setInventory);
+    const { organization, user, addInventoryItem } = useAppStore();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
     const [tick, setTick] = useState(0);
@@ -59,7 +58,8 @@ export function useInventory(): UseInventoryReturn {
                 cleanupRef.current = subscribeToInventory(
                     orgId!,
                     (items: InventoryItem[]) => {
-                        setInventory(items);
+                        // Replace store inventory by adding items not already present
+                        items.forEach(item => addInventoryItem(item));
                         setLoading(false);
                     },
                     (err: Error) => {
