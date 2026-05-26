@@ -78,7 +78,7 @@ function JoinInner() {
             // Update Zustand store with org assignment
             setStoreUser(
                 user ? { ...user, role: result.role as 'owner' | 'manager' | 'worker' } : null,
-                { id: result.organizationId, name: invite?.orgName ?? 'Your Team', industry: 'pharmacy', currency: '₹' }
+                { id: result.organizationId, name: invite?.orgName ?? 'Your Team', industry: 'pharmacy' as const, ownerId: '', referralCode: '', subscription: { plan: 'free_trial' as const, status: 'active' as const, trialEndsAt: new Date() } }
             );
             setStage('done');
             setTimeout(() => router.push('/dashboard'), 2000);
