@@ -17,7 +17,7 @@ function JoinInner() {
     const searchParams = useSearchParams();
     const inviteId = searchParams.get('invite');
     const { signInWithGoogle } = useAuth();
-    const { user, isAuthenticated, setUser, setOrganization } = useAppStore();
+    const { user, isAuthenticated, setStoreUser } = useAppStore();
 
     type Stage = 'loading' | 'preview' | 'signing-in' | 'accepting' | 'done' | 'error';
     const [stage, setStage] = useState<Stage>('loading');
@@ -76,8 +76,10 @@ function JoinInner() {
                 '', // photoURL — Zustand user doesn't store it, Firebase Auth handles display
             );
             // Update Zustand store with org assignment
-            setUser({ ...user, role: result.role as 'owner' | 'manager' | 'worker' });
-            setOrganization({ id: result.organizationId, name: invite?.orgName ?? 'Your Team', industry: 'pharmacy', currency: '₹' });
+            setStoreUser(
+                user ? { ...user, role: result.role as 'owner' | 'manager' | 'worker' } : null,
+                { id: result.organizationId, name: invite?.orgName ?? 'Your Team', industry: 'pharmacy', currency: '₹' }
+            );
             setStage('done');
             setTimeout(() => router.push('/dashboard'), 2000);
         } catch (err: unknown) {

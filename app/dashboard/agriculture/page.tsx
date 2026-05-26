@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Package, AlertTriangle, CheckCircle2, Clock, TrendingUp,
   Leaf, FlaskConical, Bug, Sprout, Tractor, ArrowRight,
   Bell, ChevronRight, BarChart3, ShoppingCart, Users,
-  AlertCircle, RefreshCw, Boxes
+  AlertCircle, RefreshCw, Boxes, Cloud, CloudRain, Sun, Wind, Droplets, CloudLightning
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,53 @@ function getStockStatus(item: typeof MOCK_AGRIC_INVENTORY[0]) {
   if (item.currentStock <= item.minimumStock * 0.5) return { label: 'Critical', color: 'text-red-600 bg-red-50', dot: 'bg-red-500' };
   if (item.currentStock <= item.minimumStock) return { label: 'Low Stock', color: 'text-amber-600 bg-amber-50', dot: 'bg-amber-500' };
   return { label: 'In Stock', color: 'text-green-600 bg-green-50', dot: 'bg-green-500' };
+}
+
+
+// ── Mini Weather Banner for Overview ─────────────────────────
+function WeatherBanner() {
+  const [wx, setWx] = useState<any>(null);
+
+  useEffect(() => {
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=5.6037&longitude=-0.1870&current=temperature_2m,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&timezone=Africa%2FAccra')
+      .then(r => r.json())
+      .then(d => setWx(d.current))
+      .catch(() => {});
+  }, []);
+
+  if (!wx) return null;
+
+  const code = wx.weather_code;
+  const isRaining = code >= 51;
+  const isStorm = code >= 95;
+  const windHigh = wx.wind_speed_10m > 20;
+
+  let sprayStatus: { label: string; color: string; bg: string };
+  if (isStorm) sprayStatus = { label: '⛈ Thunderstorm — DO NOT SPRAY', color: 'text-red-700', bg: 'bg-red-50 border-red-200' };
+  else if (isRaining) sprayStatus = { label: '🌧 Raining — Hold spray operations', color: 'text-red-600', bg: 'bg-red-50 border-red-200' };
+  else if (windHigh) sprayStatus = { label: '💨 High wind — Avoid spraying', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' };
+  else sprayStatus = { label: '✓ Good spray window right now', color: 'text-green-700', bg: 'bg-green-50 border-green-200' };
+
+  const WxIcon = isStorm ? CloudLightning : isRaining ? CloudRain : code <= 1 ? Sun : Cloud;
+
+  return (
+    <Link href="/dashboard/agriculture/weather">
+      <div className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-4 cursor-pointer hover:shadow-sm transition-shadow ${sprayStatus.bg}`}>
+        <div className="flex items-center gap-3">
+          <WxIcon className="w-6 h-6 text-blue-500" />
+          <div>
+            <p className="text-sm font-semibold">{wx.temperature_2m.toFixed(1)}°C — Accra Farm</p>
+            <p className={`text-xs font-medium ${sprayStatus.color}`}>{sprayStatus.label}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1"><Droplets className="w-3 h-3" />{wx.relative_humidity_2m}%</span>
+          <span className="flex items-center gap-1"><Wind className="w-3 h-3" />{wx.wind_speed_10m.toFixed(0)} km/h</span>
+          <ChevronRight className="w-4 h-4" />
+        </div>
+      </div>
+    </Link>
+  );
 }
 
 export default function AgricOverviewPage() {
@@ -86,6 +133,9 @@ export default function AgricOverviewPage() {
           </Link>
         </div>
       </div>
+
+      {/* Live Weather Banner */}
+      <WeatherBanner />
 
       {/* Critical Alerts Banner */}
       {unreadAlerts.filter(a => a.severity === 'critical').length > 0 && (
