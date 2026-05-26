@@ -9,7 +9,7 @@ import {
     BarChart3, Box, Calculator, Home, Leaf, LogOut,
     Menu, Package, Pill, Settings, ShoppingCart, Store,
     Users, X, UserCog, Shield, FileText, Gift, Wallet,
-    ChevronDown
+    ChevronDown, FlaskConical, CalendarDays, Tractor, PackageCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -98,19 +98,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             color: 'text-green-600',
             groups: [
                 {
-                    label: 'Field',
+                    label: 'Overview',
                     items: [
-                        { name: 'Overview', href: '/dashboard', icon: Home },
-                        { name: 'Crop Calendar', href: '/dashboard/agriculture/crops', icon: Leaf },
-                        { name: 'Equipment', href: '/dashboard/agriculture/equipment', icon: Package },
+                        { name: 'Farm Overview', href: '/dashboard/agriculture', icon: Home },
                     ],
                 },
                 {
-                    label: 'Operations',
+                    label: 'Inventory',
                     items: [
-                        { name: 'Inventory', href: '/dashboard/inventory', icon: Box },
-                        { name: 'Sales', href: '/dashboard/sales', icon: ShoppingCart },
-                        { name: 'Weather & Reports', href: '/dashboard/reports', icon: BarChart3 },
+                        { name: 'Stock Management', href: '/dashboard/agriculture/stock-management', icon: Box },
+                        { name: 'Stock Requests', href: '/dashboard/agriculture/requests', icon: ShoppingCart },
+                        { name: 'Usage Tracker', href: '/dashboard/agriculture/usage-tracker', icon: FlaskConical },
+                    ],
+                },
+                {
+                    label: 'Planning & Operations',
+                    items: [
+                        { name: 'Spray Planner', href: '/dashboard/agriculture/planner', icon: CalendarDays },
+                        { name: 'Equipment', href: '/dashboard/agriculture/equipment', icon: Tractor },
+                        { name: 'Packing Station', href: '/dashboard/agriculture/packing-station', icon: PackageCheck },
+                    ],
+                },
+                {
+                    label: 'Reports',
+                    items: [
+                        { name: 'Reports', href: '/dashboard/agriculture/reports', icon: BarChart3 },
                     ],
                 },
                 {
