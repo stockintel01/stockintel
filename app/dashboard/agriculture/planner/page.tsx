@@ -8,7 +8,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { MOCK_SPRAY_PLANS, MOCK_AGRIC_INVENTORY, FARM_ZONES } from '@/lib/agric/mock-data';
+import { MOCK_AGRIC_INVENTORY, FARM_ZONES } from '@/lib/agric/mock-data';
+import { useAppStore } from '@/lib/store';
+import { useAgric } from '@/lib/agric/useAgric';
 import { SprayPlan, SprayPlanItem, FarmZone } from '@/lib/agric/types';
 
 const CYCLE_LABELS = { weekly: 'Weekly', biweekly: 'Bi-weekly', monthly: 'Monthly', custom: 'Custom' };
@@ -28,7 +30,9 @@ function getCycleApplications(cycle: string, start: string, end: string): number
 }
 
 export default function PlannerPage() {
-  const [plans, setPlans] = useState<SprayPlan[]>(MOCK_SPRAY_PLANS);
+  const { plans, createPlan, markApplication } = useAgric();
+  const { user } = useAppStore();
+  const currentUserName = user?.name ?? 'Farm Manager';
   const [selectedPlan, setSelectedPlan] = useState<SprayPlan | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [newPlan, setNewPlan] = useState<Partial<SprayPlan>>({
@@ -60,25 +64,24 @@ export default function PlannerPage() {
     setNewPlanItem({ itemId: '', qtyPerApp: 0 });
   }
 
-  function submitPlan() {
+  async function submitPlan() {
     const apps = getCycleApplications(newPlan.cycle || 'weekly', newPlan.startDate || '', newPlan.endDate || '');
-    const plan: SprayPlan = {
-      id: `sp_${Date.now()}`,
+    await createPlan({
       planName: newPlan.planName || `${newPlan.farmZone} Plan`,
       farmZone: newPlan.farmZone as FarmZone,
       cycle: newPlan.cycle as any,
       startDate: newPlan.startDate!, endDate: newPlan.endDate!,
-      createdBy: 'Emmanuel Darko', createdAt: new Date().toISOString(),
+      createdBy: currentUserName, createdAt: new Date().toISOString(),
       status: 'active', totalApplications: apps, completedApplications: 0,
-      restockAlertSent: false, items: newPlan.items || [], notes: newPlan.notes
-    };
-    setPlans(prev => [plan, ...prev]);
+      restockAlertSent: false, items: newPlan.items || [], notes: newPlan.notes,
+    });
     setNewPlan({ farmZone: 'Banana', cycle: 'weekly', status: 'draft', items: [] });
     setShowNew(false);
   }
 
-  function markApplicationComplete(planId: string) {
-    setPlans(prev => prev.map(p => p.id === planId ? { ...p, completedApplications: Math.min(p.completedApplications + 1, p.totalApplications) } : p));
+  async function markApplicationComplete(planId: string) {
+    const plan = plans.find(p => p.id === planId);
+    if (plan) await markApplication(planId, plan.completedApplications);
   }
 
   return (

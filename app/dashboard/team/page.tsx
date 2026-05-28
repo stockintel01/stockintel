@@ -19,9 +19,9 @@ interface TeamMember {
 }
 
 const MOCK_SHIFTS = [
-    { id: 1, userId: 1, userName: 'Dr. Sarah Wilson', date: '2024-03-20', startTime: '08:00', endTime: '16:00', status: 'Completed' },
-    { id: 2, userId: 2, userName: 'Mike Johnson', date: '2024-03-20', startTime: '16:00', endTime: '00:00', status: 'On Duty' },
-    { id: 3, userId: 3, userName: 'Emily Davis', date: '2024-03-21', startTime: '08:00', endTime: '16:00', status: 'Scheduled' },
+    { id: 1, userId: 1, userName: 'Dr. Sarah Wilson', date: '2026-05-26', startTime: '08:00', endTime: '16:00', status: 'Completed' },
+    { id: 2, userId: 2, userName: 'Mike Johnson', date: '2026-05-26', startTime: '16:00', endTime: '00:00', status: 'On Duty' },
+    { id: 3, userId: 3, userName: 'Emily Davis', date: '2026-05-25', startTime: '08:00', endTime: '16:00', status: 'Scheduled' },
 ];
 
 export default function TeamPage() {

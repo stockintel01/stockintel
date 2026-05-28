@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   FlaskConical, Plus, Search, Download, Calendar,
   Filter, X, ChevronDown, TrendingUp, BarChart3
@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MOCK_AGRIC_INVENTORY, FARM_ZONES, USAGE_HISTORY } from '@/lib/agric/mock-data';
+import { useAppStore } from '@/lib/store';
+import { useAgric } from '@/lib/agric/useAgric';
 import { UsageLog, FarmZone, AgricCategory } from '@/lib/agric/types';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -22,20 +24,23 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 // Seed data matching the real usage reports
 const SEED_USAGE_LOGS: UsageLog[] = [
-  { id: 'ul01', itemId: 'f06', itemName: 'Paraffin Oil', category: 'fungicide', date: '2026-02-07', quantity: 40, uom: 'lt', farmZone: 'Banana', appliedBy: 'Kojo Asante', weekNumber: 10 },
-  { id: 'ul02', itemId: 'i04', itemName: 'Reeva', category: 'insecticide', date: '2026-02-06', quantity: 4, uom: 'lt', farmZone: 'Okra', appliedBy: 'Emmanuel Atta', weekNumber: 10 },
-  { id: 'ul03', itemId: 'i08', itemName: 'Punto', category: 'insecticide', date: '2026-02-06', quantity: 8, uom: 'kg', farmZone: 'Banana', appliedBy: 'Kwame Frimpong', weekNumber: 10 },
-  { id: 'ul04', itemId: 'h01', itemName: 'Kalach 360', category: 'herbicide', date: '2026-02-05', quantity: 7, uom: 'lt', farmZone: 'Tomato', appliedBy: 'Ama Sarpong', weekNumber: 10 },
-  { id: 'ul05', itemId: 'fe01', itemName: 'MAP', category: 'fertilizer', date: '2026-02-04', quantity: 120, uom: 'kg', farmZone: 'Okra', appliedBy: 'Daniel Mensah', weekNumber: 10 },
-  { id: 'ul06', itemId: 'f07', itemName: 'Serenade ASO SC', category: 'fungicide', date: '2026-02-04', quantity: 6, uom: 'lt', farmZone: 'Banana', appliedBy: 'Kojo Asante', weekNumber: 10 },
-  { id: 'ul07', itemId: 'fe02', itemName: 'Urea', category: 'fertilizer', date: '2026-02-03', quantity: 180, uom: 'kg', farmZone: 'Banana', appliedBy: 'Daniel Mensah', weekNumber: 10 },
-  { id: 'ul08', itemId: 'f04', itemName: 'NORDOX 75G', category: 'fungicide', date: '2026-02-03', quantity: 5, uom: 'kg', farmZone: 'Papaya', appliedBy: 'Grace Owusu', weekNumber: 10 },
-  { id: 'ul09', itemId: 'i01', itemName: 'Spartan 300 OD', category: 'insecticide', date: '2026-02-02', quantity: 2, uom: 'lt', farmZone: 'Okra', appliedBy: 'Emmanuel Atta', weekNumber: 9 },
-  { id: 'ul10', itemId: 'f09', itemName: 'Prozole', category: 'fungicide', date: '2026-02-01', quantity: 8, uom: 'lt', farmZone: 'Banana', appliedBy: 'Kojo Asante', weekNumber: 9 },
+  { id: 'ul01', itemId: 'f06', itemName: 'Paraffin Oil', category: 'fungicide', date: '2026-05-26', quantity: 40, uom: 'lt', farmZone: 'Banana', appliedBy: 'Kojo Asante', weekNumber: 22 },
+  { id: 'ul02', itemId: 'i04', itemName: 'Reeva', category: 'insecticide', date: '2026-05-25', quantity: 4, uom: 'lt', farmZone: 'Okra', appliedBy: 'Emmanuel Atta', weekNumber: 22 },
+  { id: 'ul03', itemId: 'i08', itemName: 'Punto', category: 'insecticide', date: '2026-05-25', quantity: 8, uom: 'kg', farmZone: 'Banana', appliedBy: 'Kwame Frimpong', weekNumber: 22 },
+  { id: 'ul04', itemId: 'h01', itemName: 'Kalach 360', category: 'herbicide', date: '2026-05-24', quantity: 7, uom: 'lt', farmZone: 'Tomato', appliedBy: 'Ama Sarpong', weekNumber: 22 },
+  { id: 'ul05', itemId: 'fe01', itemName: 'MAP', category: 'fertilizer', date: '2026-05-23', quantity: 120, uom: 'kg', farmZone: 'Okra', appliedBy: 'Daniel Mensah', weekNumber: 22 },
+  { id: 'ul06', itemId: 'f07', itemName: 'Serenade ASO SC', category: 'fungicide', date: '2026-05-23', quantity: 6, uom: 'lt', farmZone: 'Banana', appliedBy: 'Kojo Asante', weekNumber: 22 },
+  { id: 'ul07', itemId: 'fe02', itemName: 'Urea', category: 'fertilizer', date: '2026-05-22', quantity: 180, uom: 'kg', farmZone: 'Banana', appliedBy: 'Daniel Mensah', weekNumber: 22 },
+  { id: 'ul08', itemId: 'f04', itemName: 'NORDOX 75G', category: 'fungicide', date: '2026-05-22', quantity: 5, uom: 'kg', farmZone: 'Papaya', appliedBy: 'Grace Owusu', weekNumber: 22 },
+  { id: 'ul09', itemId: 'i01', itemName: 'Spartan 300 OD', category: 'insecticide', date: '2026-05-21', quantity: 2, uom: 'lt', farmZone: 'Okra', appliedBy: 'Emmanuel Atta', weekNumber: 21 },
+  { id: 'ul10', itemId: 'f09', itemName: 'Prozole', category: 'fungicide', date: '2026-05-20', quantity: 8, uom: 'lt', farmZone: 'Banana', appliedBy: 'Kojo Asante', weekNumber: 21 },
 ];
 
 export default function UsageTrackerPage() {
-  const [logs, setLogs] = useState<UsageLog[]>(SEED_USAGE_LOGS);
+  const { usageLogs: liveLogs, logUsage } = useAgric();
+  const { user } = useAppStore();
+  const [logs, setLocalLogs] = useState<UsageLog[]>(SEED_USAGE_LOGS);
+  useEffect(() => { if (liveLogs.length > 0) setLocalLogs(liveLogs); }, [liveLogs]);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<AgricCategory | 'all'>('all');
   const [zoneFilter, setZoneFilter] = useState<FarmZone | 'all'>('all');
@@ -80,24 +85,22 @@ export default function UsageTrackerPage() {
     return map;
   }, [filtered]);
 
-  function submitLog() {
+  async function submitLog() {
     if (!newLog.itemId || !newLog.quantity || !newLog.farmZone) return;
     const invItem = MOCK_AGRIC_INVENTORY.find(i => i.id === newLog.itemId);
     if (!invItem) return;
-    const log: UsageLog = {
-      id: `ul_${Date.now()}`,
+    await logUsage({
       itemId: invItem.id, itemName: invItem.name,
       category: invItem.category as AgricCategory,
       date: newLog.date || new Date().toISOString().slice(0, 10),
       quantity: newLog.quantity!,
       uom: invItem.uom as any,
       farmZone: newLog.farmZone as FarmZone,
-      appliedBy: newLog.appliedBy || 'Unknown',
+      appliedBy: newLog.appliedBy || user?.name || 'Unknown',
       batchNumber: newLog.batchNumber,
       notes: newLog.notes,
       weekNumber: getWeekNumber(newLog.date || ''),
-    };
-    setLogs(prev => [log, ...prev]);
+    });
     setNewLog({ date: new Date().toISOString().slice(0, 10), farmZone: 'Banana', category: 'fungicide' });
     setShowLogModal(false);
   }

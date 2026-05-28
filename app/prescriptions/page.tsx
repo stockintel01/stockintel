@@ -24,9 +24,9 @@ interface Prescription {
 }
 
 const SEED_PRESCRIPTIONS: Prescription[] = [
-    { id: 'RX-7721', patient: 'John Doe',      date: '2024-03-20', drugs: 'Amoxicillin, Paracetamol',   status: 'Pending',   type: 'OP', ward: ''     },
-    { id: 'RX-7722', patient: 'Jane Smith',    date: '2024-03-19', drugs: 'Metformin, Atorvastatin',    status: 'Completed', type: 'IP', ward: 'B-102' },
-    { id: 'RX-7723', patient: 'Robert Brown',  date: '2024-03-18', drugs: 'Ibuprofen',                  status: 'Pending',   type: 'OP', ward: ''     },
+    { id: 'RX-7721', patient: 'John Doe',      date: '2026-05-21', drugs: 'Amoxicillin, Paracetamol',   status: 'Pending',   type: 'OP', ward: ''     },
+    { id: 'RX-7722', patient: 'Jane Smith',    date: '2026-05-20', drugs: 'Metformin, Atorvastatin',    status: 'Completed', type: 'IP', ward: 'B-102' },
+    { id: 'RX-7723', patient: 'Robert Brown',  date: '2026-05-19', drugs: 'Ibuprofen',                  status: 'Pending',   type: 'OP', ward: ''     },
 ];
 
 const CONFIDENCE_CONFIG = {

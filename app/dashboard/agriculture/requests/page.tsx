@@ -9,7 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { MOCK_STOCK_REQUESTS, MOCK_AGRIC_INVENTORY, FARM_ZONES } from '@/lib/agric/mock-data';
+import { MOCK_AGRIC_INVENTORY, FARM_ZONES } from '@/lib/agric/mock-data';
+import { useAppStore } from '@/lib/store';
+import { useAgric } from '@/lib/agric/useAgric';
 import { StockRequest, StockRequestItem, RequestStatus, FarmZone, AgricCategory } from '@/lib/agric/types';
 
 const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon: any }> = {
@@ -24,7 +26,10 @@ const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon:
 const CURRENT_ROLE: 'farm_manager' | 'stockkeeper' = 'stockkeeper';
 
 export default function RequestsPage() {
-  const [requests, setRequests] = useState<StockRequest[]>(MOCK_STOCK_REQUESTS);
+  const { requests, approveRequest, rejectRequest, dispatchReq, confirmReceived, createRequest } = useAgric();
+  const { user } = useAppStore();
+  const currentUserName = user?.name ?? 'Farm Manager';
+  const currentUserId = user?.id ?? 'user';
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequestStatus | 'all'>('all');
   const [selectedRequest, setSelectedRequest] = useState<StockRequest | null>(null);
@@ -52,30 +57,16 @@ export default function RequestsPage() {
     received: requests.filter(r => r.status === 'received').length,
   };
 
-  function handleApprove(reqId: string) {
-    setRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'approved', approvedBy: 'Storekeeper Admin', approvedAt: new Date().toISOString() } : r));
-    setSelectedRequest(null);
+  async function handleApprove(reqId: string) { await approveRequest(reqId); setSelectedRequest(null); }
+
+  async function handleReject(reqId: string, reason: string) { await rejectRequest(reqId, reason); setSelectedRequest(null); }
+
+  async function handleDispatch(req: StockRequest) {
+    await dispatchReq(req.id, req.items.map(i => ({ itemId: i.itemId, qty: i.requestedQty })));
+    setDispatchModal(null); setSelectedRequest(null);
   }
 
-  function handleReject(reqId: string, reason: string) {
-    setRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'rejected', rejectionReason: reason } : r));
-    setSelectedRequest(null);
-  }
-
-  function handleDispatch(req: StockRequest) {
-    setRequests(prev => prev.map(r => r.id === req.id ? {
-      ...r, status: 'dispatched',
-      dispatchedBy: 'Storekeeper Admin', dispatchedAt: new Date().toISOString(),
-      items: r.items.map(i => ({ ...i, dispatchedQty: i.requestedQty }))
-    } : r));
-    setDispatchModal(null);
-    setSelectedRequest(null);
-  }
-
-  function handleMarkReceived(reqId: string) {
-    setRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'received', receivedBy: 'Farm Manager', receivedAt: new Date().toISOString() } : r));
-    setSelectedRequest(null);
-  }
+  async function handleMarkReceived(reqId: string) { await confirmReceived(reqId); setSelectedRequest(null); }
 
   function addNewReqItem() {
     if (!newReqItem.itemId || !newReqItem.requestedQty) return;
@@ -89,18 +80,15 @@ export default function RequestsPage() {
     setNewReqItem({});
   }
 
-  function submitNewRequest() {
+  async function submitNewRequest() {
     if (!newReq.farmZone || !newReq.items?.length) return;
-    const req: StockRequest = {
-      id: `sr_${Date.now()}`,
-      requestNumber: `REQ-2026-${String(requests.length + 1).padStart(3, '0')}`,
-      requestedBy: 'mgr01', requestedByName: 'Emmanuel Darko',
+    await createRequest({
+      requestNumber: '', requestedBy: currentUserId, requestedByName: currentUserName,
       requestedByRole: 'farm_manager', requestDate: new Date().toISOString(),
-      farmZone: newReq.farmZone as FarmZone, priority: newReq.priority as any || 'normal',
+      farmZone: newReq.farmZone as FarmZone, priority: (newReq.priority as any) || 'normal',
       items: newReq.items!, status: 'pending', note: newReq.note,
       requiredByDate: newReq.requiredByDate,
-    };
-    setRequests(prev => [req, ...prev]);
+    });
     setNewReq({ farmZone: 'Banana', priority: 'normal', items: [] });
     setShowNewRequest(false);
   }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Search, Plus, Filter, Download, AlertTriangle, CheckCircle2,
   Package, Edit2, Trash2, ArrowUpDown, ChevronDown, Eye,
@@ -10,8 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { MOCK_AGRIC_INVENTORY } from '@/lib/agric/mock-data';
+import { useAgric } from '@/lib/agric/useAgric';
 import { AgricInventoryItem, AgricCategory } from '@/lib/agric/types';
+import { useAppStore } from '@/lib/store';
 
 const CATEGORY_LABELS: Record<AgricCategory, string> = {
   fungicide: 'Fungicide', insecticide: 'Insecticide', herbicide: 'Herbicide',
@@ -43,7 +44,12 @@ interface AdjustmentModal {
 }
 
 export default function StockManagementPage() {
-  const [inventory, setInventory] = useState<AgricInventoryItem[]>(MOCK_AGRIC_INVENTORY);
+  const { inventory: rawInventory, addItem, updateItem, deleteItem, submitAdjustment, loading, isLive } = useAgric();
+  const { user } = useAppStore();
+  const currentUser = user?.name ?? 'Storekeeper';
+  const currentUserId = user?.id ?? 'user';
+  const [inventory, setLocalInventory] = useState<AgricInventoryItem[]>([]);
+  useEffect(() => { setLocalInventory(rawInventory); }, [rawInventory]);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<AgricCategory | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'low' | 'critical' | 'ok'>('all');
@@ -56,7 +62,7 @@ export default function StockManagementPage() {
   const [showDeletionLog, setShowDeletionLog] = useState(false);
 
   const filtered = useMemo(() => {
-    return inventory
+    return (inventory.length > 0 ? inventory : rawInventory)
       .filter(item => {
         const matchSearch = item.name.toLowerCase().includes(search.toLowerCase()) ||
           (item.chemicalComponent || '').toLowerCase().includes(search.toLowerCase());
@@ -73,40 +79,44 @@ export default function StockManagementPage() {
         if (sortBy === 'stock') return a.currentStock - b.currentStock;
         return a.category.localeCompare(b.category);
       });
-  }, [inventory, search, categoryFilter, statusFilter, sortBy]);
+  }, [inventory, rawInventory, search, categoryFilter, statusFilter, sortBy]);
 
   const stats = useMemo(() => ({
-    total: inventory.filter(i => i.isActive).length,
+    total: (inventory.length > 0 ? inventory : rawInventory).filter(i => i.isActive).length,
     critical: inventory.filter(i => i.isActive && getStockStatus(i).label === 'Critical').length,
     low: inventory.filter(i => i.isActive && getStockStatus(i).label === 'Low Stock').length,
     outOfStock: inventory.filter(i => i.isActive && i.currentStock === 0).length,
-  }), [inventory]);
+  }), [inventory, rawInventory]);
 
-  function handleSoftDelete(item: AgricInventoryItem, note: string) {
-    setDeletionLog(prev => [...prev, { item, note, by: 'Storekeeper Admin', at: new Date().toISOString() }]);
-    setInventory(prev => prev.map(i => i.id === item.id ? { ...i, isActive: false, deletedAt: new Date().toISOString(), deletedBy: 'Storekeeper Admin', deletionNote: note } : i));
+  async function handleSoftDelete(item: AgricInventoryItem, note: string) {
+    setDeletionLog(prev => [...prev, { item, note, by: currentUser, at: new Date().toISOString() }]);
+    await deleteItem(item.id, note);
     setSelectedItem(null);
   }
 
-  function handleAdjustSubmit() {
+  async function handleAdjustSubmit() {
     if (!adjustModal) return;
-    // In production: this would create a StockAdjustment record pending manager approval
-    // For demo: we apply immediately with a note
-    setInventory(prev => prev.map(i => i.id === adjustModal.item.id ? { ...i, currentStock: adjustModal.newQty, lastUpdated: new Date().toISOString().slice(0, 10) } : i));
+    await submitAdjustment({
+      itemId: adjustModal.item.id, itemName: adjustModal.item.name,
+      adjustedBy: currentUserId, adjustedByName: currentUser,
+      requestDate: new Date().toISOString(),
+      oldQuantity: adjustModal.item.currentStock, newQuantity: adjustModal.newQty,
+      difference: adjustModal.newQty - adjustModal.item.currentStock,
+      reason: adjustModal.note, note: adjustModal.note, status: 'pending_approval',
+    });
     setAdjustModal(null);
   }
 
-  function handleAddItem() {
+  async function handleAddItem() {
     if (!newItem.name || !newItem.category) return;
-    const item: AgricInventoryItem = {
-      id: `item_${Date.now()}`, name: newItem.name!, chemicalComponent: newItem.chemicalComponent,
-      category: newItem.category as AgricCategory, uom: newItem.uom as any || 'lt',
+    await addItem({
+      name: newItem.name!, chemicalComponent: newItem.chemicalComponent,
+      category: newItem.category as AgricCategory, uom: (newItem.uom as any) || 'lt',
       packSize: newItem.packSize, currentStock: newItem.currentStock || 0,
       minimumStock: newItem.minimumStock || 5, reorderAlertDays: newItem.reorderAlertDays || 7,
       location: newItem.location, unitCost: newItem.unitCost,
-      lastUpdated: new Date().toISOString().slice(0, 10), createdBy: 'Storekeeper Admin', isActive: true,
-    };
-    setInventory(prev => [...prev, item]);
+      lastUpdated: new Date().toISOString().slice(0, 10), createdBy: currentUser, isActive: true,
+    });
     setNewItem({ category: 'fungicide', uom: 'lt', isActive: true, reorderAlertDays: 7 });
     setShowAddModal(false);
   }

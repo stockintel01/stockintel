@@ -372,7 +372,7 @@ export default function LandingPage() {
 
         {/* Footer */}
         <footer style={{ borderTop: '1px solid rgba(255,255,255,0.07)', padding: '32px 24px', textAlign: 'center' }}>
-          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.25)' }}>© 2025 IntelliStock AI. All rights reserved.</div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.25)' }}>© {new Date().getFullYear()} StockIntel. All rights reserved.</div>
         </footer>
 
       </div>

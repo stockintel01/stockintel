@@ -109,7 +109,7 @@ export default function ReportsPage() {
                 const totalSales = monthlySales.reduce((sum, m) => sum + m.sales, 0);
                 const totalProfit = monthlySales.reduce((sum, m) => sum + m.profit, 0);
                 csvContent = [
-                    ['Period', 'Jan-Jul 2024'],
+                    ['Period', new Date().toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })],
                     ['Total Revenue', totalSales],
                     ['Total Profit', totalProfit],
                     ['Profit Margin', ((totalProfit / totalSales) * 100).toFixed(1) + '%'],

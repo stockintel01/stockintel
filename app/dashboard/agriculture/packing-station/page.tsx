@@ -8,7 +8,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { MOCK_PACKING_RECORDS, MOCK_SHIPPING_RECORDS, FARM_ZONES } from '@/lib/agric/mock-data';
+import { FARM_ZONES } from '@/lib/agric/mock-data';
+import { useAppStore } from '@/lib/store';
+import { useAgric } from '@/lib/agric/useAgric';
 import { PackingRecord, ShippingRecord, FarmZone } from '@/lib/agric/types';
 
 const STATIONS = ['Packing Station A', 'Packing Station B', 'Packing Station C'];
@@ -17,15 +19,17 @@ const SHIFTS = ['morning', 'afternoon', 'evening'] as const;
 
 export default function PackingStationPage() {
   const today = new Date().toISOString().slice(0, 10);
-  const [packingRecords, setPackingRecords] = useState<PackingRecord[]>(MOCK_PACKING_RECORDS);
-  const [shippingRecords, setShippingRecords] = useState<ShippingRecord[]>(MOCK_SHIPPING_RECORDS);
+  const { packingRecords, shippingRecords, addPacking, addShipping } = useAgric();
+  const { user } = useAppStore();
+  const currentUserName = user?.name ?? 'Supervisor';
+  const currentUserId = user?.id ?? 's01';
   const [showNewPacking, setShowNewPacking] = useState(false);
   const [showShipping, setShowShipping] = useState(false);
   const [activeTab, setActiveTab] = useState<'packing' | 'shipping'>('packing');
 
   const [newPacking, setNewPacking] = useState<Partial<PackingRecord>>({
     stationName: 'Packing Station A', farmZone: 'Banana', produce: 'Banana', shift: 'morning',
-    date: today, supervisorName: 'Grace Acheampong', supervisorId: 's02', workers: [],
+    date: today, supervisorName: currentUserName, supervisorId: currentUserId, workers: [],
   });
   const [workersInput, setWorkersInput] = useState('');
 
@@ -44,35 +48,32 @@ export default function PackingStationPage() {
   packingRecords.forEach(r => { packHouseStock[r.produce] = (packHouseStock[r.produce] || 0) + r.packedBoxes - r.rejectedBoxes; });
   shippingRecords.forEach(r => { packHouseStock[r.produce] = (packHouseStock[r.produce] || 0) - r.boxesShipped; });
 
-  function submitPacking() {
+  async function submitPacking() {
     if (!newPacking.stationName || !newPacking.produce || !newPacking.packedBoxes) return;
-    const rec: PackingRecord = {
-      id: `pr_${Date.now()}`,
+    await addPacking({
       date: newPacking.date || today,
       stationId: `ps_${Date.now()}`,
       stationName: newPacking.stationName!,
       supervisorId: newPacking.supervisorId || 's01',
       supervisorName: newPacking.supervisorName || 'Supervisor',
-      farmZone: newPacking.farmZone as FarmZone || 'Banana',
+      farmZone: (newPacking.farmZone as FarmZone) || 'Banana',
       produce: newPacking.produce!,
       targetBoxes: newPacking.targetBoxes || 0,
       packedBoxes: newPacking.packedBoxes!,
       rejectedBoxes: newPacking.rejectedBoxes || 0,
       totalWeight: newPacking.totalWeight,
-      shift: newPacking.shift as any || 'morning',
+      shift: (newPacking.shift as any) || 'morning',
       workers: workersInput ? workersInput.split(',').map(w => w.trim()).filter(Boolean) : [],
       notes: newPacking.notes,
-    };
-    setPackingRecords(prev => [rec, ...prev]);
-    setNewPacking({ stationName: 'Packing Station A', farmZone: 'Banana', produce: 'Banana', shift: 'morning', date: today, supervisorName: 'Grace Acheampong', supervisorId: 's02', workers: [] });
+    });
+    setNewPacking({ stationName: 'Packing Station A', farmZone: 'Banana', produce: 'Banana', shift: 'morning', date: today, supervisorName: currentUserName, supervisorId: currentUserId, workers: [] });
     setWorkersInput('');
     setShowNewPacking(false);
   }
 
-  function submitShipping() {
+  async function submitShipping() {
     if (!newShipping.produce || !newShipping.boxesShipped || !newShipping.destinationName) return;
-    const rec: ShippingRecord = {
-      id: `sh_${Date.now()}`,
+    await addShipping({
       dispatchDate: newShipping.dispatchDate || today,
       destinationName: newShipping.destinationName!,
       supervisorId: newShipping.supervisorId || 's01',
@@ -83,8 +84,7 @@ export default function PackingStationPage() {
       driverName: newShipping.driverName,
       invoiceNumber: newShipping.invoiceNumber,
       notes: newShipping.notes,
-    };
-    setShippingRecords(prev => [rec, ...prev]);
+    });
     setNewShipping({ dispatchDate: today, produce: 'Banana', supervisorId: 's02' });
     setShowShipping(false);
   }

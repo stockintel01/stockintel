@@ -8,18 +8,22 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { MOCK_EQUIPMENT_CHECKOUTS, MOCK_AGRIC_INVENTORY, FARM_ZONES } from '@/lib/agric/mock-data';
+import { MOCK_AGRIC_INVENTORY, FARM_ZONES } from '@/lib/agric/mock-data';
+import { useAppStore } from '@/lib/store';
+import { useAgric } from '@/lib/agric/useAgric';
 import { EquipmentCheckout, FarmZone } from '@/lib/agric/types';
 
 const equipmentItems = MOCK_AGRIC_INVENTORY.filter(i => i.category === 'equipment' && i.isActive);
 
 export default function EquipmentPage() {
-  const [checkouts, setCheckouts] = useState<EquipmentCheckout[]>(MOCK_EQUIPMENT_CHECKOUTS);
+  const { checkouts, checkout: checkoutItem, returnItem } = useAgric();
+  const { user } = useAppStore();
+  const currentUserName = user?.name ?? 'Supervisor';
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'out' | 'overdue' | 'returned'>('all');
   const [showCheckout, setShowCheckout] = useState(false);
   const [newCheckout, setNewCheckout] = useState<Partial<EquipmentCheckout>>({
-    farmZone: 'Banana', supervisorName: 'Kofi Asante', supervisorId: 's01'
+    farmZone: 'Banana', supervisorName: currentUserName, supervisorId: user?.id ?? 's01'
   });
 
   function filtered() {
@@ -35,19 +39,15 @@ export default function EquipmentPage() {
     });
   }
 
-  function handleReturn(id: string, condition: 'good' | 'damaged' | 'lost') {
-    setCheckouts(prev => prev.map(c => c.id === id ? {
-      ...c, isReturned: true, isOverdue: false,
-      returnTime: new Date().toISOString(), returnedCondition: condition
-    } : c));
+  async function handleReturn(id: string, condition: 'good' | 'damaged' | 'lost') {
+    await returnItem(id, condition);
   }
 
-  function submitCheckout() {
+  async function submitCheckout() {
     if (!newCheckout.itemId || !newCheckout.checkoutBy || !newCheckout.farmZone) return;
     const invItem = equipmentItems.find(i => i.id === newCheckout.itemId);
     if (!invItem) return;
-    const checkout: EquipmentCheckout = {
-      id: `ec_${Date.now()}`,
+    await checkoutItem({
       itemId: invItem.id, itemName: invItem.name,
       checkoutBy: newCheckout.checkoutBy!, checkoutById: `w_${Date.now()}`,
       checkoutTime: new Date().toISOString(),
@@ -56,9 +56,8 @@ export default function EquipmentPage() {
       supervisorName: newCheckout.supervisorName || 'Supervisor',
       farmZone: newCheckout.farmZone as FarmZone,
       purpose: newCheckout.purpose,
-      isReturned: false, isOverdue: false
-    };
-    setCheckouts(prev => [checkout, ...prev]);
+      isReturned: false, isOverdue: false,
+    });
     setNewCheckout({ farmZone: 'Banana', supervisorName: 'Kofi Asante', supervisorId: 's01' });
     setShowCheckout(false);
   }

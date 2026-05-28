@@ -39,9 +39,9 @@ export default function ImportPage() {
         // Create CSV template with headers
         const headers = ['Item Name', 'SKU', 'Batch Number', 'Expiry Date (YYYY-MM-DD)', 'Quantity', 'Unit', 'MRP', 'Category', 'Location'];
         const sampleData = [
-            ['Paracetamol 650mg', 'PCM-650', 'B202401', '2025-12-31', '1500', 'Tablets', '2.5', 'Medicine', 'Rack A1'],
-            ['Amoxicillin 500mg', 'AMX-500', 'B202402', '2024-10-15', '300', 'Capsules', '12.0', 'Antibiotic', 'Rack B3'],
-            ['Vitamin C 500mg', 'VIT-C-500', 'B202403', '2026-01-20', '800', 'Tablets', '5.0', 'Supplement', 'Rack A2'],
+            ['Paracetamol 650mg', 'PCM-650', 'B202401', '2027-05-26', '1500', 'Tablets', '2.5', 'Medicine', 'Rack A1'],
+            ['Amoxicillin 500mg', 'AMX-500', 'B202402', '2026-03-27', '300', 'Capsules', '12.0', 'Antibiotic', 'Rack B3'],
+            ['Vitamin C 500mg', 'VIT-C-500', 'B202403', '2027-01-21', '800', 'Tablets', '5.0', 'Supplement', 'Rack A2'],
         ];
 
         // Combine headers and sample data

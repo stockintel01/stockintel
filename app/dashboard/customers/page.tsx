@@ -7,10 +7,10 @@ import { useAppStore } from '@/lib/store';
 import { Users, Search, Phone, Mail, ShoppingBag, TrendingUp, Plus } from 'lucide-react';
 
 const MOCK_CUSTOMERS = [
-    { id: 'C-001', name: 'Ravi Kumar',    phone: '+91 98765 43210', email: 'ravi@email.com',  totalOrders: 12, totalSpend: 4580, lastVisit: '2024-03-20' },
-    { id: 'C-002', name: 'Priya Sharma',  phone: '+91 98765 12345', email: 'priya@email.com', totalOrders: 7,  totalSpend: 2100, lastVisit: '2024-03-18' },
-    { id: 'C-003', name: 'Anil Mehta',    phone: '+91 99887 76543', email: '',                totalOrders: 3,  totalSpend: 890,  lastVisit: '2024-03-15' },
-    { id: 'C-004', name: 'Sunita Patel',  phone: '+91 87654 32198', email: 'sunita@email.com',totalOrders: 22, totalSpend: 9200, lastVisit: '2024-03-21' },
+    { id: 'C-001', name: 'Ravi Kumar',    phone: '+91 98765 43210', email: 'ravi@email.com',  totalOrders: 12, totalSpend: 4580, lastVisit: '2026-05-21' },
+    { id: 'C-002', name: 'Priya Sharma',  phone: '+91 98765 12345', email: 'priya@email.com', totalOrders: 7,  totalSpend: 2100, lastVisit: '2026-05-19' },
+    { id: 'C-003', name: 'Anil Mehta',    phone: '+91 99887 76543', email: '',                totalOrders: 3,  totalSpend: 890,  lastVisit: '2026-05-16' },
+    { id: 'C-004', name: 'Sunita Patel',  phone: '+91 87654 32198', email: 'sunita@email.com',totalOrders: 22, totalSpend: 9200, lastVisit: '2026-05-22' },
 ];
 
 export default function CustomersPage() {

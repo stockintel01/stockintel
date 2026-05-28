@@ -57,7 +57,7 @@ function LoginInner() {
                     </p>
                 </div>
                 <div className="text-sm text-blue-200">
-                    © 2024 StockIntel
+                    © {new Date().getFullYear()} StockIntel
                 </div>
             </div>
 
