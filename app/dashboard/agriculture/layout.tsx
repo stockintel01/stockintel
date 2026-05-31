@@ -7,7 +7,7 @@ import {
   Leaf, LayoutDashboard, Package, ShoppingCart, FlaskConical,
   Tractor, CalendarDays, Boxes, BarChart3, ChevronLeft,
   ChevronRight, Bell, Cloud, Sun, CloudRain, CloudLightning,
-  Droplets, Wind, Thermometer
+  Droplets, Wind, Thermometer, AlertTriangle, TrendingUp
 } from 'lucide-react';
 import { MOCK_AGRIC_ALERTS, MOCK_STOCK_REQUESTS, MOCK_EQUIPMENT_CHECKOUTS } from '@/lib/agric/mock-data';
 
