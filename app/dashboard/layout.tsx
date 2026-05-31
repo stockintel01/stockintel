@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAppStore } from '@/lib/store';
+import { useAppStore, SUPER_ADMIN_EMAIL } from '@/lib/store';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -87,7 +87,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Billing', href: '/dashboard/billing', icon: Wallet },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                        { name: 'Admin', href: '/dashboard/admin', icon: Shield },
+                        // super admin only
+                ...(user?.email === SUPER_ADMIN_EMAIL ? [{ name: 'Admin', href: '/dashboard/admin', icon: Shield },
                     ],
                 },
             ],
@@ -131,7 +132,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         { name: 'Team', href: '/dashboard/team', icon: UserCog },
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                        { name: 'Admin', href: '/dashboard/admin', icon: Shield },
+                        // super admin only
+                ...(user?.email === SUPER_ADMIN_EMAIL ? [{ name: 'Admin', href: '/dashboard/admin', icon: Shield },
                     ],
                 },
             ],
@@ -163,7 +165,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         { name: 'Team', href: '/dashboard/team', icon: UserCog },
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                        { name: 'Admin', href: '/dashboard/admin', icon: Shield },
+                        // super admin only
+                ...(user?.email === SUPER_ADMIN_EMAIL ? [{ name: 'Admin', href: '/dashboard/admin', icon: Shield },
                     ],
                 },
             ],

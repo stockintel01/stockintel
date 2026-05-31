@@ -125,7 +125,7 @@ export default function LocationsPage() {
             if (action === 'complete') await completeTransfer(orgId, transferId);
             if (action === 'cancel')   await cancelTransfer(orgId, transferId);
         } catch (err: unknown) {
-            alert(err instanceof Error ? err.message : 'Action failed.');
+            console.error(err instanceof Error ? err.message : 'Action failed.');
         } finally { setBusy(null); }
     };
 

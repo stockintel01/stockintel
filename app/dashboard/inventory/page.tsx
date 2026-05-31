@@ -57,13 +57,13 @@ export default function InventoryPage() {
 
     async function handleDelete(itemId: string) {
         if (!organization?.id) return;
-        if (!confirm('Soft-delete this item? It will be removed from active inventory.')) return;
+
         setDeletingId(itemId);
         try {
             await deleteItem(organization.id, itemId);
             // Zustand is updated automatically via the real-time listener
         } catch (err) {
-            alert('Failed to delete item. Please try again.');
+            console.error('Failed to delete item. Please try again.');
             console.error(err);
         } finally {
             setDeletingId(null);
@@ -76,7 +76,7 @@ export default function InventoryPage() {
             await adjustQuantity(organization.id, itemId, delta);
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'Adjustment failed';
-            alert(msg);
+            console.error(msg);
         }
     }
 

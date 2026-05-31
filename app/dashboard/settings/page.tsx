@@ -13,9 +13,12 @@ export default function SettingsPage() {
     const { user, currency, setCurrency, taxSettings, updateTaxSettings } = useAppStore();
     const [successMsg, setSuccessMsg] = useState('');
 
-    const handleSave = () => {
-        setSuccessMsg('Settings saved successfully!');
-        setTimeout(() => setSuccessMsg(''), 3000);
+    const handleSave = async () => {
+        // In production: update Firestore user profile
+        try {
+            setSuccessMsg('Settings saved!');
+            setTimeout(() => setSuccessMsg(''), 3000);
+        } catch { setSuccessMsg('Failed to save. Try again.'); }
     };
 
     return (
@@ -59,7 +62,7 @@ export default function SettingsPage() {
                         <div className="space-y-2 max-w-xs">
                             <Label>Currency Symbol</Label>
                             <div className="flex gap-2">
-                                {['₹', '$', '€', '£', '₵'].map((sym) => (
+                                {['GHS', '₵', '$', '€', '£', '₦', '₹', 'KSh'].map((sym) => (
                                     <Button
                                         key={sym}
                                         variant={currency === sym ? "default" : "outline"}

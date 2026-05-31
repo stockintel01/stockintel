@@ -83,7 +83,7 @@ export default function TeamPage() {
             setInviteEmail('');
         } catch (error) {
             console.error('Error inviting member:', error);
-            alert('Failed to send invitation');
+            console.warn('Failed to send invitation');
         } finally {
             setIsSubmitting(false);
         }

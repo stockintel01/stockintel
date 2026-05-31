@@ -1,13 +1,11 @@
 rules_version = '2';
 
 // ─────────────────────────────────────────────────────────────────
-// IntelliStock AI — Firestore Security Rules
+// StockIntel — Firestore Security Rules
 //
-// Principle of least privilege:
-//   - Users can only read/write their own org's data
-//   - Role hierarchy: owner > manager > worker
-//   - Workers get read-only on inventory; no team/billing access
-//   - All writes are validated for required fields
+// Role hierarchy: super_admin > owner > manager > worker
+// Super admin (stockintel01@gmail.com) has full read/write.
+// All other access is org-scoped and role-gated.
 // ─────────────────────────────────────────────────────────────────
 
 service cloud.firestore {
@@ -17,6 +15,11 @@ service cloud.firestore {
 
     function isSignedIn() {
       return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return request.auth != null &&
+        request.auth.token.email == 'stockintel01@gmail.com';
     }
 
     function userDoc() {
@@ -35,89 +38,137 @@ service cloud.firestore {
     function isManager() { return role() == 'manager'; }
     function isWorker()  { return role() == 'worker';  }
 
-    function isSameOrg(resourceOrgId) {
-      return orgId() == resourceOrgId;
-    }
-
     function isOwnerOrManager() {
       return isOwner() || isManager();
     }
 
-    // ── Users ────────────────────────────────────────────────────
-    match /users/{userId} {
-      // Anyone can read their own profile; owners/managers can read org members
-      allow read: if isSignedIn() && (
-        request.auth.uid == userId ||
-        isSameOrg(resource.data.organizationId) && isOwnerOrManager()
-      );
-      // Users create/update their own profile only
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isSignedIn() && request.auth.uid == userId;
-      allow delete: if false; // Never hard-delete users
+    function isSameOrg(resourceOrgId) {
+      return orgId() == resourceOrgId;
     }
 
-    // ── Organizations ────────────────────────────────────────────
-    match /organizations/{orgId} {
-      allow read: if isSignedIn() && isSameOrg(orgId);
-      allow create: if isSignedIn(); // handled during signup flow
-      allow update: if isSignedIn() && isSameOrg(orgId) && isOwner();
-      allow delete: if false;
+    // ── Super Admin — full access to everything ──────────────────
+    match /{document=**} {
+      allow read, write: if isSuperAdmin();
+    }
 
-      // ── Inventory (core feature) ─────────────────────────────
+    // ── System config (read-only for all signed-in users) ────────
+    match /system/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    // ── Global patients collection (cross-pharmacy) ──────────────
+    match /patients/{patientId} {
+      allow read:   if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasAll(['fullName', 'contactNumber'])
+        && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() > 0;
+      allow update: if isSignedIn();
+      allow delete: if isSuperAdmin();
+    }
+
+    // ── Users ────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId ||
+        (isSameOrg(resource.data.organizationId) && isOwnerOrManager())
+      );
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && (
+        request.auth.uid == userId ||
+        isSuperAdmin()
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // ── Organisations ────────────────────────────────────────────
+    match /organizations/{orgId} {
+      allow read: if isSignedIn() && (isSameOrg(orgId) || isSuperAdmin());
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        (isSameOrg(orgId) && isOwner()) || isSuperAdmin()
+      );
+      allow delete: if isSuperAdmin();
+
+      // ── Inventory ─────────────────────────────────────────────
       match /inventory/{itemId} {
         allow read: if isSignedIn() && isSameOrg(orgId);
-
         allow create: if isSignedIn()
           && isSameOrg(orgId)
           && isOwnerOrManager()
           && request.resource.data.keys().hasAll(['name', 'sku', 'quantity', 'mrp', 'costPrice'])
           && request.resource.data.quantity >= 0
           && request.resource.data.mrp >= 0;
-
         allow update: if isSignedIn()
           && isSameOrg(orgId)
           && (
-            isOwnerOrManager()
-            // Workers can only adjust quantity (e.g. during POS sale)
-            || (isWorker() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'updatedAt']))
+            isOwnerOrManager() ||
+            (isWorker() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'updatedAt']))
           )
-          && (
-            !request.resource.data.keys().hasAll(['quantity'])
-            || request.resource.data.quantity >= 0
-          );
-
-        allow delete: if false; // Use soft-delete (deletedAt field) instead
+          && (!request.resource.data.keys().hasAll(['quantity']) || request.resource.data.quantity >= 0);
+        allow delete: if isSuperAdmin();
       }
 
-      // ── Credits / Rewards ────────────────────────────────────
+      // ── Prescriptions ─────────────────────────────────────────
+      match /prescriptions/{rxId} {
+        allow read, write: if isSignedIn() && isSameOrg(orgId);
+      }
+
+      // ── Customers ─────────────────────────────────────────────
+      match /customers/{custId} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow delete: if isSignedIn() && isSameOrg(orgId) && isOwner();
+      }
+
+      // ── Sales ─────────────────────────────────────────────────
+      match /sales/{saleId} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create: if isSignedIn() && isSameOrg(orgId);
+        allow update: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow delete: if isSignedIn() && isSameOrg(orgId) && isOwner();
+      }
+
+      // ── Consultations ─────────────────────────────────────────
+      match /consultations/{cId} {
+        allow read, write: if isSignedIn() && isSameOrg(orgId);
+      }
+
+      // ── Credits / Rewards ──────────────────────────────────────
       match /credits/{creditId} {
         allow read: if isSignedIn() && isSameOrg(orgId);
-        allow create: if false; // Created by Cloud Functions only
+        allow create: if isSuperAdmin();
         allow update: if isSignedIn() && isSameOrg(orgId) && isOwner()
           && request.resource.data.status == 'used'
           && resource.data.status == 'available';
-        allow delete: if false;
+        allow delete: if isSuperAdmin();
       }
+
+      // ── Agric collections ──────────────────────────────────────
+      match /agric_inventory/{id}   { allow read, write: if isSignedIn() && isSameOrg(orgId); }
+      match /agric_usage/{id}       { allow read, write: if isSignedIn() && isSameOrg(orgId); }
+      match /agric_requests/{id}    { allow read, write: if isSignedIn() && isSameOrg(orgId); }
+      match /agric_equipment/{id}   { allow read, write: if isSignedIn() && isSameOrg(orgId); }
+      match /agric_plans/{id}       { allow read, write: if isSignedIn() && isSameOrg(orgId); }
+      match /agric_packing/{id}     { allow read, write: if isSignedIn() && isSameOrg(orgId); }
+      match /agric_shipping/{id}    { allow read, write: if isSignedIn() && isSameOrg(orgId); }
+      match /agric_adjustments/{id} { allow read, write: if isSignedIn() && isSameOrg(orgId); }
+      match /agric_alerts/{id}      { allow read, write: if isSignedIn() && isSameOrg(orgId); }
+      match /agric_deletion_log/{id}{ allow read: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager(); allow write: if isSignedIn() && isSameOrg(orgId); }
     }
 
     // ── Invitations ──────────────────────────────────────────────
     match /invitations/{inviteId} {
-      // Owners/managers can create invites for their org
-      allow create: if isSignedIn()
-        && isOwnerOrManager()
+      allow create: if isSignedIn() && isOwnerOrManager()
         && request.resource.data.organizationId == orgId();
-
-      // Anyone signed in can read their own invite (matched by email during signup)
       allow read: if isSignedIn();
-
-      // Only owners/managers can update (e.g. cancel an invite)
       allow update: if isSignedIn() && isOwnerOrManager()
         && isSameOrg(resource.data.organizationId);
-
-      allow delete: if false;
+      allow delete: if isSuperAdmin();
     }
 
-    // ── Block everything else ─────────────────────────────────────
+    // ── Default deny (overridden by super admin catch-all above) ─
     match /{document=**} {
       allow read, write: if false;
     }

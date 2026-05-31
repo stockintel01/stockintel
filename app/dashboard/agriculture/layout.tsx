@@ -11,14 +11,28 @@ import {
 } from 'lucide-react';
 import { MOCK_AGRIC_ALERTS, MOCK_STOCK_REQUESTS, MOCK_EQUIPMENT_CHECKOUTS } from '@/lib/agric/mock-data';
 
-const NAV_ITEMS = [
-  { href: '/dashboard/agriculture', label: 'Overview', icon: LayoutDashboard },
+// Nav sections
+const CROP_NAV = [
+  { href: '/dashboard/agriculture', label: 'Farm Overview', icon: LayoutDashboard },
   { href: '/dashboard/agriculture/stock-management', label: 'Stock Management', icon: Package },
   { href: '/dashboard/agriculture/requests', label: 'Stock Requests', icon: ShoppingCart, badgeKey: 'requests' },
   { href: '/dashboard/agriculture/usage-tracker', label: 'Usage Tracker', icon: FlaskConical },
   { href: '/dashboard/agriculture/planner', label: 'Spray Planner', icon: CalendarDays },
   { href: '/dashboard/agriculture/equipment', label: 'Equipment', icon: Tractor, badgeKey: 'equipment' },
   { href: '/dashboard/agriculture/packing-station', label: 'Packing Station', icon: Boxes },
+];
+
+const LIVESTOCK_NAV = [
+  { href: '/dashboard/agriculture/livestock', label: 'Livestock Overview', icon: LayoutDashboard },
+  { href: '/dashboard/agriculture/livestock/egg-production', label: '🥚 Egg Production', icon: BarChart3 },
+  { href: '/dashboard/agriculture/livestock/feed', label: '🌾 Feed Log', icon: Package },
+  { href: '/dashboard/agriculture/livestock/mortality', label: '📉 Mortality', icon: AlertTriangle },
+  { href: '/dashboard/agriculture/livestock/health', label: '💉 Health & Vaccines', icon: Tractor },
+  { href: '/dashboard/agriculture/livestock/growth', label: '⚖️ Growth / Weight', icon: TrendingUp },
+  { href: '/dashboard/agriculture/livestock/milk', label: '🥛 Milk Production', icon: Boxes },
+];
+
+const NAV_ITEMS = [...CROP_NAV, ...LIVESTOCK_NAV,
   { href: '/dashboard/agriculture/weather', label: 'Live Weather', icon: Cloud, badgeKey: 'weather' },
   { href: '/dashboard/agriculture/reports', label: 'Reports', icon: BarChart3 },
 ];

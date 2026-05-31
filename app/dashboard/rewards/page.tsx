@@ -23,6 +23,7 @@ export default function RewardsPage() {
     const [credits, setCredits] = useState<Credit[]>([]);
     const [copied, setCopied] = useState(false);
     const [activating, setActivating] = useState<string | null>(null);
+    const [activateMsg, setActivateMsg] = useState('');
 
     // Listen to credits
     useEffect(() => {
@@ -43,8 +44,10 @@ export default function RewardsPage() {
         return () => unsubscribe();
     }, [organization?.id]);
 
-    const referralLink = organization?.referralCode
-        ? `${window.location.origin}/login?ref=${organization.referralCode}`
+    const [origin, setOrigin] = useState('');
+    useEffect(() => { setOrigin(window.location.origin); }, []);
+    const referralLink = organization?.referralCode && origin
+        ? `${origin}/login?ref=${organization.referralCode}`
         : '';
 
     const handleCopy = () => {
@@ -59,10 +62,11 @@ export default function RewardsPage() {
         setActivating(creditId);
         try {
             await activateCredit(organization.id, creditId, months);
-            alert(`Successfully activated ${months} month(s) of credit!`);
+            setActivateMsg(`${months} month(s) of free credit activated!`);
+            setTimeout(() => setActivateMsg(''), 4000);
         } catch (error) {
             console.error('Error activating credit:', error);
-            alert('Failed to activate credit');
+            setActivateMsg('Failed to activate credit — please try again.');
         } finally {
             setActivating(null);
         }
@@ -83,6 +87,11 @@ export default function RewardsPage() {
             <div>
                 <h1 className="text-3xl font-bold tracking-tight">Rewards & Referrals</h1>
                 <p className="text-muted-foreground">Invite companies and earn free months!</p>
+            {activateMsg && (
+                <p className={`text-sm px-4 py-2 rounded-lg border ${activateMsg.includes('Failed') ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
+                    {activateMsg}
+                </p>
+            )}
             </div>
 
             {/* Subscription Status */}

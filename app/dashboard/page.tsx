@@ -20,10 +20,10 @@ const revenueData = [
 ];
 
 const recentTransactions = [
-    { name: 'Dr. Sarah Wilson', ref: 'RX-2024-0312', amount: '1,234.00', time: '2m ago', avatar: 'S' },
-    { name: 'Patient: Alice M.', ref: 'RX-2024-0311', amount: '542.50', time: '18m ago', avatar: 'A' },
+    { name: 'Dr. Sarah Wilson', ref: 'RX-2026-0312', amount: '1,234.00', time: '2m ago', avatar: 'S' },
+    { name: 'Patient: Alice M.', ref: 'RX-2026-0311', amount: '542.50', time: '18m ago', avatar: 'A' },
     { name: 'Walk-in Customer', ref: 'POS-0892', amount: '320.00', time: '45m ago', avatar: 'W' },
-    { name: 'Bob Johnson', ref: 'RX-2024-0310', amount: '850.00', time: '1h ago', avatar: 'B' },
+    { name: 'Bob Johnson', ref: 'RX-2026-0310', amount: '850.00', time: '1h ago', avatar: 'B' },
     { name: 'Corporate: MedCorp', ref: 'INV-0041', amount: '4,125.00', time: '2h ago', avatar: 'M' },
 ];
 
@@ -41,7 +41,7 @@ const RevenueTooltip = ({ active, payload, label }: CustomTooltipProps) => {
         <div className="bg-background border border-border rounded-xl shadow-lg px-4 py-3 text-sm">
             <p className="font-semibold text-foreground mb-1">{label}</p>
             <p className="text-primary font-mono">
-                ₹{typeof payload[0]?.value === 'number' ? payload[0].value.toLocaleString() : payload[0]?.value}
+                `${currency}`+`${typeof payload[0]?.value === 'number' ? payload[0].value.toLocaleString() : payload[0]?.value}
             </p>
             <p className="text-muted-foreground text-xs mt-0.5">
                 {payload[1]?.value} transactions
@@ -62,23 +62,23 @@ const SalesTooltip = ({ active, payload, label }: CustomTooltipProps) => {
 };
 
 export default function DashboardHome() {
-    const { activeIndustry } = useAppStore();
+    const { activeIndustry, currency } = useAppStore();
 
     const metrics = {
         pharmacy: [
-            { label: 'Total Revenue', value: '₹45,231', icon: DollarSign, trend: '+20.1%', up: true, desc: 'vs last month' },
+            { label: 'Total Revenue', value: '${currency}45,231', icon: DollarSign, trend: '+20.1%', up: true, desc: 'vs last month' },
             { label: 'Prescriptions', value: '2,350', icon: Activity, trend: '+180', up: true, desc: 'this month' },
             { label: 'Low Stock Items', value: '12', icon: AlertTriangle, trend: '−5', up: true, desc: 'resolved this week' },
             { label: 'Active Inventory', value: '12,234', icon: Package, trend: '+19', up: true, desc: 'items in stock' },
         ],
         agriculture: [
-            { label: 'Sales Revenue', value: '₹1,24,231', icon: DollarSign, trend: '+12.5%', up: true, desc: 'seasonal peak' },
+            { label: 'Sales Revenue', value: `${currency}1,24,231`, icon: DollarSign, trend: '+12.5%', up: true, desc: 'seasonal peak' },
             { label: 'Active Orders', value: '45', icon: Package, trend: '+4', up: true, desc: 'processing' },
             { label: 'Low Fertilizer Stock', value: '8', icon: AlertTriangle, trend: '+2', up: false, desc: 'urgent reorder' },
             { label: 'Equipment Rented', value: '12', icon: Activity, trend: '85%', up: true, desc: 'utilization' },
         ],
         retail: [
-            { label: 'Daily Sales', value: '₹24,500', icon: DollarSign, trend: '+10%', up: true, desc: 'vs yesterday' },
+            { label: 'Daily Sales', value: `${currency}24,500`, icon: DollarSign, trend: '+10%', up: true, desc: 'vs yesterday' },
             { label: 'Transactions', value: '145', icon: Activity, trend: '+12%', up: true, desc: 'vs yesterday' },
             { label: 'Out of Stock', value: '3', icon: AlertTriangle, trend: '−2', up: true, desc: 'items critical' },
             { label: 'Total Items', value: '5,432', icon: Package, trend: '+50', up: true, desc: 'new added' },
@@ -94,7 +94,7 @@ export default function DashboardHome() {
                 <div>
                     <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
                     <p className="text-muted-foreground text-sm mt-1">
-                        {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                        {new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </p>
                 </div>
                 <Button className="gap-2">
@@ -143,7 +143,7 @@ export default function DashboardHome() {
                                 <p className="text-sm text-muted-foreground mt-0.5">Monthly revenue trend, Jan–Jul</p>
                             </div>
                             <div className="text-right">
-                                <p className="text-2xl font-bold">₹45,231</p>
+                                <p className="text-2xl font-bold">${currency}45,231</p>
                                 <p className="text-xs text-emerald-500 flex items-center justify-end gap-1">
                                     <TrendingUp className="w-3 h-3" /> +20.1% this month
                                 </p>
@@ -170,7 +170,7 @@ export default function DashboardHome() {
                                     axisLine={false}
                                     tickLine={false}
                                     tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-                                    tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                                    tickFormatter={(v) => `${currency}${(v / 1000).toFixed(0)}k`}
                                 />
                                 <Tooltip content={<RevenueTooltip />} />
                                 <Area
@@ -251,7 +251,7 @@ export default function DashboardHome() {
                                     </div>
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-sm font-semibold">+₹{tx.amount}</p>
+                                    <p className="text-sm font-semibold">`+${currency}${tx.amount}`</p>
                                     <p className="text-xs text-muted-foreground mt-0.5">{tx.time}</p>
                                 </div>
                             </div>

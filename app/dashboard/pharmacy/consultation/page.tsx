@@ -7,10 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAppStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import {
     Brain, Sparkles, AlertTriangle, Stethoscope,
     ShieldAlert, Clock, CheckCircle2, Loader2,
-    Pill, ChevronRight, Info
+    Pill, ChevronRight, Info, Download, Save
 } from 'lucide-react';
 
 interface DrugRecommendation {
@@ -29,7 +31,7 @@ const URGENCY_CONFIG = {
 };
 
 export default function ConsultationPage() {
-    const { inventory, currency } = useAppStore();
+    const { inventory, currency, organization, user } = useAppStore();
 
     const [symptoms, setSymptoms]         = useState('');
     const [age, setAge]                   = useState('');
@@ -39,6 +41,42 @@ export default function ConsultationPage() {
     const [isAnalyzing, setIsAnalyzing]   = useState(false);
     const [result, setResult]             = useState<ConsultationResult | null>(null);
     const [error, setError]               = useState('');
+    const [savedToHistory, setSavedToHistory] = useState(false);
+
+    const saveConsultationHistory = async (consultResult: ConsultationResult) => {
+        if (!organization?.id || !user?.id) return;
+        try {
+            await addDoc(collection(db, `organizations/${organization.id}/consultations`), {
+                symptoms, age: age ? parseInt(age) : null,
+                weight: weight ? parseFloat(weight) : null,
+                pregnant, conditions,
+                result: consultResult,
+                createdBy: user.id,
+                createdAt: serverTimestamp(),
+            });
+            setSavedToHistory(true);
+        } catch (err) { console.warn('[consultation] Failed to save history:', err); }
+    };
+
+    const handlePrint = () => {
+        if (!result) return;
+        const lines = [
+            `AI CONSULTATION REPORT`,
+            `Date: ${new Date().toLocaleString()}`,
+            `Patient: Age ${age || 'N/A'}, Weight ${weight || 'N/A'}kg${pregnant ? ', Pregnant' : ''}`,
+            `Symptoms: ${symptoms}`,
+            ``,
+            `ASSESSMENT:`,
+            result.assessment,
+            ``,
+            `RECOMMENDATIONS:`,
+            ...result.recommendations.map(r => `• ${r.name} ${r.dosage} — ${r.duration}\n  ${r.instructions}`),
+            ``,
+            result.disclaimer,
+        ];
+        const w = window.open('', '_blank');
+        if (w) { w.document.write(`<pre style="font-family:monospace;padding:20px">${lines.join('\n')}</pre>`); w.print(); }
+    };
 
     const handleAnalyze = async () => {
         if (!symptoms.trim()) return;
@@ -65,7 +103,10 @@ export default function ConsultationPage() {
                 const err = await res.json();
                 throw new Error(err.error ?? `Request failed (${res.status})`);
             }
-            setResult(await res.json());
+            const consultResult = await res.json();
+            setResult(consultResult);
+            setSavedToHistory(false);
+            await saveConsultationHistory(consultResult);
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : 'Consultation failed. Please try again.');
         } finally {
@@ -79,9 +120,17 @@ export default function ConsultationPage() {
             {/* ── Left: Input ───────────────────────────────────────────────── */}
             <div className="space-y-5 flex flex-col">
                 <div>
+                    <div className="flex items-center justify-between">
                     <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
                         <Brain className="w-8 h-8 text-primary" /> AI Consultation
                     </h1>
+                    </div>
+                    {result && (
+                        <div className="flex gap-2">
+                            {savedToHistory && <span className="text-xs text-green-600 flex items-center gap-1"><Save className="w-3 h-3" /> Saved</span>}
+                            <Button variant="outline" size="sm" onClick={handlePrint}><Download className="w-4 h-4 mr-1" /> Print</Button>
+                        </div>
+                    )}
                     <p className="text-muted-foreground mt-1 text-sm">
                         Powered by Claude — grounded in your live inventory ({inventory.filter(i => i.quantity > 0).length} items in stock).
                     </p>

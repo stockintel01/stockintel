@@ -1,8 +1,10 @@
+export const SUPER_ADMIN_EMAIL = 'stockintel01@gmail.com';
+
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { MOCK_INVENTORY, InventoryItem } from './mock-data';
 
-export type UserRole = 'owner' | 'manager' | 'worker';
+export type UserRole = 'super_admin' | 'owner' | 'manager' | 'worker';
 export type IndustryType = 'pharmacy' | 'agriculture' | 'retail';
 
 // ✅ Updated: Make auto-generated fields optional

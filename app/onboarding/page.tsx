@@ -46,12 +46,17 @@ const INDUSTRIES: { id: IndustryType; label: string; desc: string; icon: React.E
 ];
 
 const CURRENCIES = [
-    { symbol: '₹', label: 'INR — Indian Rupee' },
+    { symbol: 'GHS', label: 'GHS — Ghanaian Cedi' },
+    { symbol: '₦', label: 'NGN — Nigerian Naira' },
+    { symbol: 'KSh', label: 'KES — Kenyan Shilling' },
+    { symbol: 'UGX', label: 'UGX — Ugandan Shilling' },
+    { symbol: 'TZS', label: 'TZS — Tanzanian Shilling' },
+    { symbol: 'ZAR', label: 'ZAR — South African Rand' },
     { symbol: '$', label: 'USD — US Dollar' },
     { symbol: '£', label: 'GBP — British Pound' },
     { symbol: '€', label: 'EUR — Euro' },
-    { symbol: '₦', label: 'NGN — Nigerian Naira' },
-    { symbol: 'KSh', label: 'KES — Kenyan Shilling' },
+    { symbol: '₹', label: 'INR — Indian Rupee' },
+    { symbol: '₵', label: 'GHS — Ghana Cedi (₵)' },
 ];
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -72,8 +77,8 @@ export default function OnboardingPage() {
         phone: '',
         email: user?.email ?? '',
         taxId: '',
-        currency: '₹',
-        country: 'India',
+        currency: 'GHS',
+        country: 'Ghana',
     });
 
     const [invites, setInvites] = useState<InviteEntry[]>([{ email: '', role: 'manager' }]);

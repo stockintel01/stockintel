@@ -20,16 +20,16 @@ const industryData = {
     headline: 'Intelligent Pharmacy Management',
     sub: 'AI-powered inventory, drug interactions, and patient safety — built for modern pharmacies.',
     metrics: [
-      { label: 'Total Revenue', value: '₹45,231', trend: '+20.1%', up: true, icon: TrendingUp },
+      { label: 'Total Revenue', value: '$45231', trend: '+20.1%', up: true, icon: TrendingUp },
       { label: 'Prescriptions', value: '2,350', trend: '+180', up: true, icon: Activity },
       { label: 'Low Stock Items', value: '12', trend: '−5', up: false, icon: AlertTriangle },
       { label: 'Active Inventory', value: '12,234', trend: '+19', up: true, icon: Package },
     ],
     chart: [24, 28, 32, 29, 35, 42, 45],
     tableRows: [
-      { name: 'Paracetamol 650mg', stock: 1500, status: 'Good', price: '₹2.50' },
-      { name: 'Amoxicillin 500mg', stock: 300, status: 'Expiring', price: '₹12.00' },
-      { name: 'Vitamin C 500mg', stock: 800, status: 'Good', price: '₹5.00' },
+      { name: 'Paracetamol 650mg', stock: 1500, status: 'Good', price: '$2.50' },
+      { name: 'Amoxicillin 500mg', stock: 300, status: 'Expiring', price: '$12.00' },
+      { name: 'Vitamin C 500mg', stock: 800, status: 'Good', price: '$5.00' },
     ],
   },
   agriculture: {
@@ -40,16 +40,16 @@ const industryData = {
     headline: 'Smart Agriculture Stock Control',
     sub: 'Track fertilizers, seeds, and equipment with seasonal insights for agri-business.',
     metrics: [
-      { label: 'Sales Revenue', value: '₹1,24,231', trend: '+12.5%', up: true, icon: TrendingUp },
+      { label: 'Sales Revenue', value: '$124231', trend: '+12.5%', up: true, icon: TrendingUp },
       { label: 'Active Orders', value: '45', trend: '+4', up: true, icon: ShoppingCart },
       { label: 'Low Fertilizer Stock', value: '8', trend: '+2', up: false, icon: AlertTriangle },
       { label: 'Equipment Rented', value: '12', trend: '85%', up: true, icon: Package },
     ],
     chart: [18, 22, 38, 44, 52, 48, 61],
     tableRows: [
-      { name: 'Urea Fertilizer 50kg', stock: 50, status: 'Low', price: '₹450' },
-      { name: 'NPK Complex 40kg', stock: 120, status: 'Good', price: '₹680' },
-      { name: 'Wheat Seeds 25kg', stock: 200, status: 'Good', price: '₹1,200' },
+      { name: 'Urea Fertilizer 50kg', stock: 50, status: 'Low', price: '$450' },
+      { name: 'NPK Complex 40kg', stock: 120, status: 'Good', price: '$680' },
+      { name: 'Wheat Seeds 25kg', stock: 200, status: 'Good', price: '$1200' },
     ],
   },
   retail: {
@@ -60,16 +60,16 @@ const industryData = {
     headline: 'Next-Gen Retail POS & Inventory',
     sub: 'Universal stock management for general retail with predictive analytics and fast checkout.',
     metrics: [
-      { label: 'Daily Sales', value: '₹24,500', trend: '+10%', up: true, icon: TrendingUp },
+      { label: 'Daily Sales', value: '$24500', trend: '+10%', up: true, icon: TrendingUp },
       { label: 'Transactions', value: '145', trend: '+12%', up: true, icon: Activity },
       { label: 'Out of Stock', value: '3', trend: '−2', up: true, icon: AlertTriangle },
       { label: 'Total Items', value: '5,432', trend: '+50', up: true, icon: Package },
     ],
     chart: [31, 28, 35, 40, 38, 45, 50],
     tableRows: [
-      { name: 'Nike Air Max 90', stock: 24, status: 'Good', price: '₹8,500' },
-      { name: 'Levi\'s 501 Jeans', stock: 8, status: 'Low', price: '₹3,200' },
-      { name: 'Sony WH-1000XM5', stock: 0, status: 'Out', price: '₹29,990' },
+      { name: 'Nike Air Max 90', stock: 24, status: 'Good', price: '$8500' },
+      { name: 'Levi\'s 501 Jeans', stock: 8, status: 'Low', price: '$3200' },
+      { name: 'Sony WH-1000XM5', stock: 0, status: 'Out', price: '$29990' },
     ],
   },
 };
@@ -329,8 +329,8 @@ export default function LandingPage() {
             </div>
             <div className="plan-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {[
-                { name: 'Starter', price: '₹999', period: '/mo', features: ['Single Location', 'Basic Inventory', 'POS Billing', 'Email Support'], highlight: false },
-                { name: 'Professional', price: '₹2,499', period: '/mo', features: ['3 Locations', 'Advanced Inventory', 'GST Reports', 'Priority Support', 'AI Recommendations', 'Team Access'], highlight: true },
+                { name: 'Starter', price: '$9', period: '/mo', features: ['Single Location', 'Basic Inventory', 'POS Billing', 'Email Support'], highlight: false },
+                { name: 'Professional', price: '$2499', period: '/mo', features: ['3 Locations', 'Advanced Inventory', 'GST Reports', 'Priority Support', 'AI Recommendations', 'Team Access'], highlight: true },
                 { name: 'Enterprise', price: 'Custom', period: '', features: ['Unlimited Locations', 'Dedicated Manager', 'API Access', 'Custom Integration', 'SLA Guarantee', 'On-site Training'], highlight: false },
               ].map(plan => (
                 <div key={plan.name} className={`plan-card${plan.highlight ? ' highlight' : ''}`}>

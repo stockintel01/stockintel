@@ -157,7 +157,7 @@ export async function inviteMember(email: string, role: string, orgId: string, o
         createdAt: serverTimestamp(),
     });
     // Return the invite link so the caller can send it via email / copy it
-    const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/join?invite=${ref.id}`;
+    const inviteLink = `${typeof window !== 'undefined' ? (typeof window !== 'undefined' ? window.location.origin : '') : ''}/join?invite=${ref.id}`;
     return { inviteId: ref.id, inviteLink };
 }
 

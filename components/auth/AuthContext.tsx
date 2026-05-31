@@ -10,7 +10,7 @@ import {
     signOut
 } from "firebase/auth";
 import { auth, googleProvider, db } from "@/lib/firebase";
-import { useAppStore, User as StoreUser, Organization } from "@/lib/store";
+import { useAppStore, SUPER_ADMIN_EMAIL, User as StoreUser, Organization } from "@/lib/store";
 import {
     getUserProfile,
     checkPendingInvitation,

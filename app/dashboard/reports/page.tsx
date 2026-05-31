@@ -44,7 +44,7 @@ const salesByUser = [
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
 export default function ReportsPage() {
-    const { currency } = useAppStore();
+    const { currency, organization } = useAppStore();
     const [dateRange, setDateRange] = useState('year'); // '7d', '30d', '90d', 'year'
 
     // Filter Logic
@@ -60,7 +60,7 @@ export default function ReportsPage() {
         value: dateRange === 'year' ? cat.value : Math.floor(cat.value * (dateRange === '90d' ? 0.4 : 0.15)) // Mock reduction
     }));
 
-    const downloadReport = (type: string) => {
+    const downloadReport = (type: string) => { // Production: downloads CSV file
         let csvContent = '';
         let filename = '';
 
