@@ -87,8 +87,8 @@ export function usePwa(): UsePwaReturn {
             refreshPending();
         };
 
-        (typeof window !== 'undefined' && window.addEventListener)('online',  handleOnline);
-        (typeof window !== 'undefined' && window.addEventListener)('offline', handleOffline);
+        if (typeof window !== 'undefined') window.addEventListener('online',  handleOnline);
+        if (typeof window !== 'undefined') window.addEventListener('offline', handleOffline);
 
         // ── Install prompt ────────────────────────────────────────────────
         const handleInstallPrompt = (e: Event) => {
@@ -96,7 +96,7 @@ export function usePwa(): UsePwaReturn {
             deferredPrompt.current = e as Event & { prompt: () => Promise<void> };
             setCanInstall(true);
         };
-        (typeof window !== 'undefined' && window.addEventListener)('beforeinstallprompt', handleInstallPrompt);
+        if (typeof window !== 'undefined') window.addEventListener('beforeinstallprompt', handleInstallPrompt);
 
         // ── Service worker registration ───────────────────────────────────
         if ('serviceWorker' in navigator) {
@@ -148,7 +148,7 @@ export function usePwa(): UsePwaReturn {
     const applyUpdate = useCallback(() => {
         waitingWorker.current?.postMessage({ type: 'SKIP_WAITING' });
         setUpdateAvailable(false);
-        (typeof window !== 'undefined' && window.location).reload();
+        if (typeof window !== 'undefined') window.location.reload();
     }, []);
 
     return { isOnline, canInstall, install, updateAvailable, applyUpdate, pendingCount, swReady };
