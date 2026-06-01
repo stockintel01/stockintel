@@ -36,13 +36,13 @@ interface CustomTooltipProps {
 
 // Custom tooltip for the revenue chart
 const RevenueTooltip = ({ active, payload, label }: CustomTooltipProps) => {
+    const { currency } = useAppStore();
     if (!active || !payload?.length) return null;
+    const val = typeof payload[0]?.value === 'number' ? payload[0].value.toLocaleString() : payload[0]?.value;
     return (
         <div className="bg-background border border-border rounded-xl shadow-lg px-4 py-3 text-sm">
             <p className="font-semibold text-foreground mb-1">{label}</p>
-            <p className="text-primary font-mono">
-                `${currency}`+`${typeof payload[0]?.value === 'number' ? payload[0].value.toLocaleString() : payload[0]?.value}
-            </p>
+            <p className="text-primary font-mono">{currency}{val}</p>
             <p className="text-muted-foreground text-xs mt-0.5">
                 {payload[1]?.value} transactions
             </p>
@@ -66,7 +66,7 @@ export default function DashboardHome() {
 
     const metrics = {
         pharmacy: [
-            { label: 'Total Revenue', value: '${currency}45,231', icon: DollarSign, trend: '+20.1%', up: true, desc: 'vs last month' },
+            { label: 'Total Revenue', value: `${currency}45,231`, icon: DollarSign, trend: '+20.1%', up: true, desc: 'vs last month' },
             { label: 'Prescriptions', value: '2,350', icon: Activity, trend: '+180', up: true, desc: 'this month' },
             { label: 'Low Stock Items', value: '12', icon: AlertTriangle, trend: '−5', up: true, desc: 'resolved this week' },
             { label: 'Active Inventory', value: '12,234', icon: Package, trend: '+19', up: true, desc: 'items in stock' },
@@ -143,7 +143,7 @@ export default function DashboardHome() {
                                 <p className="text-sm text-muted-foreground mt-0.5">Monthly revenue trend, Jan–Jul</p>
                             </div>
                             <div className="text-right">
-                                <p className="text-2xl font-bold">${currency}45,231</p>
+                                <p className="text-2xl font-bold">{currency}45,231</p>
                                 <p className="text-xs text-emerald-500 flex items-center justify-end gap-1">
                                     <TrendingUp className="w-3 h-3" /> +20.1% this month
                                 </p>
@@ -251,7 +251,7 @@ export default function DashboardHome() {
                                     </div>
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-sm font-semibold">`+${currency}${tx.amount}`</p>
+                                    <p className="text-sm font-semibold">+{currency}{tx.amount}</p>
                                     <p className="text-xs text-muted-foreground mt-0.5">{tx.time}</p>
                                 </div>
                             </div>
