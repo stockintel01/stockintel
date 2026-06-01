@@ -36,8 +36,8 @@ export default function DrugAnalyticsPage() {
         // Derive from Zustand inventory when no orgId (demo mode)
         const derived: DrugPerformance[] = inventory.map(item => {
           const stock = item.quantity ?? 0;
-          const reorder = item.reorderLevel ?? 50;
-          const avgDaily = item.avgDailySales ?? 1;
+          const reorder = (item as any).reorderLevel ?? 50;
+          const avgDaily = (item as any).avgDailySales ?? 1;
           const days = avgDaily > 0 ? Math.floor(stock / avgDaily) : 999;
           const status: DrugPerformance['status'] = days <= 7 ? 'critical' : days <= 14 ? 'warning' : 'healthy';
           return {
