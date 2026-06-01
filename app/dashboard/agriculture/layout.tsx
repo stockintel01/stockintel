@@ -12,7 +12,7 @@ import {
 import { MOCK_AGRIC_ALERTS, MOCK_STOCK_REQUESTS, MOCK_EQUIPMENT_CHECKOUTS } from '@/lib/agric/mock-data';
 
 // Nav sections
-const CROP_NAV = [
+const CROP_NAV: Array<{ href: string; label: string; icon: any; badgeKey?: string }> = [
   { href: '/dashboard/agriculture', label: 'Farm Overview', icon: LayoutDashboard },
   { href: '/dashboard/agriculture/stock-management', label: 'Stock Management', icon: Package },
   { href: '/dashboard/agriculture/requests', label: 'Stock Requests', icon: ShoppingCart, badgeKey: 'requests' },
@@ -22,7 +22,7 @@ const CROP_NAV = [
   { href: '/dashboard/agriculture/packing-station', label: 'Packing Station', icon: Boxes },
 ];
 
-const LIVESTOCK_NAV = [
+const LIVESTOCK_NAV: Array<{ href: string; label: string; icon: any; badgeKey?: string }> = [
   { href: '/dashboard/agriculture/livestock', label: 'Livestock Overview', icon: LayoutDashboard },
   { href: '/dashboard/agriculture/livestock/egg-production', label: '🥚 Egg Production', icon: BarChart3 },
   { href: '/dashboard/agriculture/livestock/feed', label: '🌾 Feed Log', icon: Package },
@@ -32,7 +32,7 @@ const LIVESTOCK_NAV = [
   { href: '/dashboard/agriculture/livestock/milk', label: '🥛 Milk Production', icon: Boxes },
 ];
 
-const NAV_ITEMS = [...CROP_NAV, ...LIVESTOCK_NAV,
+const NAV_ITEMS: Array<{ href: string; label: string; icon: any; badgeKey?: string }> = [...CROP_NAV, ...LIVESTOCK_NAV,
   { href: '/dashboard/agriculture/weather', label: 'Live Weather', icon: Cloud, badgeKey: 'weather' },
   { href: '/dashboard/agriculture/reports', label: 'Reports', icon: BarChart3 },
 ];
