@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAppStore, SUPER_ADMIN_EMAIL } from '@/lib/store';
 import { useRouter, usePathname } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthContext';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import {
@@ -50,10 +51,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return () => clearInterval(interval);
     }, [inventory]);
 
-    // Auth guard
+    const { loading: authLoading } = useAuth();
+
+    // Auth guard — only redirect after Firebase has fully resolved auth state.
+    // Without the authLoading check, the guard fires with isAuthenticated=false
+    // before onAuthStateChanged completes, causing a redirect loop.
     useEffect(() => {
-        if (!user && !isAuthenticated) router.push('/login');
-    }, [user, isAuthenticated, router]);
+        if (!authLoading && !user && !isAuthenticated) {
+            router.push('/login');
+        }
+    }, [authLoading, user, isAuthenticated, router]);
 
     // Grouped nav configs per industry
     const industryConfig: Record<string, { name: string; icon: React.ElementType; color: string; groups: NavGroup[] }> = {

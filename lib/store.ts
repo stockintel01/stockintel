@@ -142,7 +142,7 @@ export const useAppStore = create<AppState>()(
             locations: [],
             transfers: [],
 
-            setStoreUser: (user, org = null) => set({ user, organization: org }),
+            setStoreUser: (user, org = null) => set({ user, organization: org, isAuthenticated: !!user }),
             setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
 
             login: (email, industry) => {

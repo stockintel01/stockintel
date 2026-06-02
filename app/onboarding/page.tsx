@@ -178,6 +178,8 @@ export default function OnboardingPage() {
         if (step < STEPS.length - 1) {
             setStep(s => s + 1);
         } else {
+            // Mark authenticated before navigating — prevents dashboard guard redirect
+            setAuthenticated(true);
             router.push('/dashboard');
         }
     };

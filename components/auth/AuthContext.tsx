@@ -1,4 +1,3 @@
-
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
@@ -6,7 +5,8 @@ import {
     User,
     onAuthStateChanged,
     signInWithPopup,
-    GoogleAuthProvider,
+    signInWithRedirect,
+    getRedirectResult,
     signOut
 } from "firebase/auth";
 import { auth, googleProvider, db } from "@/lib/firebase";
@@ -36,125 +36,202 @@ const AuthContext = createContext<AuthContextType>({
 export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState<User | null>(null);
-    const [loading, setLoading] = useState(true);
-    const setStoreUser = useAppStore((state) => state.setStoreUser);
+    const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+    // authReady: true once Firebase has resolved the initial auth state
+    // This is the single source of truth for whether the guard should fire
+    const [authReady, setAuthReady] = useState(false);
+
+    const setStoreUser    = useAppStore((state) => state.setStoreUser);
     const setAuthenticated = useAppStore((state) => state.setAuthenticated);
 
-    // Listen to Firebase Auth state changes
     useEffect(() => {
+        // Handle redirect result first (for browsers that block popups)
+        getRedirectResult(auth).then(async (result) => {
+            if (result?.user) {
+                // New user from redirect — create profile if needed
+                const existing = await getUserProfile(result.user.uid);
+                if (!existing) {
+                    const orgId = await createOrganization(
+                        result.user.uid, 'pharmacy',
+                        result.user.displayName || 'My Business'
+                    );
+                    await createUserProfile({
+                        uid: result.user.uid,
+                        email: result.user.email || '',
+                        displayName: result.user.displayName || 'User',
+                        photoURL: result.user.photoURL || '',
+                        organizationId: orgId,
+                        role: 'owner',
+                        createdAt: new Date(),
+                    } as any);
+                }
+            }
+        }).catch(console.warn);
+
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-            setUser(currentUser);
-            setLoading(false);
+            setFirebaseUser(currentUser);
 
             if (currentUser) {
-                // Fetch complete profile from Firestore
-                const profile = await getUserProfile(currentUser.uid);
-                if (profile) {
-                    // Fetch Org Details too
-                    const orgSnap = await getDoc(doc(db, "organizations", profile.organizationId));
-                    const orgData = orgSnap.exists() ? (orgSnap.data() as Organization) : null;
+                try {
+                    let profile = await getUserProfile(currentUser.uid);
 
+                    if (!profile) {
+                        // No Firestore profile yet — user exists in Auth but hasn't finished
+                        // onboarding. Still mark as authenticated so dashboard can load
+                        // and onboarding page can finish writing the profile.
+                        // Build a minimal store user from Firebase Auth data.
+                        const storeUser: StoreUser = {
+                            id:             currentUser.uid,
+                            name:           currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
+                            email:          currentUser.email || '',
+                            photoURL:       currentUser.photoURL || '',
+                            organizationId: '',
+                            role:           'owner',
+                        };
+                        setStoreUser(storeUser, null);
+                        setAuthenticated(true);
+                    } else {
+                        // Super admin role override
+                        if (currentUser.email === SUPER_ADMIN_EMAIL) {
+                            (profile as any).role = 'super_admin';
+                        }
+
+                        // Fetch the org document
+                        let orgData: Organization | null = null;
+                        if (profile.organizationId) {
+                            try {
+                                const orgSnap = await getDoc(doc(db, 'organizations', profile.organizationId));
+                                orgData = orgSnap.exists() ? (orgSnap.data() as Organization) : null;
+                            } catch {
+                                // Org read failed (rules / offline) — continue without it
+                            }
+                        }
+
+                        const storeUser: StoreUser = {
+                            id:             profile.uid,
+                            name:           profile.displayName,
+                            email:          profile.email,
+                            role:           profile.role as any,
+                            organizationId: profile.organizationId,
+                            photoURL:       profile.photoURL,
+                        };
+
+                        setStoreUser(storeUser, orgData);
+                        setAuthenticated(true);
+                    }
+                } catch (err) {
+                    console.error('[AuthContext] profile load error:', err);
+                    // Even on error, mark authenticated so the user isn't looped to /login
+                    // when they ARE logged in to Firebase
                     const storeUser: StoreUser = {
-                        id: profile.uid,
-                        name: profile.displayName,
-                        email: profile.email,
-                        role: profile.role,
-                        organizationId: profile.organizationId,
-                        photoURL: profile.photoURL
+                        id:             currentUser.uid,
+                        name:           currentUser.displayName || 'User',
+                        email:          currentUser.email || '',
+                        photoURL:       currentUser.photoURL || '',
+                        organizationId: '',
+                        role:           'owner',
                     };
-                    setStoreUser(storeUser, orgData);
+                    setStoreUser(storeUser, null);
                     setAuthenticated(true);
-                } else {
-                    // Authenticated in Firebase but no profile yet (mid-registration)
-                    // Do nothing, wait for registration flow to complete
                 }
             } else {
+                // Signed out
                 setStoreUser(null, null);
                 setAuthenticated(false);
             }
+
+            // Auth state is now resolved — safe for the guard to run
+            setAuthReady(true);
         });
 
         return () => unsubscribe();
     }, [setStoreUser, setAuthenticated]);
 
+    // ── Google Sign In ────────────────────────────────────────────
     const signInWithGoogle = async (referrerCode?: string) => {
+        let fbUser: User;
         try {
+            // Try popup first (works in most desktop browsers)
             const result = await signInWithPopup(auth, googleProvider);
-            const user = result.user;
-
-            // Check if user exists in Firestore
-            const existingProfile = await getUserProfile(user.uid);
-
-            if (!existingProfile) {
-                // New User Flow — create org shell, then send to onboarding to fill details
-                let role: "owner" | "worker" = "owner";
-                let organizationId = "";
-
-                // 1. Check for Pending Invitation
-                if (user.email) {
-                    const invitation = await checkPendingInvitation(user.email);
-                    if (invitation) {
-                        role = invitation.role as any;
-                        organizationId = invitation.organizationId;
-                    }
-                }
-
-                // 2. If no invitation, create new Organization shell (industry chosen in onboarding)
-                if (!organizationId) {
-                    const orgName = user.displayName || "My Business";
-                    organizationId = await createOrganization(
-                        user.uid,
-                        'pharmacy', // placeholder — onboarding will update this
-                        orgName,
-                        referrerCode ?? undefined
-                    );
-                }
-
-                // 3. Create User Profile
-                const newProfile: StoreUser = {
-                    id: user.uid,
-                    name: user.displayName || "User",
-                    email: user.email || "",
-                    photoURL: user.photoURL || "",
-                    organizationId,
-                    role
-                };
-
-                await createUserProfile({
-                    uid: user.uid,
-                    email: user.email || "",
-                    displayName: user.displayName || "User",
-                    photoURL: user.photoURL || "",
-                    organizationId,
-                    role,
-                    createdAt: new Date()
-                } as any);
-
-                // Fetch Org Data
-                const orgSnap = await getDoc(doc(db, "organizations", organizationId));
-                const orgData = orgSnap.exists() ? (orgSnap.data() as Organization) : null;
-
-                setStoreUser(newProfile, orgData);
-                setAuthenticated(true);
+            fbUser = result.user;
+        } catch (popupErr: any) {
+            // Popup blocked or failed — fall back to redirect flow
+            if (
+                popupErr.code === 'auth/popup-blocked' ||
+                popupErr.code === 'auth/popup-closed-by-user' ||
+                popupErr.code === 'auth/cancelled-popup-request'
+            ) {
+                await signInWithRedirect(auth, googleProvider);
+                return; // Page will redirect; onAuthStateChanged handles the rest
             }
-        } catch (error) {
-            console.error("Error signing in with Google", error);
-            throw error;
+            throw popupErr;
         }
+
+        // Check if this user already has a Firestore profile
+        const existingProfile = await getUserProfile(fbUser.uid);
+
+        if (!existingProfile) {
+            // New user — create org + profile, then redirect to onboarding
+            let role: 'owner' | 'worker' = 'owner';
+            let organizationId = '';
+
+            // Check for pending invitation first
+            if (fbUser.email) {
+                const invitation = await checkPendingInvitation(fbUser.email);
+                if (invitation) {
+                    role           = invitation.role as any;
+                    organizationId = invitation.organizationId;
+                }
+            }
+
+            // No invitation — create a new org shell
+            if (!organizationId) {
+                organizationId = await createOrganization(
+                    fbUser.uid,
+                    'pharmacy', // placeholder; onboarding will update industry
+                    fbUser.displayName || 'My Business',
+                    referrerCode ?? undefined
+                );
+            }
+
+            await createUserProfile({
+                uid:            fbUser.uid,
+                email:          fbUser.email || '',
+                displayName:    fbUser.displayName || 'User',
+                photoURL:       fbUser.photoURL || '',
+                organizationId,
+                role,
+                createdAt:      new Date(),
+            } as any);
+
+            // onAuthStateChanged will fire again and hydrate the store.
+            // The login page will redirect to /onboarding after this resolves.
+        }
+        // For existing users onAuthStateChanged already fired and hydrated state.
+        // The caller (login page) handles the redirect after this promise resolves.
     };
 
     const logout = async () => {
         try {
             await signOut(auth);
-        } catch (error) {
-            console.error("Error signing out", error);
+        } catch (err) {
+            console.error('Error signing out:', err);
         }
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout }}>
-            {!loading && children}
+        <AuthContext.Provider value={{ user: firebaseUser, loading: !authReady, signInWithGoogle, logout }}>
+            {/* Block rendering until Firebase has resolved auth state.
+                This prevents the dashboard guard from firing with stale
+                isAuthenticated=false before onAuthStateChanged completes. */}
+            {authReady ? children : (
+                <div className="min-h-screen flex items-center justify-center bg-background">
+                    <div className="flex flex-col items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center font-black text-primary-foreground text-base">SI</div>
+                        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    </div>
+                </div>
+            )}
         </AuthContext.Provider>
     );
 }
