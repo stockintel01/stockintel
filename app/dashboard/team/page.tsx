@@ -18,16 +18,19 @@ interface TeamMember {
     status: 'Active' | 'Invited';
 }
 
-const MOCK_SHIFTS = [
-    { id: 1, userId: 1, userName: 'Dr. Sarah Wilson', date: '2026-05-26', startTime: '08:00', endTime: '16:00', status: 'Completed' },
-    { id: 2, userId: 2, userName: 'Mike Johnson', date: '2026-05-26', startTime: '16:00', endTime: '00:00', status: 'On Duty' },
-    { id: 3, userId: 3, userName: 'Emily Davis', date: '2026-05-25', startTime: '08:00', endTime: '16:00', status: 'Scheduled' },
-];
+interface Shift {
+    id: string;
+    userName: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    status: string;
+}
 
 export default function TeamPage() {
     const { user, organization } = useAppStore();
     const [team, setTeam] = useState<TeamMember[]>([]);
-    const [shifts, setShifts] = useState(MOCK_SHIFTS);
+    const [shifts] = useState<Shift[]>([]);
     const [isInviteOpen, setIsInviteOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('members');
     const [inviteEmail, setInviteEmail] = useState('');

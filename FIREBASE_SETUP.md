@@ -22,6 +22,7 @@ The approved complimentary-access super admin accounts are:
 
 - `mawuklegodson@gmail.com`
 - `enochapafloe@gmail.com`
+- `stockintel01@gmail.com`
 
 Both accounts must sign in once before running:
 
@@ -49,7 +50,10 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
 NEXT_PUBLIC_FIREBASE_APP_ID
 STRIPE_SECRET_KEY          (optional — for billing)
 STRIPE_WEBHOOK_SECRET      (optional)
-ANTHROPIC_API_KEY          (optional — for AI consultation)
+AI_PROVIDER                (optional: auto, openai, gemini, or anthropic)
+OPENAI_API_KEY             (optional — OpenAI AI features)
+GEMINI_API_KEY             (optional — Google Gemini AI features)
+ANTHROPIC_API_KEY          (optional — Anthropic AI features)
 ```
 
 ## Auth Flow Explained

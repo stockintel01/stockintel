@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="IntelliStock">
+  <rect width="512" height="512" rx="112" fill="#4f46e5"/>
+  <path d="M132 148h248v62H132zm0 92h248v62H132zm0 92h166v62H132z" fill="#fff"/>
+  <circle cx="350" cy="363" r="48" fill="#22c55e"/>
+</svg>

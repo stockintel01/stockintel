@@ -21,7 +21,8 @@ service cloud.firestore {
       return request.auth != null &&
         request.auth.token.email in [
           'mawuklegodson@gmail.com',
-          'enochapafloe@gmail.com'
+          'enochapafloe@gmail.com',
+          'stockintel01@gmail.com'
         ];
     }
 
@@ -140,6 +141,23 @@ service cloud.firestore {
         allow create: if isSignedIn() && isSameOrg(orgId);
         allow update: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
         allow delete: if isSignedIn() && isSameOrg(orgId) && isOwner();
+      }
+
+      match /locations/{locationId} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow delete: if isSignedIn() && isSameOrg(orgId) && isOwner();
+      }
+
+      match /transfers/{transferId} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow delete: if isSignedIn() && isSameOrg(orgId) && isOwner();
+      }
+
+      match /shifts/{shiftId} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
       }
 
       // ── Consultations ─────────────────────────────────────────

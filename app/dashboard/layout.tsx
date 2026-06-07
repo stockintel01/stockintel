@@ -14,6 +14,7 @@ import {
     ChevronDown, FlaskConical, CalendarDays, Tractor, PackageCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useInventory } from '@/lib/hooks/useInventory';
 
 interface NavItem {
     name: string;
@@ -27,6 +28,7 @@ interface NavGroup {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+    useInventory();
     const router = useRouter();
     const pathname = usePathname();
     const { user, activeIndustry, logout, isAuthenticated, inventory } = useAppStore();

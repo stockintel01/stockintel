@@ -15,6 +15,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "IntelliStock AI - Intelligent Multi-Industry Management",
   description: "Advanced AI-powered inventory and management system for Pharmacy, Agriculture, and Retail.",
+  manifest: "/manifest.json",
+  icons: { icon: "/logo.svg", apple: "/logo.svg" },
 };
 
 export default function RootLayout({

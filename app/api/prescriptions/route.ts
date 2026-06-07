@@ -1,89 +1,38 @@
-/**
- * POST /api/prescriptions
- * Digitizes a handwritten/printed prescription image using Claude Vision.
- * Returns structured patient and drug data extracted from the image.
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { ApiError, requireUser } from '@/lib/api-auth';
+import { generateAiText, getAiProvider } from '@/lib/ai-provider';
 
 export const runtime = 'nodejs';
 
-
 export async function POST(req: NextRequest) {
     try {
-    await requireUser(req);
-    if (!process.env.ANTHROPIC_API_KEY) {
-        return NextResponse.json({ error: 'AI service not configured' }, { status: 503 });
-    }
+        await requireUser(req);
+        if (!getAiProvider()) return NextResponse.json({ error: 'AI service not configured' }, { status: 503 });
 
-    const formData  = await req.formData();
-    const file      = formData.get('file') as File | null;
+        const formData = await req.formData();
+        const file = formData.get('file') as File | null;
+        if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+        if (file.size > 10 * 1024 * 1024) return NextResponse.json({ error: 'File exceeds 10MB limit' }, { status: 413 });
+        if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type)) {
+            return NextResponse.json({ error: 'Unsupported file type' }, { status: 415 });
+        }
 
-    if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
-    if (file.size > 10 * 1024 * 1024) return NextResponse.json({ error: 'File exceeds 10MB limit' }, { status: 413 });
-    if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type)) {
-        return NextResponse.json({ error: 'Unsupported file type' }, { status: 415 });
-    }
-
-    const bytes  = await file.arrayBuffer();
-    const base64 = Buffer.from(bytes).toString('base64');
-    const mime   = file.type || 'image/jpeg';
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-            'Content-Type':      'application/json',
-            'x-api-key':         process.env.ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-            model:      'claude-sonnet-4-20250514',
-            max_tokens: 800,
-            system: `You are a medical OCR system for an Indian pharmacy. Extract prescription data and return ONLY valid JSON — no markdown, no prose.
-
-Schema:
-{
-  "patientName": string,
-  "age": string,
-  "doctorName": string,
-  "date": string,
-  "drugs": [{ "name": string, "dosage": string, "duration": string, "instructions": string }],
-  "notes": string,
-  "confidence": "high"|"medium"|"low"
-}
-
-If you cannot read a field, use an empty string. Never invent data.`,
-            messages: [{
-                role: 'user',
-                content: [
-                    {
-                        type:   'image',
-                        source: { type: 'base64', media_type: mime, data: base64 },
-                    },
-                    {
-                        type: 'text',
-                        text: 'Extract all prescription information from this image.',
-                    },
-                ],
-            }],
-        }),
-    });
-
-    if (!response.ok) {
-        return NextResponse.json({ error: 'AI processing failed' }, { status: 502 });
-    }
-
-    const data = await response.json();
-    const text = (data.content?.[0]?.text ?? '').replace(/```json|```/g, '').trim();
-
-    try {
+        const text = await generateAiText({
+            system: `You are a medical OCR system for a pharmacy. Return only valid JSON.
+Schema: {"patientName":string,"age":string,"doctorName":string,"date":string,"drugs":[{"name":string,"dosage":string,"duration":string,"instructions":string}],"notes":string,"confidence":"high"|"medium"|"low"}
+Use an empty string for unreadable fields. Never invent data.`,
+            prompt: 'Extract all prescription information from this uploaded document.',
+            maxTokens: 800,
+            json: true,
+            attachment: {
+                base64: Buffer.from(await file.arrayBuffer()).toString('base64'),
+                mimeType: file.type,
+                filename: file.name,
+            },
+        });
         return NextResponse.json(JSON.parse(text));
-    } catch {
-        return NextResponse.json({ error: 'Could not parse prescription data' }, { status: 502 });
-    }
     } catch (error) {
-        const status = error instanceof ApiError ? error.status : 400;
+        const status = error instanceof ApiError ? error.status : error instanceof SyntaxError ? 502 : 400;
         return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid request' }, { status });
     }
 }

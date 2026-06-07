@@ -1,11 +1,11 @@
 /**
  * POST /api/consultation
- * Real AI drug recommendation using Claude — inventory-grounded.
- * Requires: ANTHROPIC_API_KEY env var.
+ * Provider-selectable AI drug recommendation grounded in live inventory.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ApiError, requireUser } from '@/lib/api-auth';
+import { generateAiText, getAiProvider } from '@/lib/ai-provider';
 
 interface InventoryItem { id: string; name: string; sku: string; category: string; quantity: number; mrp: number; }
 interface ConsultationRequest {
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     if (symptoms.length > 5000 || !Array.isArray(inventory) || inventory.length > 1000) {
         return NextResponse.json({ error: 'Request is too large' }, { status: 413 });
     }
-    if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: 'AI not configured' }, { status: 503 });
+    if (!getAiProvider()) return NextResponse.json({ error: 'AI not configured' }, { status: 503 });
 
     const inStock = inventory.filter(i => i.quantity > 0);
     const inventoryList = inStock.map(i =>
@@ -54,24 +54,7 @@ Schema: { "assessment": string, "recommendations": [{ "itemId": string, "name": 
     const userMsg = `Symptoms: ${symptoms}\nPatient: ${patient}\n\nInventory (recommend only from this):\n${inventoryList}`;
 
     try {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': process.env.ANTHROPIC_API_KEY,
-                'anthropic-version': '2023-06-01',
-            },
-            body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 1500,
-                system,
-                messages: [{ role: 'user', content: userMsg }],
-            }),
-        });
-
-        if (!res.ok) throw new Error(`Claude API ${res.status}`);
-        const data = await res.json();
-        const text = (data.content?.[0]?.text ?? '').replace(/```json|```/g, '').trim();
+        const text = await generateAiText({ system, prompt: userMsg, maxTokens: 1500, json: true });
         const result: ConsultationResponse = JSON.parse(text);
 
         // Safety: only return recs whose itemId actually exists in inventory

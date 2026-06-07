@@ -24,12 +24,6 @@ interface Prescription {
     status: 'Pending' | 'Completed'; type: 'IP' | 'OP'; ward: string;
 }
 
-const SEED_PRESCRIPTIONS: Prescription[] = [
-    { id: 'RX-7721', patient: 'John Doe',      date: '2026-05-21', drugs: 'Amoxicillin, Paracetamol',   status: 'Pending',   type: 'OP', ward: ''     },
-    { id: 'RX-7722', patient: 'Jane Smith',    date: '2026-05-20', drugs: 'Metformin, Atorvastatin',    status: 'Completed', type: 'IP', ward: 'B-102' },
-    { id: 'RX-7723', patient: 'Robert Brown',  date: '2026-05-19', drugs: 'Ibuprofen',                  status: 'Pending',   type: 'OP', ward: ''     },
-];
-
 const CONFIDENCE_CONFIG = {
     high:   { label: 'High confidence',   color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/30' },
     medium: { label: 'Medium confidence', color: 'text-amber-600',   bg: 'bg-amber-50 dark:bg-amber-950/30'   },
@@ -41,7 +35,7 @@ export default function PrescriptionsPage() {
     const { inventory } = useAppStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const [prescriptions, setPrescriptions] = useState<Prescription[]>(SEED_PRESCRIPTIONS);
+    const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
     const [search, setSearch]         = useState('');
     const [isScanning, setIsScanning] = useState(false);
     const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -78,16 +72,6 @@ export default function PrescriptionsPage() {
             setScanResult(data);
         } catch (err: unknown) {
             setScanError(err instanceof Error ? err.message : 'Failed to process prescription. Check AI configuration.');
-            // Show a demo result as fallback
-            setScanResult({
-                patientName: 'Alice Johnson', age: '34', doctorName: 'Dr. Kumar',
-                date: new Date().toLocaleDateString(), confidence: 'medium',
-                notes: 'Patient reports allergy to Penicillin',
-                drugs: [
-                    { name: 'Augmentin 625mg', dosage: '1-0-1', duration: '5 Days', instructions: 'After food' },
-                    { name: 'Paracetamol 500mg', dosage: '1-1-1', duration: '3 Days', instructions: 'For fever/pain' },
-                ],
-            });
         } finally {
             setIsScanning(false);
         }

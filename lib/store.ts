@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { MOCK_INVENTORY, InventoryItem } from './mock-data';
+import { InventoryItem } from './mock-data';
 
 export type UserRole = 'super_admin' | 'owner' | 'manager' | 'worker';
 export type IndustryType = 'pharmacy' | 'agriculture' | 'retail';
@@ -91,7 +91,6 @@ interface AppState {
     transfers: StockTransfer[];
 
     // Actions
-    login: (email: string, industry: IndustryType) => void;
     logout: () => void;
     setStoreUser: (user: User | null, org?: Organization | null) => void;
     setAuthenticated: (status: boolean) => void;
@@ -100,6 +99,7 @@ interface AppState {
     updateReceiptSettings: (settings: Partial<AppState['receiptSettings']>) => void;
     updateTaxSettings: (settings: Partial<AppState['taxSettings']>) => void;
     updateInventoryQuantity: (id: string, quantityChange: number) => void;
+    setInventory: (items: InventoryItem[]) => void;
     addInventoryItem: (item: InventoryItem) => void;
     
     // Location/transfer actions
@@ -134,7 +134,7 @@ export const useAppStore = create<AppState>()(
                 rate: 18
             },
             isAuthenticated: false,
-            inventory: MOCK_INVENTORY,
+            inventory: [],
             
             // Initialize location/transfer state
             locations: [],
@@ -143,23 +143,12 @@ export const useAppStore = create<AppState>()(
             setStoreUser: (user, org = null) => set({ user, organization: org, isAuthenticated: !!user }),
             setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
 
-            login: (email, industry) => {
-                const mockUser: User = {
-                    id: '1',
-                    name: 'Demo User',
-                    email,
-                    role: 'owner',
-                    organizationId: 'org_1'
-                };
-                set({ user: mockUser, activeIndustry: industry, isAuthenticated: true });
-            },
-
             logout: () => set({
                 user: null,
                 organization: null,
                 isAuthenticated: false,
                 activeIndustry: 'pharmacy',
-                inventory: MOCK_INVENTORY,
+                inventory: [],
                 locations: [],
                 transfers: [],
             }),
@@ -179,8 +168,9 @@ export const useAppStore = create<AppState>()(
                         : item
                 )
             })),
+            setInventory: (inventory) => set({ inventory }),
             addInventoryItem: (item) => set((state) => ({
-                inventory: [...state.inventory, item]
+                inventory: [...state.inventory.filter(existing => existing.id !== item.id), item]
             })),
             
             // Location actions

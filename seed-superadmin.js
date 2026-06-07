@@ -15,6 +15,7 @@ const db = admin.firestore();
 const SUPER_ADMIN_EMAILS = [
   'mawuklegodson@gmail.com',
   'enochapafloe@gmail.com',
+  'stockintel01@gmail.com',
 ];
 
 async function seed() {

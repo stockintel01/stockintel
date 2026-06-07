@@ -1,0 +1,30 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.email in [
+        'mawuklegodson@gmail.com',
+        'enochapafloe@gmail.com',
+        'stockintel01@gmail.com'
+      ];
+    }
+
+    function isSameOrg(orgId) {
+      return isSignedIn() &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId == orgId;
+    }
+
+    match /organizations/{orgId}/{allPaths=**} {
+      allow read, write: if isSuperAdmin() || isSameOrg(orgId);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -7,7 +7,7 @@
 - Firebase project (Blaze plan required for Cloud Functions)
 - Stripe account
 - Twilio account (optional — for WhatsApp/SMS alerts)
-- Anthropic API key (optional — for AI consultation and reports)
+- OpenAI, Google Gemini, or Anthropic API key (optional — for AI features)
 
 ---
 
@@ -72,11 +72,9 @@ Stripe Dashboard → Developers → API keys
 
 ---
 
-## 4. Anthropic Setup (optional)
+## 4. AI Provider Setup (optional)
 
-1. Go to [console.anthropic.com](https://console.anthropic.com)
-2. Create API key → set as `ANTHROPIC_API_KEY`
-3. The AI Consultation and AI Report Generator features will activate automatically
+Set `AI_PROVIDER` to `openai`, `gemini`, `anthropic`, or `auto`. Configure the matching `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `ANTHROPIC_API_KEY`. With `auto`, IntelliStock tries OpenAI, then Gemini, then Anthropic.
 
 ---
 
@@ -120,8 +118,14 @@ STRIPE_WEBHOOK_SECRET                 ← server-only
 NEXT_PUBLIC_STRIPE_PRICE_PRO
 NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE
 
-# Anthropic
-ANTHROPIC_API_KEY                     ← server-only
+# AI provider
+AI_PROVIDER=auto
+OPENAI_API_KEY
+OPENAI_MODEL
+GEMINI_API_KEY
+GEMINI_MODEL
+ANTHROPIC_API_KEY
+ANTHROPIC_MODEL
 
 # Twilio
 TWILIO_ACCOUNT_SID                    ← server-only
@@ -232,7 +236,7 @@ npm run lint
 | Google sign-in fails | Add Vercel domain to Firebase Auth authorized domains |
 | Firestore permission denied | Deploy `firestore.rules` with `firebase deploy --only firestore:rules` |
 | Stripe webhook 400 | Check `STRIPE_WEBHOOK_SECRET` matches the signing secret in Stripe Dashboard |
-| AI consultation returns 503 | `ANTHROPIC_API_KEY` not set in Vercel environment variables |
+| AI consultation returns 503 | Set `AI_PROVIDER` and its matching API key in Vercel |
 | Barcode scanner not working | Camera requires HTTPS — works automatically on Vercel, use `https://` locally via ngrok |
 | PWA install prompt not showing | Must be served over HTTPS with a valid manifest |
 | Build fails: `output: standalone` | Remove `output: 'standalone'` if using Vercel (Vercel handles this automatically) |

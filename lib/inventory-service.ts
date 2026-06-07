@@ -18,12 +18,12 @@
 
 import {
     collection, doc, onSnapshot, addDoc, updateDoc,
-    deleteDoc, runTransaction, writeBatch, query,
+    runTransaction, writeBatch, query,
     orderBy, getDocs, serverTimestamp, Timestamp,
     where, increment,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { InventoryItem, MOCK_INVENTORY } from '@/lib/mock-data';
+import { InventoryItem } from '@/lib/mock-data';
 
 // ─────────────────────────────────────────────
 // Types
@@ -223,15 +223,6 @@ export async function bulkImport(
  * Seed a brand-new organisation with the MOCK_INVENTORY starter data.
  * Safe to call multiple times — skips if org already has inventory.
  */
-export async function seedInventory(orgId: string, createdBy: string): Promise<void> {
-    const existing = await getDocs(inventoryRef(orgId));
-    if (!existing.empty) return; // already seeded
-
-    const items = MOCK_INVENTORY.map(({ id: _id, ...rest }) => rest);
-    await bulkImport(orgId, items, createdBy);
-    console.info(`[inventory-service] Seeded ${items.length} items for org ${orgId}`);
-}
-
 // ─────────────────────────────────────────────
 // CSV export
 // ─────────────────────────────────────────────

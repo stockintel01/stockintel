@@ -11,11 +11,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
-import {
-  MOCK_AGRIC_INVENTORY, MOCK_AGRIC_ALERTS, MOCK_STOCK_REQUESTS,
-  MOCK_EQUIPMENT_CHECKOUTS, MOCK_PACKING_RECORDS, MOCK_SHIPPING_RECORDS,
-  MOCK_SPRAY_PLANS,
-} from './mock-data';
 import type {
   AgricInventoryItem, UsageLog, StockRequest, EquipmentCheckout,
   SprayPlan, PackingRecord, ShippingRecord, AgricAlert, StockAdjustment,
@@ -25,7 +20,7 @@ import {
   subscribeEquipment, subscribePlans, subscribePackingToday,
   subscribeShipping, subscribeAlerts,
   addInventoryItem as fsAddItem, updateInventoryItem, softDeleteInventoryItem,
-  submitStockAdjustment, approveStockAdjustment, seedAgricInventory,
+  submitStockAdjustment, approveStockAdjustment,
   addUsageLog, createStockRequest, updateRequestStatus, dispatchRequest,
   checkoutEquipment, returnEquipment, createSprayPlan, logApplicationComplete,
   addPackingRecord, addShippingRecord, markAlertRead,
@@ -89,14 +84,14 @@ export function useAgric(): AgricState & AgricActions {
   const isLive = !!(orgId && userId);
 
   const [state, setState] = useState<AgricState>({
-    inventory: isLive ? [] : MOCK_AGRIC_INVENTORY,
+    inventory: [],
     usageLogs: [],
-    requests: isLive ? [] : MOCK_STOCK_REQUESTS,
-    checkouts: isLive ? [] : MOCK_EQUIPMENT_CHECKOUTS,
-    plans: isLive ? [] : MOCK_SPRAY_PLANS,
-    packingRecords: isLive ? [] : MOCK_PACKING_RECORDS,
-    shippingRecords: isLive ? [] : MOCK_SHIPPING_RECORDS,
-    alerts: isLive ? [] : MOCK_AGRIC_ALERTS,
+    requests: [],
+    checkouts: [],
+    plans: [],
+    packingRecords: [],
+    shippingRecords: [],
+    alerts: [],
     loading: isLive,
     error: null,
     isLive,
@@ -114,13 +109,13 @@ export function useAgric(): AgricState & AgricActions {
       // Not authenticated — use mock data
       setState(s => ({
         ...s,
-        inventory: MOCK_AGRIC_INVENTORY,
-        requests: MOCK_STOCK_REQUESTS,
-        checkouts: MOCK_EQUIPMENT_CHECKOUTS,
-        plans: MOCK_SPRAY_PLANS,
-        packingRecords: MOCK_PACKING_RECORDS,
-        shippingRecords: MOCK_SHIPPING_RECORDS,
-        alerts: MOCK_AGRIC_ALERTS,
+        inventory: [],
+        requests: [],
+        checkouts: [],
+        plans: [],
+        packingRecords: [],
+        shippingRecords: [],
+        alerts: [],
         loading: false, isLive: false,
       }));
       return;
@@ -131,10 +126,6 @@ export function useAgric(): AgricState & AgricActions {
     const TOTAL_SUBS = 8;
     const onLoad = () => { loaded++; if (loaded >= TOTAL_SUBS) setState(s => ({ ...s, loading: false })); };
     const onErr = (e: Error) => setState(s => ({ ...s, error: e.message, loading: false }));
-
-    // Seed on first load
-    seedAgricInventory(orgId, userId, MOCK_AGRIC_INVENTORY.map(({ id: _id, ...rest }) => rest))
-      .catch(console.warn);
 
     unsubsRef.current = [
       subscribeInventory(orgId, inv => { setState(s => ({ ...s, inventory: inv })); onLoad(); }, onErr),

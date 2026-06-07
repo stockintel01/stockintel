@@ -16,6 +16,7 @@ import {
   subscribePrescriptions, createPrescription, dispensePrescription,
   cancelPrescription, getDailyStats, type Prescription,
 } from '@/lib/pharmacy-service';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface Drug { name: string; dosage: string; duration: string; qty?: number; }
 interface ScanResult { patientName: string; age: string; drugs: Drug[]; }
@@ -46,6 +47,7 @@ export default function PrescriptionsPage() {
   const [patientAge, setPatientAge]       = useState('');
   const [drugs, setDrugs]                 = useState<Drug[]>([{ name: '', dosage: '', duration: '' }]);
   const [showManual, setShowManual]       = useState(false);
+  const [scanError, setScanError]         = useState('');
 
   // Load live prescriptions
   useEffect(() => {
@@ -67,26 +69,19 @@ export default function PrescriptionsPage() {
   const handleScanFile = useCallback((file: File) => {
     setIsScanning(true);
     setIsUploadOpen(false);
-    // Real implementation: POST file to /api/prescription-scan
+    setScanError('');
     const formData = new FormData();
     formData.append('file', file);
-    fetch('/api/prescription-scan', { method: 'POST', body: formData })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) {
-          setScanResult(data);
-          setPatientName(data.patientName ?? '');
-          setPatientAge(data.age ?? '');
-          setDrugs(data.drugs ?? [{ name: '', dosage: '', duration: '' }]);
-        } else {
-          // Fallback demo result if API not yet configured
-          setScanResult({ patientName: '', age: '', drugs: [{ name: '', dosage: '', duration: '' }] });
-          setDrugs([{ name: '', dosage: '', duration: '' }]);
-        }
+    authenticatedFetch('/api/prescriptions', { method: 'POST', body: formData })
+      .then(async r => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error ?? 'Prescription scan failed');
+        setScanResult(data);
+        setPatientName(data.patientName ?? '');
+        setPatientAge(data.age ?? '');
+        setDrugs(data.drugs ?? [{ name: '', dosage: '', duration: '' }]);
       })
-      .catch(() => {
-        setScanResult({ patientName: '', age: '', drugs: [{ name: '', dosage: '', duration: '' }] });
-      })
+      .catch(err => setScanError(err instanceof Error ? err.message : 'Prescription scan failed'))
       .finally(() => setIsScanning(false));
   }, []);
 
@@ -212,6 +207,8 @@ export default function PrescriptionsPage() {
           <Button onClick={() => setIsUploadOpen(true)}><Upload className="w-4 h-4 mr-2" /> Scan Prescription</Button>
         </div>
       </div>
+
+      {scanError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{scanError}</div>}
 
       {/* Daily KPIs */}
       <div className="grid grid-cols-3 gap-4">
