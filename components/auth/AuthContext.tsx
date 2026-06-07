@@ -23,14 +23,14 @@ import { doc, getDoc } from "firebase/firestore";
 interface AuthContextType {
     user: User | null;
     loading: boolean;
-    signInWithGoogle: (referrerCode?: string) => Promise<void>;
+    signInWithGoogle: (referrerCode?: string) => Promise<{ isNewUser: boolean }>;
     logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
     user: null,
     loading: true,
-    signInWithGoogle: async () => { },
+    signInWithGoogle: async () => ({ isNewUser: false }),
     logout: async () => { },
 });
 
@@ -70,6 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }).catch(console.warn);
 
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+            setAuthReady(false);
             setFirebaseUser(currentUser);
 
             if (currentUser) {
@@ -163,7 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 popupErr.code === 'auth/cancelled-popup-request'
             ) {
                 await signInWithRedirect(auth, googleProvider);
-                return; // Page will redirect; onAuthStateChanged handles the rest
+                return { isNewUser: false }; // Page will redirect; onAuthStateChanged handles the rest
             }
             throw popupErr;
         }
@@ -205,11 +206,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 createdAt:      new Date(),
             } as any);
 
-            // onAuthStateChanged will fire again and hydrate the store.
-            // The login page will redirect to /onboarding after this resolves.
+            const orgSnap = await getDoc(doc(db, 'organizations', organizationId));
+            setStoreUser({
+                id: fbUser.uid,
+                name: fbUser.displayName || 'User',
+                email: fbUser.email || '',
+                photoURL: fbUser.photoURL || '',
+                organizationId,
+                role: isSuperAdminEmail(fbUser.email) ? 'super_admin' : role,
+            }, orgSnap.exists() ? (orgSnap.data() as Organization) : null);
+            setAuthenticated(true);
+            return { isNewUser: true };
         }
-        // For existing users onAuthStateChanged already fired and hydrated state.
-        // The caller (login page) handles the redirect after this promise resolves.
+
+        return { isNewUser: false };
     };
 
     const logout = async () => {

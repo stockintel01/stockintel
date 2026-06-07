@@ -53,6 +53,8 @@ function LoginInner() {
       'auth/invalid-email':         'Please enter a valid email address.',
       'auth/too-many-requests':     'Too many attempts. Please wait a moment and try again.',
       'auth/network-request-failed':'Network error. Check your connection and try again.',
+      'auth/operation-not-allowed': 'This sign-in method is not enabled in Firebase Authentication.',
+      'auth/unauthorized-domain':   'This domain is not authorized in Firebase Authentication.',
       'auth/popup-closed-by-user':  'Sign-in popup was closed. Please try again.',
       'auth/cancelled-popup-request':'Another sign-in is in progress.',
       'auth/popup-blocked':         'Popup was blocked by your browser. Please allow popups and try again.',
@@ -128,8 +130,8 @@ function LoginInner() {
   async function handleGoogle() {
     setGoogleLoading(true); setError('');
     try {
-      await signInWithGoogle(referralCode ?? undefined);
-      router.push('/dashboard');
+      const { isNewUser } = await signInWithGoogle(referralCode ?? undefined);
+      router.push(isNewUser ? '/onboarding' : '/dashboard');
     } catch (err: any) {
       setError(friendlyError(err.code, err.message));
     } finally { setGoogleLoading(false); }

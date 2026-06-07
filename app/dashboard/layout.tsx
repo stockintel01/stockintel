@@ -31,7 +31,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     useInventory();
     const router = useRouter();
     const pathname = usePathname();
-    const { user, activeIndustry, logout, isAuthenticated, inventory } = useAppStore();
+    const { user, activeIndustry, isAuthenticated, inventory } = useAppStore();
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [expiringCount, setExpiringCount] = useState(0);
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
@@ -54,16 +54,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return () => clearInterval(interval);
     }, [inventory]);
 
-    const { loading: authLoading } = useAuth();
+    const { loading: authLoading, logout } = useAuth();
 
     // Auth guard — only redirect after Firebase has fully resolved auth state.
     // Without the authLoading check, the guard fires with isAuthenticated=false
     // before onAuthStateChanged completes, causing a redirect loop.
     useEffect(() => {
         if (!authLoading && !user && !isAuthenticated) {
-            router.push('/login');
+            router.replace('/login');
         }
     }, [authLoading, user, isAuthenticated, router]);
+
+    if (authLoading || !user || !isAuthenticated) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+        );
+    }
 
     // Grouped nav configs per industry
     const industryConfig: Record<string, { name: string; icon: React.ElementType; color: string; groups: NavGroup[] }> = {
