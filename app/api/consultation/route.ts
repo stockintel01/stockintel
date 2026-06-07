@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { ApiError, requireUser } from '@/lib/api-auth';
 
 interface InventoryItem { id: string; name: string; sku: string; category: string; quantity: number; mrp: number; }
 interface ConsultationRequest {
@@ -21,10 +22,15 @@ interface ConsultationResponse {
 }
 
 export async function POST(request: NextRequest) {
+    try {
+    await requireUser(request);
     const { symptoms, patientAge, patientWeight, isPregnant, existingConditions, inventory }: ConsultationRequest
         = await request.json();
 
     if (!symptoms?.trim()) return NextResponse.json({ error: 'Symptoms required' }, { status: 400 });
+    if (symptoms.length > 5000 || !Array.isArray(inventory) || inventory.length > 1000) {
+        return NextResponse.json({ error: 'Request is too large' }, { status: 413 });
+    }
     if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: 'AI not configured' }, { status: 503 });
 
     const inStock = inventory.filter(i => i.quantity > 0);
@@ -75,5 +81,9 @@ Schema: { "assessment": string, "recommendations": [{ "itemId": string, "name": 
     } catch (err) {
         console.error('[consultation]', err);
         return NextResponse.json({ error: err instanceof Error ? err.message : 'AI error' }, { status: 502 });
+    }
+    } catch (error) {
+        const status = error instanceof ApiError ? error.status : 400;
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid request' }, { status });
     }
 }

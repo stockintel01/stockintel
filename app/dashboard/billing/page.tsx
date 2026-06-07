@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAppStore } from '@/lib/store';
 import { loadStripe, type Stripe as StripeClient } from '@stripe/stripe-js'; // ✅ Import type with alias
-import { CreditCard, Calendar, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { CreditCard, Calendar, AlertCircle, CheckCircle, Loader2, ShieldCheck } from 'lucide-react';
+import { authenticatedFetch } from '@/lib/api-client';
+import { isSuperAdminEmail } from '@/lib/access-control';
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
@@ -15,6 +17,7 @@ export default function BillingPage() {
     const [error, setError] = useState<string | null>(null);
 
     const subscription = organization?.subscription;
+    const isSuperAdmin = isSuperAdminEmail(user?.email);
     const isFreeTrial = subscription?.plan === 'free_trial';
     const isActive = subscription?.status === 'active';
 
@@ -38,7 +41,7 @@ export default function BillingPage() {
         setError(null);
 
         try {
-            const response = await fetch('/api/checkout', {
+            const response = await authenticatedFetch('/api/checkout', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -88,6 +91,20 @@ export default function BillingPage() {
                 </Card>
             )}
 
+            {isSuperAdmin && (
+                <Card className="border-emerald-300 bg-emerald-50">
+                    <CardContent className="pt-6">
+                        <div className="flex items-start gap-3 text-emerald-800">
+                            <ShieldCheck className="w-5 h-5 mt-0.5" />
+                            <div>
+                                <div className="font-semibold">Complimentary Super Admin Access</div>
+                                <p className="text-sm mt-1">Your account has unrestricted access to every feature and does not require a paid subscription.</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
             {/* Current Subscription */}
             <Card>
                 <CardHeader>
@@ -129,7 +146,7 @@ export default function BillingPage() {
             </Card>
 
             {/* Pricing Plans */}
-            {isFreeTrial && (
+            {isFreeTrial && !isSuperAdmin && (
                 <div className="grid md:grid-cols-2 gap-6">
                     {/* Pro Plan */}
                     <Card className="border-2 border-blue-200">

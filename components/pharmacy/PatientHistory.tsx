@@ -47,7 +47,7 @@ export function PatientHistory({ patient, onBack, orgId }: Props) {
         prescription,
         notes: notes || undefined,
       };
-      await addPatientRecord(patient.id, record);
+      await addPatientRecord(orgId, patient.id, record);
       // Optimistic UI
       setLocalHistory(prev => [{ ...record, id: crypto.randomUUID() }, ...prev]);
       setShowForm(false);

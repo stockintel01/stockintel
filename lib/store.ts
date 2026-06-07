@@ -1,5 +1,3 @@
-export const SUPER_ADMIN_EMAIL = 'stockintel01@gmail.com';
-
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { MOCK_INVENTORY, InventoryItem } from './mock-data';
@@ -125,7 +123,7 @@ export const useAppStore = create<AppState>()(
                 businessName: 'StockIntel',
                 address: '123 Market Street, City, Country',
                 phone: '+1 234 567 890',
-                email: 'stockintel01@gmail.com',
+                email: 'mawuklegodson@gmail.com',
                 taxId: '29AAAAA0000A1Z5',
                 logoUrl: '',
                 footerText: 'Thank you for shopping with us!',

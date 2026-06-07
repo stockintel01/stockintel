@@ -68,7 +68,7 @@ Stripe Dashboard → Developers → API keys
    - Or apply for WhatsApp Business API approval (production)
    - `TWILIO_WHATSAPP_FROM=whatsapp:+14155238886` (sandbox number)
 5. Generate a random secret: `openssl rand -hex 16`
-   - Set as both `ALERT_WEBHOOK_SECRET` and `NEXT_PUBLIC_ALERT_SECRET`
+   - Set as `ALERT_WEBHOOK_SECRET` only. Never expose it with a `NEXT_PUBLIC_` prefix.
 
 ---
 
@@ -106,6 +106,12 @@ NEXT_PUBLIC_FIREBASE_PROJECT_ID
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
 NEXT_PUBLIC_FIREBASE_APP_ID
+NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+
+# Firebase Admin service account (server-only)
+FIREBASE_ADMIN_PROJECT_ID
+FIREBASE_ADMIN_CLIENT_EMAIL
+FIREBASE_ADMIN_PRIVATE_KEY                 ← preserve \n escapes in Vercel
 
 # Stripe
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
@@ -123,7 +129,6 @@ TWILIO_AUTH_TOKEN                     ← server-only
 TWILIO_FROM_NUMBER                    ← server-only
 TWILIO_WHATSAPP_FROM                  ← server-only
 ALERT_WEBHOOK_SECRET                  ← server-only
-NEXT_PUBLIC_ALERT_SECRET              ← client-side (same value)
 
 # App
 NEXT_PUBLIC_APP_URL=https://yourdomain.vercel.app

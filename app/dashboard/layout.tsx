@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAppStore, SUPER_ADMIN_EMAIL } from '@/lib/store';
+import { useAppStore } from '@/lib/store';
+import { isSuperAdminEmail } from '@/lib/access-control';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthContext';
 import Link from 'next/link';
@@ -94,7 +95,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Billing', href: '/dashboard/billing', icon: Wallet },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                        ...(user?.email === SUPER_ADMIN_EMAIL ? [{ name: 'Admin', href: '/dashboard/admin', icon: Shield }] : []),
+                        ...(isSuperAdminEmail(user?.email) ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
                     ],
                 },
             ],
@@ -138,7 +139,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         { name: 'Team', href: '/dashboard/team', icon: UserCog },
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                        ...(user?.email === SUPER_ADMIN_EMAIL ? [{ name: 'Admin', href: '/dashboard/admin', icon: Shield }] : []),
+                        ...(isSuperAdminEmail(user?.email) ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
                     ],
                 },
             ],
@@ -170,7 +171,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         { name: 'Team', href: '/dashboard/team', icon: UserCog },
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                        ...(user?.email === SUPER_ADMIN_EMAIL ? [{ name: 'Admin', href: '/dashboard/admin', icon: Shield }] : []),
+                        ...(isSuperAdminEmail(user?.email) ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
                     ],
                 },
             ],

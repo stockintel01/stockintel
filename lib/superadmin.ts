@@ -9,11 +9,12 @@ import {
   writeBatch, Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { isSuperAdminEmail, SUPER_ADMIN_EMAILS } from '@/lib/access-control';
 
-export const SUPER_ADMIN_EMAIL = 'stockintel01@gmail.com';
+export const SUPER_ADMIN_EMAIL = SUPER_ADMIN_EMAILS[0];
 
 export function isSuperAdmin(email?: string | null): boolean {
-  return email === SUPER_ADMIN_EMAIL;
+  return isSuperAdminEmail(email);
 }
 
 // ── Types ─────────────────────────────────────────────────────

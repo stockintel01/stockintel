@@ -12,6 +12,7 @@ import {
     Stethoscope, BedDouble, Plus, X, Brain, ScanLine
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface Drug { name: string; dosage: string; duration: string; instructions: string; }
 interface ScanResult {
@@ -70,7 +71,7 @@ export default function PrescriptionsPage() {
         form.append('file', file);
 
         try {
-            const res = await fetch('/api/prescriptions', { method: 'POST', body: form });
+            const res = await authenticatedFetch('/api/prescriptions', { method: 'POST', body: form });
             const data = await res.json();
 
             if (!res.ok) throw new Error(data.error ?? 'Digitization failed');

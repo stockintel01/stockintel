@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { stripe } from '@/lib/stripe';
-import { db } from '@/lib/firebase';
-import { doc, updateDoc, Timestamp } from 'firebase/firestore';
+import { getStripeClient } from '@/lib/stripe';
+import { adminDb } from '@/lib/firebase-admin';
+import { Timestamp } from 'firebase-admin/firestore';
 import Stripe from 'stripe';
 
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
+function getCurrentPeriodEnd(subscription: Stripe.Subscription | Stripe.Response<Stripe.Subscription>) {
+    const legacyValue = (subscription as unknown as { current_period_end?: unknown }).current_period_end;
+    if (typeof legacyValue === 'number') return legacyValue;
+    return subscription.items.data[0]?.current_period_end;
+}
 
 export async function POST(req: NextRequest) {
+    const stripe = getStripeClient();
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!webhookSecret) return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 });
     const body = await req.text();
     const signature = req.headers.get('stripe-signature');
 
@@ -18,8 +25,8 @@ export async function POST(req: NextRequest) {
 
     try {
         event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-    } catch (err: any) {
-        console.error('Webhook signature verification failed:', err.message);
+    } catch (err: unknown) {
+        console.error('Webhook signature verification failed:', err instanceof Error ? err.message : err);
         return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
 
@@ -55,13 +62,14 @@ export async function POST(req: NextRequest) {
         }
 
         return NextResponse.json({ received: true });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Webhook handler error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'Webhook failed' }, { status: 500 });
     }
 }
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+    const stripe = getStripeClient();
     const { organizationId, plan } = session.metadata || {};
 
     if (!organizationId) {
@@ -70,7 +78,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     }
 
     // ✅ Use 'any' to bypass Response<Subscription> wrapper
-    const subscription: any = await stripe.subscriptions.retrieve(
+    const subscription = await stripe.subscriptions.retrieve(
         session.subscription as string
     );
 
@@ -79,14 +87,15 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         return;
     }
 
-    if (typeof subscription.current_period_end !== 'number') {
+    const currentPeriodEndValue = getCurrentPeriodEnd(subscription);
+    if (typeof currentPeriodEndValue !== 'number') {
         console.error('Subscription missing valid current_period_end');
         return;
     }
 
-    const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+    const currentPeriodEnd = new Date(currentPeriodEndValue * 1000);
 
-    await updateDoc(doc(db, 'organizations', organizationId), {
+    await adminDb.collection('organizations').doc(organizationId).update({
         'subscription.plan': plan || 'pro',
         'subscription.status': 'active',
         'subscription.currentPeriodEnd': Timestamp.fromDate(currentPeriodEnd),
@@ -105,7 +114,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
         return;
     }
 
-    const currentPeriodEndValue = (subscription as any).current_period_end as number | undefined;
+    const currentPeriodEndValue = getCurrentPeriodEnd(subscription);
     if (typeof currentPeriodEndValue !== 'number') {
         console.error('Subscription missing valid current_period_end');
         return;
@@ -114,7 +123,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     const currentPeriodEnd = new Date(currentPeriodEndValue * 1000);
     const status = subscription.status === 'active' ? 'active' : 'expired';
 
-    await updateDoc(doc(db, 'organizations', organizationId), {
+    await adminDb.collection('organizations').doc(organizationId).update({
         'subscription.status': status,
         'subscription.currentPeriodEnd': Timestamp.fromDate(currentPeriodEnd),
     });
@@ -130,7 +139,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
         return;
     }
 
-    await updateDoc(doc(db, 'organizations', organizationId), {
+    await adminDb.collection('organizations').doc(organizationId).update({
         'subscription.status': 'cancelled',
     });
 

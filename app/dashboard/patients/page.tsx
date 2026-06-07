@@ -33,7 +33,8 @@ export default function PatientsPage() {
     if (!form.fullName || !form.contactNumber) { setError('Name and contact are required'); return; }
     setSaving(true); setError('');
     try {
-      await registerPatient({
+      if (!orgId) throw new Error('Organization not loaded');
+      await registerPatient(orgId, {
         fullName: form.fullName,
         contactNumber: form.contactNumber,
         dateOfBirth: form.dateOfBirth,

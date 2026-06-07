@@ -10,7 +10,8 @@ import {
     signOut
 } from "firebase/auth";
 import { auth, googleProvider, db } from "@/lib/firebase";
-import { useAppStore, SUPER_ADMIN_EMAIL, User as StoreUser, Organization } from "@/lib/store";
+import { useAppStore, User as StoreUser, Organization } from "@/lib/store";
+import { isSuperAdminEmail } from "@/lib/access-control";
 import {
     getUserProfile,
     checkPendingInvitation,
@@ -86,13 +87,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             email:          currentUser.email || '',
                             photoURL:       currentUser.photoURL || '',
                             organizationId: '',
-                            role:           'owner',
+                            role:           isSuperAdminEmail(currentUser.email) ? 'super_admin' : 'owner',
                         };
                         setStoreUser(storeUser, null);
                         setAuthenticated(true);
                     } else {
                         // Super admin role override
-                        if (currentUser.email === SUPER_ADMIN_EMAIL) {
+                        if (isSuperAdminEmail(currentUser.email)) {
                             (profile as any).role = 'super_admin';
                         }
 
@@ -129,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         email:          currentUser.email || '',
                         photoURL:       currentUser.photoURL || '',
                         organizationId: '',
-                        role:           'owner',
+                        role:           isSuperAdminEmail(currentUser.email) ? 'super_admin' : 'owner',
                     };
                     setStoreUser(storeUser, null);
                     setAuthenticated(true);

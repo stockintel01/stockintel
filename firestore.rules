@@ -4,7 +4,7 @@ rules_version = '2';
 // StockIntel — Firestore Security Rules
 //
 // Role hierarchy: super_admin > owner > manager > worker
-// Super admin (stockintel01@gmail.com) has full read/write.
+// Approved super admin accounts have full read/write.
 // All other access is org-scoped and role-gated.
 // ─────────────────────────────────────────────────────────────────
 
@@ -19,7 +19,10 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return request.auth != null &&
-        request.auth.token.email == 'stockintel01@gmail.com';
+        request.auth.token.email in [
+          'mawuklegodson@gmail.com',
+          'enochapafloe@gmail.com'
+        ];
     }
 
     function userDoc() {
@@ -59,13 +62,7 @@ service cloud.firestore {
 
     // ── Global patients collection (cross-pharmacy) ──────────────
     match /patients/{patientId} {
-      allow read:   if isSignedIn();
-      allow create: if isSignedIn()
-        && request.resource.data.keys().hasAll(['fullName', 'contactNumber'])
-        && request.resource.data.fullName is string
-        && request.resource.data.fullName.size() > 0;
-      allow update: if isSignedIn();
-      allow delete: if isSuperAdmin();
+      allow read, write: if isSuperAdmin();
     }
 
     // ── Users ────────────────────────────────────────────────────
@@ -74,9 +71,15 @@ service cloud.firestore {
         request.auth.uid == userId ||
         (isSameOrg(resource.data.organizationId) && isOwnerOrManager())
       );
-      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role == 'owner'
+        && get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data.ownerId == request.auth.uid;
       allow update: if isSignedIn() && (
-        request.auth.uid == userId ||
+        (request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt'])) ||
         isSuperAdmin()
       );
       allow delete: if isSuperAdmin();
@@ -85,9 +88,18 @@ service cloud.firestore {
     // ── Organisations ────────────────────────────────────────────
     match /organizations/{orgId} {
       allow read: if isSignedIn() && (isSameOrg(orgId) || isSuperAdmin());
-      allow create: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.subscription.plan == 'free_trial'
+        && request.resource.data.subscription.status == 'active';
       allow update: if isSignedIn() && (
-        (isSameOrg(orgId) && isOwner()) || isSuperAdmin()
+        (isSameOrg(orgId) && isOwner()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'name', 'industry', 'currency', 'address', 'phone', 'taxId',
+              'onboardingStep', 'onboardingComplete', 'receiptSettings', 'settings', 'updatedAt'
+            ])) ||
+        isSuperAdmin()
       );
       allow delete: if isSuperAdmin();
 
@@ -135,13 +147,16 @@ service cloud.firestore {
         allow read, write: if isSignedIn() && isSameOrg(orgId);
       }
 
+      match /patients/{patientId} {
+        allow read, create, update: if isSignedIn() && isSameOrg(orgId);
+        allow delete: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+      }
+
       // ── Credits / Rewards ──────────────────────────────────────
       match /credits/{creditId} {
         allow read: if isSignedIn() && isSameOrg(orgId);
         allow create: if isSuperAdmin();
-        allow update: if isSignedIn() && isSameOrg(orgId) && isOwner()
-          && request.resource.data.status == 'used'
-          && resource.data.status == 'available';
+        allow update: if false;
         allow delete: if isSuperAdmin();
       }
 
@@ -162,9 +177,8 @@ service cloud.firestore {
     match /invitations/{inviteId} {
       allow create: if isSignedIn() && isOwnerOrManager()
         && request.resource.data.organizationId == orgId();
-      allow read: if isSignedIn();
-      allow update: if isSignedIn() && isOwnerOrManager()
-        && isSameOrg(resource.data.organizationId);
+      allow read: if isSignedIn() && isSameOrg(resource.data.organizationId);
+      allow update: if false;
       allow delete: if isSuperAdmin();
     }
 

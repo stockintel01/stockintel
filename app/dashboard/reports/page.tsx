@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/lib/store';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Download, FileText, TrendingUp, Package, DollarSign, Calendar, Sparkles, Brain, Loader2, Copy, RefreshCw } from 'lucide-react';
+import { authenticatedFetch } from '@/lib/api-client';
 
 // Mock data for reports
 const salesByCategory = [
@@ -459,7 +460,7 @@ function AiReportGenerator() {
         const finalPrompt = customPrompt.trim() || selectedPrompt.prompt;
 
         try {
-            const res = await fetch('https://api.anthropic.com/v1/messages', {
+            const res = await authenticatedFetch('/api/reports', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -492,7 +493,7 @@ ${inventorySummary.topItems.map(i =>
 
             if (!res.ok) throw new Error(`API error ${res.status}`);
             const data = await res.json();
-            setReport(data.content?.[0]?.text ?? 'No report generated.');
+            setReport(data.report ?? 'No report generated.');
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : 'Report generation failed. Check your ANTHROPIC_API_KEY.');
         } finally {

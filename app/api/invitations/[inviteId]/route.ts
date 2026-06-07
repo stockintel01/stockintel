@@ -1,0 +1,63 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
+import { ApiError, requireUser } from '@/lib/api-auth';
+import { adminDb } from '@/lib/firebase-admin';
+
+export async function GET(_request: NextRequest, context: { params: Promise<{ inviteId: string }> }) {
+    const { inviteId } = await context.params;
+    const snapshot = await adminDb.collection('invitations').doc(inviteId).get();
+    if (!snapshot.exists || snapshot.data()?.status !== 'pending') {
+        return NextResponse.json({ error: 'Invitation not found' }, { status: 404 });
+    }
+
+    const invite = snapshot.data() ?? {};
+    return NextResponse.json({
+        id: snapshot.id,
+        email: invite.email,
+        role: invite.role,
+        orgName: invite.orgName,
+        status: invite.status,
+    }, { headers: { 'Cache-Control': 'private, no-store' } });
+}
+
+export async function POST(request: NextRequest, context: { params: Promise<{ inviteId: string }> }) {
+    try {
+        const user = await requireUser(request);
+        const { inviteId } = await context.params;
+        const inviteRef = adminDb.collection('invitations').doc(inviteId);
+        const userRef = adminDb.collection('users').doc(user.uid);
+
+        const result = await adminDb.runTransaction(async transaction => {
+            const inviteSnapshot = await transaction.get(inviteRef);
+            if (!inviteSnapshot.exists) throw new ApiError('Invitation not found', 404);
+
+            const invite = inviteSnapshot.data() ?? {};
+            if (invite.status !== 'pending') throw new ApiError('Invitation has already been used', 409);
+            if (!user.email || user.email.toLowerCase() !== String(invite.email).toLowerCase()) {
+                throw new ApiError('Sign in with the invited email address', 403);
+            }
+            if (!['manager', 'worker'].includes(invite.role)) throw new ApiError('Invalid invitation role', 400);
+
+            transaction.set(userRef, {
+                uid: user.uid,
+                email: user.email,
+                displayName: user.email.split('@')[0],
+                organizationId: invite.organizationId,
+                role: invite.role,
+                updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+            transaction.update(inviteRef, {
+                status: 'accepted',
+                acceptedAt: FieldValue.serverTimestamp(),
+                acceptedByUid: user.uid,
+            });
+
+            return { organizationId: invite.organizationId, role: invite.role };
+        });
+
+        return NextResponse.json(result);
+    } catch (error) {
+        const status = error instanceof ApiError ? error.status : 400;
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to accept invitation' }, { status });
+    }
+}

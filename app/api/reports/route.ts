@@ -5,16 +5,26 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { ApiError, requireUser } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
+    try {
+    await requireUser(req);
     if (!process.env.ANTHROPIC_API_KEY) {
         return NextResponse.json({ error: 'AI not configured' }, { status: 503 });
     }
 
-    const { prompt, context, orgName, industry } = await req.json();
+    const payload = await req.json();
+    const prompt = payload.prompt ?? payload.messages?.[0]?.content;
+    const context = payload.context ?? '';
+    const orgName = payload.orgName ?? 'IntelliStock';
+    const industry = payload.industry ?? 'inventory';
     if (!prompt) return NextResponse.json({ error: 'Prompt required' }, { status: 400 });
+    if (String(prompt).length > 5000 || String(context ?? '').length > 30000) {
+        return NextResponse.json({ error: 'Request is too large' }, { status: 413 });
+    }
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -35,4 +45,8 @@ Generate clear, professional, markdown-formatted reports. Use headings, bullets,
     if (!res.ok) return NextResponse.json({ error: `AI error ${res.status}` }, { status: 502 });
     const data = await res.json();
     return NextResponse.json({ report: data.content?.[0]?.text ?? '' });
+    } catch (error) {
+        const status = error instanceof ApiError ? error.status : 400;
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid request' }, { status });
+    }
 }

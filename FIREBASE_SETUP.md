@@ -16,7 +16,18 @@ In Firebase Console → Authentication → **Settings** → **Authorized domains
 
 **This is the most common reason Google sign-in fails.** If the domain isn't authorized, the OAuth popup will show an error.
 
-### 3. Set up Super Admin (stockintel01@gmail.com)
+### 3. Set up Super Admins
+
+The approved complimentary-access super admin accounts are:
+
+- `mawuklegodson@gmail.com`
+- `enochapafloe@gmail.com`
+
+Both accounts must sign in once before running:
+
+```bash
+node seed-superadmin.js
+```
 1. Sign in to the app once using Google or email
 2. Download `serviceAccountKey.json` from Firebase Console → Project Settings → Service accounts
 3. Place it in the project root

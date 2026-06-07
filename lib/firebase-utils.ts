@@ -16,6 +16,7 @@ import {
     increment
 } from "firebase/firestore";
 import { UserRole, IndustryType } from "@/lib/store";
+import { authenticatedFetch } from "@/lib/api-client";
 
 export interface FirestoreUser {
     uid: string;
@@ -298,47 +299,19 @@ export async function acceptInvitation(
     email: string,
     photoURL: string,
 ): Promise<{ organizationId: string; role: string }> {
-    const inviteRef = doc(db, 'invitations', inviteId);
-
-    let orgId = '';
-    let role = 'worker';
-
-    await runTransaction(db, async (tx) => {
-        const inviteSnap = await tx.get(inviteRef);
-        if (!inviteSnap.exists()) throw new Error('Invitation not found.');
-        const invite = inviteSnap.data();
-        if (invite.status !== 'pending') throw new Error('This invitation has already been used.');
-
-        orgId = invite.organizationId;
-        role = invite.role;
-
-        // Create the user profile
-        const userRef = doc(db, 'users', uid);
-        tx.set(userRef, {
-            uid,
-            email,
-            displayName,
-            photoURL,
-            organizationId: orgId,
-            role,
-            createdAt: serverTimestamp(),
-        });
-
-        // Mark invite accepted
-        tx.update(inviteRef, {
-            status: 'accepted',
-            acceptedAt: serverTimestamp(),
-            acceptedByUid: uid,
-        });
-    });
-
-    return { organizationId: orgId, role };
+    void uid; void displayName; void email; void photoURL;
+    const response = await authenticatedFetch(`/api/invitations/${encodeURIComponent(inviteId)}`, { method: 'POST' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? 'Unable to accept invitation');
+    return data;
 }
 
 /**
  * Find a pending invitation by invite ID (for the /join?invite=xxx flow).
  */
 export async function getInvitationById(inviteId: string) {
-    const snap = await getDoc(doc(db, 'invitations', inviteId));
-    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+    const response = await fetch(`/api/invitations/${encodeURIComponent(inviteId)}`);
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error('Unable to load invitation');
+    return response.json();
 }

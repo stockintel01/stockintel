@@ -1,13 +1,17 @@
 import Stripe from 'stripe';
 
-if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error('STRIPE_SECRET_KEY is not defined in environment variables');
-}
+let stripeClient: Stripe | undefined;
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: '2026-01-28.clover',
-    typescript: true,
-});
+export function getStripeClient() {
+    if (!process.env.STRIPE_SECRET_KEY) {
+        throw new Error('STRIPE_SECRET_KEY is not defined in environment variables');
+    }
+    stripeClient ??= new Stripe(process.env.STRIPE_SECRET_KEY, {
+        apiVersion: '2026-01-28.clover',
+        typescript: true,
+    });
+    return stripeClient;
+}
 
 // Price IDs - Update these after creating products in Stripe Dashboard
 export const STRIPE_PRICE_IDS = {

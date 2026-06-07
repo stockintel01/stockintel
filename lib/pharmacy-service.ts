@@ -48,9 +48,9 @@ function clean<T extends object>(obj: T): Partial<T> {
 // ─────────────────────────────────────────────────────────────
 
 /** Search patients by name prefix (Firestore range query) */
-export async function searchPatients(term: string, maxResults = 10): Promise<Patient[]> {
+export async function searchPatients(orgId: string, term: string, maxResults = 10): Promise<Patient[]> {
   if (!term.trim()) return [];
-  const ref = collection(db, 'patients');
+  const ref = collection(db, `organizations/${orgId}/patients`);
 
   // Name prefix search
   const nameQ = query(
@@ -84,9 +84,10 @@ export async function searchPatients(term: string, maxResults = 10): Promise<Pat
 
 /** Register a new patient (global) */
 export async function registerPatient(
+  orgId: string,
   patient: Omit<Patient, 'id' | 'createdAt' | 'history'>,
 ): Promise<string> {
-  const r = await addDoc(collection(db, 'patients'), {
+  const r = await addDoc(collection(db, `organizations/${orgId}/patients`), {
     ...clean(patient),
     history: [],
     createdAt: new Date().toISOString(),
@@ -97,6 +98,7 @@ export async function registerPatient(
 
 /** Add a visit/prescription record to a patient's global history */
 export async function addPatientRecord(
+  orgId: string,
   patientId: string,
   record: Omit<PatientHistoryRecord, 'id'>,
 ): Promise<void> {
@@ -105,9 +107,10 @@ export async function addPatientRecord(
     id: crypto.randomUUID(),
     date: new Date().toISOString(),
   };
-  await updateDoc(doc(db, 'patients', patientId), {
-    history: (await getDoc(doc(db, 'patients', patientId))).data()?.history
-      ? [...((await getDoc(doc(db, 'patients', patientId))).data()?.history ?? []), newRecord]
+  const patientRef = doc(db, `organizations/${orgId}/patients/${patientId}`);
+  await updateDoc(patientRef, {
+    history: (await getDoc(patientRef)).data()?.history
+      ? [...((await getDoc(patientRef)).data()?.history ?? []), newRecord]
       : [newRecord],
     updatedAt: serverTimestamp(),
   });
@@ -177,7 +180,7 @@ export async function createPrescription(
 
   // If linked to a patient, add to their global history
   if (rx.patientId) {
-    await addPatientRecord(rx.patientId, {
+    await addPatientRecord(orgId, rx.patientId, {
       date: new Date().toISOString(),
       pharmacyId: orgId,
       pharmacyName: rx.prescribedBy ?? 'Pharmacy',

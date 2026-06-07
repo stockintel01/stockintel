@@ -1,32 +1,25 @@
 #!/usr/bin/env node
 /**
- * seed-superadmin.js
- * 
- * Run ONCE after deploying to Firebase to set up the super admin.
+ * Run once after both approved super admins have signed in to Firebase Auth.
  * Usage: node seed-superadmin.js
- * 
- * This creates the system/config document and marks the super admin
- * user with the correct role in Firestore.
- * 
- * The super admin (stockintel01@gmail.com) must first sign in via
- * the app to create their Firebase Auth account. Then run this script.
  */
 
 const admin = require('firebase-admin');
-const serviceAccount = require('./serviceAccountKey.json'); // Download from Firebase Console
+const serviceAccount = require('./serviceAccountKey.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
 const db = admin.firestore();
-
-const SUPER_ADMIN_EMAIL = 'stockintel01@gmail.com';
+const SUPER_ADMIN_EMAILS = [
+  'mawuklegodson@gmail.com',
+  'enochapafloe@gmail.com',
+];
 
 async function seed() {
   console.log('Seeding super admin configuration...');
 
-  // 1. Create system/config document with default values
   await db.doc('system/config').set({
     subscriptionPricing: {
       baseUSD: 9,
@@ -47,42 +40,37 @@ async function seed() {
       maintenanceMessage: 'System maintenance in progress. Back shortly.',
     },
     announcements: [],
-    updatedBy: SUPER_ADMIN_EMAIL,
+    updatedBy: SUPER_ADMIN_EMAILS[0],
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
-  console.log('✓ system/config created');
 
-  // 2. Find the super admin user by email and set their role
-  const users = await admin.auth().getUserByEmail(SUPER_ADMIN_EMAIL);
-  const uid = users.uid;
-  console.log(`Found super admin UID: ${uid}`);
+  for (const email of SUPER_ADMIN_EMAILS) {
+    const user = await admin.auth().getUserByEmail(email);
+    const uid = user.uid;
 
-  // Update or create their Firestore user document
-  await db.doc(`users/${uid}`).set({
-    uid,
-    email: SUPER_ADMIN_EMAIL,
-    displayName: 'StockIntel Admin',
-    role: 'super_admin',
-    organizationId: 'system',
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
-  console.log('✓ Super admin user document set with role: super_admin');
+    await db.doc(`users/${uid}`).set({
+      uid,
+      email,
+      displayName: user.displayName || 'StockIntel Admin',
+      role: 'super_admin',
+      organizationId: 'system',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
 
-  // 3. Create system/superadmin sentinel document
-  await db.doc('system/superadmin').set({
-    email: SUPER_ADMIN_EMAIL,
-    uid,
-    grantedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  console.log('✓ system/superadmin sentinel created');
+    await db.doc(`system_superadmins/${uid}`).set({
+      email,
+      uid,
+      grantedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
-  console.log('\n✅ Super admin setup complete!');
-  console.log(`   Email: ${SUPER_ADMIN_EMAIL}`);
-  console.log('   Sign in at /login with your Google account or email/password.');
+    console.log(`Configured super admin: ${email}`);
+  }
+
+  console.log('Super admin setup complete.');
   process.exit(0);
 }
 
 seed().catch(err => {
-  console.error('❌ Seed failed:', err);
+  console.error('Seed failed:', err);
   process.exit(1);
 });

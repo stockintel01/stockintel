@@ -5,11 +5,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { ApiError, requireUser } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
 
 
 export async function POST(req: NextRequest) {
+    try {
+    await requireUser(req);
     if (!process.env.ANTHROPIC_API_KEY) {
         return NextResponse.json({ error: 'AI service not configured' }, { status: 503 });
     }
@@ -18,6 +21,10 @@ export async function POST(req: NextRequest) {
     const file      = formData.get('file') as File | null;
 
     if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    if (file.size > 10 * 1024 * 1024) return NextResponse.json({ error: 'File exceeds 10MB limit' }, { status: 413 });
+    if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type)) {
+        return NextResponse.json({ error: 'Unsupported file type' }, { status: 415 });
+    }
 
     const bytes  = await file.arrayBuffer();
     const base64 = Buffer.from(bytes).toString('base64');
@@ -74,5 +81,9 @@ If you cannot read a field, use an empty string. Never invent data.`,
         return NextResponse.json(JSON.parse(text));
     } catch {
         return NextResponse.json({ error: 'Could not parse prescription data' }, { status: 502 });
+    }
+    } catch (error) {
+        const status = error instanceof ApiError ? error.status : 400;
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid request' }, { status });
     }
 }

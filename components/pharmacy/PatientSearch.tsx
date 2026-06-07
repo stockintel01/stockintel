@@ -7,12 +7,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Search, Loader2, AlertTriangle, UserRound } from 'lucide-react';
 import { Patient } from '@/types/patient';
 import { searchPatients } from '@/lib/pharmacy-service';
+import { useAppStore } from '@/lib/store';
 
 interface PatientSearchProps {
   onPatientSelect: (patient: Patient) => void;
 }
 
 export function PatientSearch({ onPatientSelect }: PatientSearchProps) {
+  const orgId = useAppStore(state => state.organization?.id);
   const [term, setTerm]         = useState('');
   const [loading, setLoading]   = useState(false);
   const [results, setResults]   = useState<Patient[]>([]);
@@ -24,7 +26,8 @@ export function PatientSearch({ onPatientSelect }: PatientSearchProps) {
     if (!value.trim() || value.trim().length < 2) { setResults([]); setSearched(false); return; }
     setLoading(true); setError(''); setSearched(false);
     try {
-      const found = await searchPatients(value.trim());
+      if (!orgId) throw new Error('Organization not loaded');
+      const found = await searchPatients(orgId, value.trim());
       setResults(found);
       setSearched(true);
     } catch (err: any) {
@@ -33,7 +36,7 @@ export function PatientSearch({ onPatientSelect }: PatientSearchProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [orgId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value;

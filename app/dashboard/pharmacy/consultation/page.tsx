@@ -14,6 +14,7 @@ import {
     ShieldAlert, Clock, CheckCircle2, Loader2,
     Pill, ChevronRight, Info, Download, Save
 } from 'lucide-react';
+import { authenticatedFetch } from '@/lib/api-client';
 
 interface DrugRecommendation {
     itemId: string; name: string; dosage: string; duration: string;
@@ -83,7 +84,7 @@ export default function ConsultationPage() {
         setIsAnalyzing(true); setResult(null); setError('');
 
         try {
-            const res = await fetch('/api/consultation', {
+            const res = await authenticatedFetch('/api/consultation', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

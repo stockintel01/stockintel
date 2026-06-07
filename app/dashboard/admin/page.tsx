@@ -19,9 +19,10 @@ import {
   getDefaultConfig,
   type OrgSummary, type UserSummary, type SystemStats, type SystemConfig,
 } from '@/lib/superadmin';
+import { SUPER_ADMIN_EMAILS } from '@/lib/access-control';
 import { cn } from '@/lib/utils';
 
-const SUPER_ADMIN_EMAIL = 'stockintel01@gmail.com';
+const SUPER_ADMIN_CONTACT = SUPER_ADMIN_EMAILS.join(' or ');
 
 // ── Plan badge ────────────────────────────────────────────────
 function PlanBadge({ plan, status }: { plan: string; status: string }) {
@@ -50,7 +51,6 @@ type Tab = 'overview' | 'organisations' | 'users' | 'config' | 'announcements';
 export default function SuperAdminPage() {
   const { user } = useAppStore();
 
-  // Guard — only the super admin email can access this page
   if (!isSuperAdmin(user?.email)) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -63,7 +63,7 @@ export default function SuperAdminPage() {
           <CardContent>
             <p className="text-muted-foreground">
               This page is restricted to the StockIntel system administrator.
-              If you believe this is an error, contact <strong>{SUPER_ADMIN_EMAIL}</strong>.
+              If you believe this is an error, contact <strong>{SUPER_ADMIN_CONTACT}</strong>.
             </p>
           </CardContent>
         </Card>
@@ -71,6 +71,10 @@ export default function SuperAdminPage() {
     );
   }
 
+  return <AuthorizedSuperAdminPage email={user?.email ?? ''} />;
+}
+
+function AuthorizedSuperAdminPage({ email }: { email: string }) {
   const [tab, setTab]             = useState<Tab>('overview');
   const [stats, setStats]         = useState<SystemStats | null>(null);
   const [orgs, setOrgs]           = useState<OrgSummary[]>([]);
@@ -222,7 +226,7 @@ export default function SuperAdminPage() {
             Super Admin
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Signed in as <strong>{user?.email}</strong> · Full system access
+            Signed in as <strong>{email}</strong> · Full system access
           </p>
         </div>
         <Button variant="outline" onClick={loadAll} disabled={loading}>
@@ -473,7 +477,7 @@ export default function SuperAdminPage() {
                                 loadAll();
                               } catch (err: any) { notify(err.message, true); }
                             }}
-                            disabled={u.email === SUPER_ADMIN_EMAIL}>
+                            disabled={isSuperAdmin(u.email)}>
                             <option value="owner">owner</option>
                             <option value="manager">manager</option>
                             <option value="worker">worker</option>

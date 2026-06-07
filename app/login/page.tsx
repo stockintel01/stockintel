@@ -18,6 +18,7 @@ import {
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { createUserProfile, createOrganization } from '@/lib/firebase-utils';
+import { isSuperAdminEmail } from '@/lib/access-control';
 
 type AuthMode = 'signin' | 'signup' | 'reset';
 
@@ -99,12 +100,12 @@ function LoginInner() {
         displayName:    name.trim(),
         photoURL:       cred.user.photoURL ?? '',
         organizationId: orgId,
-        role:           'owner',
+        role:           isSuperAdminEmail(cred.user.email) ? 'super_admin' : 'owner',
         createdAt:      new Date(),
       } as any);
 
       // 4. Redirect to onboarding to fill business details
-      router.push('/onboarding');
+      router.push(isSuperAdminEmail(cred.user.email) ? '/dashboard' : '/onboarding');
     } catch (err: any) {
       setError(friendlyError(err.code, err.message));
     } finally { setLoading(false); }

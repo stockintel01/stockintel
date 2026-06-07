@@ -63,7 +63,7 @@ const CURRENCIES = [
 
 export default function OnboardingPage() {
     const router = useRouter();
-    const { user, organization, setIndustry, setCurrency, updateReceiptSettings } = useAppStore();
+    const { user, organization, setIndustry, setCurrency, updateReceiptSettings, setAuthenticated } = useAppStore();
     const { signInWithGoogle } = useAuth();
 
     const [step, setStep] = useState(0);
