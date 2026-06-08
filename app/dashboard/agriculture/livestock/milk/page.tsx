@@ -5,21 +5,20 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, X, Download, AlertTriangle } from 'lucide-react';
-import { MOCK_MILK_RECORDS, MOCK_FLOCKS } from '@/lib/agric/livestock-mock-data';
 import type { MilkProductionRecord } from '@/lib/agric/livestock-types';
 import { useAppStore } from '@/lib/store';
+import { useLivestock } from '@/lib/agric/useLivestock';
 
 const today = new Date().toISOString().slice(0, 10);
-const DAIRY_FLOCKS = MOCK_FLOCKS.filter(f => f.purpose === 'dairy' && f.status === 'active');
-
 export default function MilkPage() {
   const { user } = useAppStore();
-  const [records, setRecords] = useState<MilkProductionRecord[]>(MOCK_MILK_RECORDS);
+  const { milkRecords: records, flocks, addRecord } = useLivestock();
+  const dairyFlocks = flocks.filter(f => f.purpose === 'dairy' && f.status === 'active');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
-    herdId: DAIRY_FLOCKS[0]?.id ?? '',
+    herdId: '',
     date: today, shift: 'morning',
-    activeMilkingCows: DAIRY_FLOCKS[0]?.femaleCount ?? 0,
+    activeMilkingCows: 0,
     totalLitres: 0, fatContent: 0, rejected: 0,
     sold: 0, stored: 0, pricePerLitre: 4.5, notes: '',
   });
@@ -38,8 +37,8 @@ export default function MilkPage() {
 
   const rejectedAlert = todayRejected > 10;
 
-  function submit() {
-    const herd = DAIRY_FLOCKS.find(f => f.id === form.herdId);
+  async function submit() {
+    const herd = dairyFlocks.find(f => f.id === form.herdId);
     if (!herd || !form.totalLitres) return;
     const revenue = form.sold * form.pricePerLitre;
     const rec: MilkProductionRecord = {
@@ -58,11 +57,11 @@ export default function MilkPage() {
       recordedBy: user?.name ?? 'Farm Manager',
       notes: form.notes || undefined,
     };
-    setRecords(prev => [rec, ...prev]);
+    await addRecord('milk', rec);
     setShowForm(false);
     setForm({
-      herdId: DAIRY_FLOCKS[0]?.id ?? '', date: today, shift: 'morning',
-      activeMilkingCows: DAIRY_FLOCKS[0]?.femaleCount ?? 0,
+      herdId: dairyFlocks[0]?.id ?? '', date: today, shift: 'morning',
+      activeMilkingCows: dairyFlocks[0]?.femaleCount ?? 0,
       totalLitres: 0, fatContent: 0, rejected: 0,
       sold: 0, stored: 0, pricePerLitre: 4.5, notes: '',
     });
@@ -223,10 +222,10 @@ export default function MilkPage() {
                 <label className="text-xs font-medium text-muted-foreground uppercase">Herd *</label>
                 <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background"
                   value={form.herdId} onChange={e => {
-                    const herd = DAIRY_FLOCKS.find(f => f.id === e.target.value);
+                    const herd = dairyFlocks.find(f => f.id === e.target.value);
                     setForm(f => ({ ...f, herdId: e.target.value, activeMilkingCows: herd?.femaleCount ?? 0 }));
                   }}>
-                  {DAIRY_FLOCKS.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                  <option value="">Select dairy herd</option>{dairyFlocks.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">

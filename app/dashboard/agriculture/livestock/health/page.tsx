@@ -5,19 +5,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, X, AlertTriangle, Download, Calendar } from 'lucide-react';
-import { MOCK_VACCINATIONS, MOCK_FLOCKS } from '@/lib/agric/livestock-mock-data';
 import type { VaccinationRecord } from '@/lib/agric/livestock-types';
 import { useAppStore } from '@/lib/store';
+import { useLivestock } from '@/lib/agric/useLivestock';
 
 const today = new Date().toISOString().slice(0, 10);
 const ROUTES = ['drinking_water','injection','spray','eye_drop','oral','topical'];
 
 export default function HealthPage() {
   const { user } = useAppStore();
-  const [records, setRecords] = useState<VaccinationRecord[]>(MOCK_VACCINATIONS);
+  const { vaccinations: records, flocks, addRecord } = useLivestock();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
-    flockHerdId: MOCK_FLOCKS[0]?.id ?? '', date: today,
+    flockHerdId: '', date: today,
     vaccineOrDrug: '', disease: '', routeOfAdmin: 'drinking_water',
     dosage: '', animalCount: 0, nextDueDate: '', withdrawalPeriodDays: 0,
     administeredBy: '', cost: 0, batchNumber: '', notes: ''
@@ -26,8 +26,8 @@ export default function HealthPage() {
   const upcomingVax = records.filter(r => r.nextDueDate && r.nextDueDate >= today && r.nextDueDate <= new Date(Date.now() + 14*86400000).toISOString().slice(0,10));
   const withdrawalActive = records.filter(r => r.withdrawalPeriodDays && r.withdrawalPeriodDays > 0 && new Date(r.date).getTime() + r.withdrawalPeriodDays! * 86400000 > Date.now());
 
-  function submit() {
-    const flock = MOCK_FLOCKS.find(f => f.id === form.flockHerdId);
+  async function submit() {
+    const flock = flocks.find(f => f.id === form.flockHerdId);
     if (!flock || !form.vaccineOrDrug) return;
     const rec: VaccinationRecord = {
       id: `vx_${Date.now()}`, flockHerdId: flock.id, flockHerdName: flock.name,
@@ -41,9 +41,9 @@ export default function HealthPage() {
       administeredBy: form.administeredBy || user?.name || 'Farm Manager',
       cost: form.cost || undefined, notes: form.notes || undefined,
     };
-    setRecords(prev => [rec, ...prev]);
+    await addRecord('vaccination', rec);
     setShowForm(false);
-    setForm({ flockHerdId: MOCK_FLOCKS[0]?.id ?? '', date: today, vaccineOrDrug: '', disease: '', routeOfAdmin: 'drinking_water', dosage: '', animalCount: 0, nextDueDate: '', withdrawalPeriodDays: 0, administeredBy: '', cost: 0, batchNumber: '', notes: '' });
+    setForm({ flockHerdId: flocks[0]?.id ?? '', date: today, vaccineOrDrug: '', disease: '', routeOfAdmin: 'drinking_water', dosage: '', animalCount: 0, nextDueDate: '', withdrawalPeriodDays: 0, administeredBy: '', cost: 0, batchNumber: '', notes: '' });
   }
 
   return (
@@ -74,7 +74,7 @@ export default function HealthPage() {
           <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <CardHeader><CardTitle className="flex items-center justify-between">Log Vaccination / Treatment <button onClick={()=>setShowForm(false)}><X className="w-4 h-4"/></button></CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <div><label className="text-xs font-medium text-muted-foreground uppercase">Flock / Herd</label><select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={form.flockHerdId} onChange={e=>setForm(f=>({...f,flockHerdId:e.target.value}))}>{MOCK_FLOCKS.filter(f=>f.status==='active').map(fl=><option key={fl.id} value={fl.id}>{fl.name}</option>)}</select></div>
+              <div><label className="text-xs font-medium text-muted-foreground uppercase">Flock / Herd</label><select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={form.flockHerdId} onChange={e=>setForm(f=>({...f,flockHerdId:e.target.value}))}><option value="">Select flock or herd</option>{flocks.filter(f=>f.status==='active').map(fl=><option key={fl.id} value={fl.id}>{fl.name}</option>)}</select></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-xs font-medium text-muted-foreground uppercase">Date</label><Input type="date" className="mt-1" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
                 <div><label className="text-xs font-medium text-muted-foreground uppercase">Animal Count</label><Input type="number" className="mt-1" placeholder="Leave blank for full flock" value={form.animalCount||''} onChange={e=>setForm(f=>({...f,animalCount:parseInt(e.target.value)||0}))}/></div>

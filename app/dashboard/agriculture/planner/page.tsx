@@ -8,10 +8,10 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { MOCK_AGRIC_INVENTORY, FARM_ZONES } from '@/lib/agric/mock-data';
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
 import { SprayPlan, SprayPlanItem, FarmZone } from '@/lib/agric/types';
+import { getAgricultureProfile } from '@/lib/agric/config';
 
 const CYCLE_LABELS = { weekly: 'Weekly', biweekly: 'Bi-weekly', monthly: 'Monthly', custom: 'Custom' };
 const STATUS_COLORS = {
@@ -30,13 +30,14 @@ function getCycleApplications(cycle: string, start: string, end: string): number
 }
 
 export default function PlannerPage() {
-  const { plans, createPlan, markApplication } = useAgric();
-  const { user } = useAppStore();
+  const { plans, inventory, createPlan, markApplication } = useAgric();
+  const { user, organization } = useAppStore();
+  const farmZones = getAgricultureProfile(organization?.settings).farmZones.length ? getAgricultureProfile(organization?.settings).farmZones : ['Main Farm'];
   const currentUserName = user?.name ?? 'Farm Manager';
   const [selectedPlan, setSelectedPlan] = useState<SprayPlan | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [newPlan, setNewPlan] = useState<Partial<SprayPlan>>({
-    farmZone: 'Banana', cycle: 'weekly', status: 'draft', items: []
+    farmZone: farmZones[0] as FarmZone, cycle: 'weekly', status: 'draft', items: []
   });
   const [newPlanItem, setNewPlanItem] = useState<{ itemId: string; qtyPerApp: number }>({ itemId: '', qtyPerApp: 0 });
   const [filter, setFilter] = useState<'all' | 'active' | 'draft' | 'completed'>('all');
@@ -46,7 +47,7 @@ export default function PlannerPage() {
 
   function addPlanItem() {
     if (!newPlanItem.itemId || !newPlanItem.qtyPerApp) return;
-    const invItem = MOCK_AGRIC_INVENTORY.find(i => i.id === newPlanItem.itemId);
+    const invItem = inventory.find(i => i.id === newPlanItem.itemId);
     if (!invItem) return;
     const apps = getCycleApplications(newPlan.cycle || 'weekly', newPlan.startDate || '', newPlan.endDate || '');
     const totalQty = newPlanItem.qtyPerApp * apps;
@@ -313,7 +314,7 @@ export default function PlannerPage() {
                 <div>
                   <label className="text-sm font-medium">Farm Zone</label>
                   <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newPlan.farmZone} onChange={e => setNewPlan(p => ({ ...p, farmZone: e.target.value as FarmZone }))}>
-                    {FARM_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                    {farmZones.map(z => <option key={z} value={z}>{z}</option>)}
                   </select>
                 </div>
                 <div>
@@ -346,7 +347,7 @@ export default function PlannerPage() {
                 <div className="flex gap-2">
                   <select className="flex-1 border rounded-md px-3 py-2 text-sm bg-background" value={newPlanItem.itemId} onChange={e => setNewPlanItem(p => ({ ...p, itemId: e.target.value }))}>
                     <option value="">Select chemical...</option>
-                    {MOCK_AGRIC_INVENTORY.filter(i => i.isActive && i.category !== 'equipment').map(i => (
+                    {inventory.filter(i => i.isActive && i.category !== 'equipment').map(i => (
                       <option key={i.id} value={i.id}>{i.name} ({i.currentStock} {i.uom} in stock)</option>
                     ))}
                   </select>

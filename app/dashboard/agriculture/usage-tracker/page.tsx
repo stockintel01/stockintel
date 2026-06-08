@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import {
   FlaskConical, Plus, Search, Download, Calendar,
   Filter, X, ChevronDown, TrendingUp, BarChart3
@@ -8,10 +8,10 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { MOCK_AGRIC_INVENTORY, FARM_ZONES, USAGE_HISTORY } from '@/lib/agric/mock-data';
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
 import { UsageLog, FarmZone, AgricCategory } from '@/lib/agric/types';
+import { getAgricultureProfile } from '@/lib/agric/config';
 
 const CATEGORY_COLORS: Record<string, string> = {
   fungicide: 'bg-blue-100 text-blue-800',
@@ -22,25 +22,10 @@ const CATEGORY_COLORS: Record<string, string> = {
   seed: 'bg-purple-100 text-purple-800',
 };
 
-// Seed data matching the real usage reports
-const SEED_USAGE_LOGS: UsageLog[] = [
-  { id: 'ul01', itemId: 'f06', itemName: 'Paraffin Oil', category: 'fungicide', date: '2026-05-26', quantity: 40, uom: 'lt', farmZone: 'Banana', appliedBy: 'Kojo Asante', weekNumber: 22 },
-  { id: 'ul02', itemId: 'i04', itemName: 'Reeva', category: 'insecticide', date: '2026-05-25', quantity: 4, uom: 'lt', farmZone: 'Okra', appliedBy: 'Emmanuel Atta', weekNumber: 22 },
-  { id: 'ul03', itemId: 'i08', itemName: 'Punto', category: 'insecticide', date: '2026-05-25', quantity: 8, uom: 'kg', farmZone: 'Banana', appliedBy: 'Kwame Frimpong', weekNumber: 22 },
-  { id: 'ul04', itemId: 'h01', itemName: 'Kalach 360', category: 'herbicide', date: '2026-05-24', quantity: 7, uom: 'lt', farmZone: 'Tomato', appliedBy: 'Ama Sarpong', weekNumber: 22 },
-  { id: 'ul05', itemId: 'fe01', itemName: 'MAP', category: 'fertilizer', date: '2026-05-23', quantity: 120, uom: 'kg', farmZone: 'Okra', appliedBy: 'Daniel Mensah', weekNumber: 22 },
-  { id: 'ul06', itemId: 'f07', itemName: 'Serenade ASO SC', category: 'fungicide', date: '2026-05-23', quantity: 6, uom: 'lt', farmZone: 'Banana', appliedBy: 'Kojo Asante', weekNumber: 22 },
-  { id: 'ul07', itemId: 'fe02', itemName: 'Urea', category: 'fertilizer', date: '2026-05-22', quantity: 180, uom: 'kg', farmZone: 'Banana', appliedBy: 'Daniel Mensah', weekNumber: 22 },
-  { id: 'ul08', itemId: 'f04', itemName: 'NORDOX 75G', category: 'fungicide', date: '2026-05-22', quantity: 5, uom: 'kg', farmZone: 'Papaya', appliedBy: 'Grace Owusu', weekNumber: 22 },
-  { id: 'ul09', itemId: 'i01', itemName: 'Spartan 300 OD', category: 'insecticide', date: '2026-05-21', quantity: 2, uom: 'lt', farmZone: 'Okra', appliedBy: 'Emmanuel Atta', weekNumber: 21 },
-  { id: 'ul10', itemId: 'f09', itemName: 'Prozole', category: 'fungicide', date: '2026-05-20', quantity: 8, uom: 'lt', farmZone: 'Banana', appliedBy: 'Kojo Asante', weekNumber: 21 },
-];
-
 export default function UsageTrackerPage() {
-  const { usageLogs: liveLogs, logUsage } = useAgric();
-  const { user } = useAppStore();
-  const [logs, setLocalLogs] = useState<UsageLog[]>(SEED_USAGE_LOGS);
-  useEffect(() => { if (liveLogs.length > 0) setLocalLogs(liveLogs); }, [liveLogs]);
+  const { usageLogs: logs, inventory, logUsage } = useAgric();
+  const { user, organization } = useAppStore();
+  const farmZones = getAgricultureProfile(organization?.settings).farmZones.length ? getAgricultureProfile(organization?.settings).farmZones : ['Main Farm'];
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<AgricCategory | 'all'>('all');
   const [zoneFilter, setZoneFilter] = useState<FarmZone | 'all'>('all');
@@ -50,7 +35,7 @@ export default function UsageTrackerPage() {
   const [view, setView] = useState<'list' | 'summary'>('list');
   const [newLog, setNewLog] = useState<Partial<UsageLog>>({
     date: new Date().toISOString().slice(0, 10),
-    farmZone: 'Banana',
+    farmZone: farmZones[0] as FarmZone,
     category: 'fungicide',
   });
 
@@ -84,10 +69,18 @@ export default function UsageTrackerPage() {
     });
     return map;
   }, [filtered]);
+  const usageHistory = useMemo(() => Array.from({ length: 6 }, (_, offset) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (5 - offset) * 7);
+    const week = getWeekNumber(date.toISOString().slice(0, 10));
+    const weekLogs = logs.filter(log => log.weekNumber === week);
+    const total = (category: AgricCategory) => weekLogs.filter(log => log.category === category).reduce((sum, log) => sum + log.quantity, 0);
+    return { week: `W${week}`, fungicide: total('fungicide'), insecticide: total('insecticide'), herbicide: total('herbicide') };
+  }), [logs]);
 
   async function submitLog() {
     if (!newLog.itemId || !newLog.quantity || !newLog.farmZone) return;
-    const invItem = MOCK_AGRIC_INVENTORY.find(i => i.id === newLog.itemId);
+    const invItem = inventory.find(i => i.id === newLog.itemId);
     if (!invItem) return;
     await logUsage({
       itemId: invItem.id, itemName: invItem.name,
@@ -101,7 +94,7 @@ export default function UsageTrackerPage() {
       notes: newLog.notes,
       weekNumber: getWeekNumber(newLog.date || ''),
     });
-    setNewLog({ date: new Date().toISOString().slice(0, 10), farmZone: 'Banana', category: 'fungicide' });
+    setNewLog({ date: new Date().toISOString().slice(0, 10), farmZone: farmZones[0] as FarmZone, category: 'fungicide' });
     setShowLogModal(false);
   }
 
@@ -165,7 +158,7 @@ export default function UsageTrackerPage() {
             </select>
             <select className="border rounded-md px-3 py-2 text-sm bg-background" value={zoneFilter} onChange={e => setZoneFilter(e.target.value as any)}>
               <option value="all">All Zones</option>
-              {FARM_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+              {farmZones.map(z => <option key={z} value={z}>{z}</option>)}
             </select>
             <div className="flex items-center gap-2">
               <Input type="date" className="w-36" value={dateFrom} onChange={e => setDateFrom(e.target.value)} placeholder="From" />
@@ -247,9 +240,9 @@ export default function UsageTrackerPage() {
               <div className="mt-6 pt-4 border-t">
                 <p className="text-sm font-medium mb-3">6-Week Chemical Usage Trend</p>
                 <div className="flex items-end gap-1 h-20">
-                  {USAGE_HISTORY.map(w => {
+                  {usageHistory.map(w => {
                     const total = w.fungicide + w.insecticide + w.herbicide;
-                    const maxTotal = Math.max(...USAGE_HISTORY.map(x => x.fungicide + x.insecticide + x.herbicide));
+                    const maxTotal = Math.max(1, ...usageHistory.map(x => x.fungicide + x.insecticide + x.herbicide));
                     return (
                       <div key={w.week} className="flex-1 flex flex-col items-center gap-0.5">
                         <div className="w-full flex flex-col justify-end" style={{ height: `${(total / maxTotal) * 64}px` }}>
@@ -335,11 +328,11 @@ export default function UsageTrackerPage() {
               <div>
                 <label className="text-sm font-medium">Item *</label>
                 <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newLog.itemId || ''} onChange={e => {
-                  const item = MOCK_AGRIC_INVENTORY.find(i => i.id === e.target.value);
+                  const item = inventory.find(i => i.id === e.target.value);
                   setNewLog(p => ({ ...p, itemId: e.target.value, category: item?.category as AgricCategory }));
                 }}>
                   <option value="">Select item...</option>
-                  {MOCK_AGRIC_INVENTORY.filter(i => i.isActive && i.category !== 'equipment').map(i => (
+                  {inventory.filter(i => i.isActive && i.category !== 'equipment').map(i => (
                     <option key={i.id} value={i.id}>{i.name} ({i.category})</option>
                   ))}
                 </select>
@@ -352,7 +345,7 @@ export default function UsageTrackerPage() {
                 <div>
                   <label className="text-sm font-medium">Farm Zone *</label>
                   <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newLog.farmZone} onChange={e => setNewLog(p => ({ ...p, farmZone: e.target.value as FarmZone }))}>
-                    {FARM_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                    {farmZones.map(z => <option key={z} value={z}>{z}</option>)}
                   </select>
                 </div>
               </div>

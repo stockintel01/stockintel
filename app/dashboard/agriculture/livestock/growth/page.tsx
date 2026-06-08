@@ -5,27 +5,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, X, Download, TrendingUp } from 'lucide-react';
-import {
-  MOCK_WEIGHT_RECORDS, MOCK_FLOCKS,
-} from '@/lib/agric/livestock-mock-data';
 import type { WeightRecord } from '@/lib/agric/livestock-types';
 import { useAppStore } from '@/lib/store';
+import { useLivestock } from '@/lib/agric/useLivestock';
 
 const today = new Date().toISOString().slice(0, 10);
 
-// Only meat/dairy species (not layers)
-const GROWABLE_FLOCKS = MOCK_FLOCKS.filter(f =>
-  f.status === 'active' &&
-  f.species !== 'chicken_layer' &&
-  f.purpose !== 'egg_production'
-);
-
 export default function GrowthPage() {
   const { user } = useAppStore();
-  const [records, setRecords] = useState<WeightRecord[]>(MOCK_WEIGHT_RECORDS);
+  const { weights: records, flocks, addRecord } = useLivestock();
+  const growableFlocks = flocks.filter(f => f.status === 'active' && f.species !== 'chicken_layer' && f.purpose !== 'egg_production');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
-    flockHerdId: GROWABLE_FLOCKS[0]?.id ?? '',
+    flockHerdId: '',
     date: today,
     sampleSize: 10,
     avgWeightKg: 0,
@@ -35,8 +27,8 @@ export default function GrowthPage() {
     notes: '',
   });
 
-  function submit() {
-    const flock = GROWABLE_FLOCKS.find(f => f.id === form.flockHerdId);
+  async function submit() {
+    const flock = growableFlocks.find(f => f.id === form.flockHerdId);
     if (!flock || !form.avgWeightKg) return;
     const rec: WeightRecord = {
       id: `wt_${Date.now()}`,
@@ -52,10 +44,10 @@ export default function GrowthPage() {
       recordedBy: user?.name ?? 'Farm Manager',
       notes: form.notes || undefined,
     };
-    setRecords(prev => [rec, ...prev]);
+    await addRecord('weight', rec);
     setShowForm(false);
     setForm({
-      flockHerdId: GROWABLE_FLOCKS[0]?.id ?? '',
+      flockHerdId: growableFlocks[0]?.id ?? '',
       date: today, sampleSize: 10, avgWeightKg: 0,
       minWeightKg: 0, maxWeightKg: 0, fcr: 0, notes: '',
     });
@@ -80,7 +72,7 @@ export default function GrowthPage() {
   }
 
   // Group records by flock for mini charts
-  const byFlock = GROWABLE_FLOCKS.map(flock => ({
+  const byFlock = growableFlocks.map(flock => ({
     flock,
     records: records.filter(r => r.flockHerdId === flock.id).sort((a, b) => a.date.localeCompare(b.date)),
   })).filter(g => g.records.length > 0);
@@ -274,7 +266,7 @@ export default function GrowthPage() {
                 <label className="text-xs font-medium text-muted-foreground uppercase">Flock / Herd *</label>
                 <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={form.flockHerdId}
                   onChange={e => setForm(f => ({ ...f, flockHerdId: e.target.value }))}>
-                  {GROWABLE_FLOCKS.map(fl => <option key={fl.id} value={fl.id}>{fl.name}</option>)}
+                  <option value="">Select flock or herd</option>{growableFlocks.map(fl => <option key={fl.id} value={fl.id}>{fl.name}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -313,7 +305,7 @@ export default function GrowthPage() {
               {form.avgWeightKg > 0 && form.flockHerdId && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs text-blue-800">
                   {(() => {
-                    const fl = GROWABLE_FLOCKS.find(f => f.id === form.flockHerdId);
+                    const fl = growableFlocks.find(f => f.id === form.flockHerdId);
                     if (!fl?.targetWeight) return null;
                     const prog = Math.round((form.avgWeightKg / fl.targetWeight) * 100);
                     const rem = (fl.targetWeight - form.avgWeightKg).toFixed(2);

@@ -28,7 +28,7 @@ function asDate(value: Sale['createdAt']): Date | null {
 }
 
 export default function DashboardHome() {
-    const { organization, inventory, currency } = useAppStore();
+    const { organization, inventory, currency, activeIndustry } = useAppStore();
     const [sales, setSales] = useState<Sale[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -58,8 +58,11 @@ export default function DashboardHome() {
     }, [organization?.id]);
 
     const totalRevenue = sales.reduce((sum, sale) => sum + Number(sale.grandTotal || 0), 0);
-    const lowStock = inventory.filter(item => item.quantity <= 10).length;
+    const lowStock = inventory.filter(item => item.quantity <= (item.reorderLevel ?? 10)).length;
     const stockUnits = inventory.reduce((sum, item) => sum + item.quantity, 0);
+    const stockCostValue = inventory.reduce((sum, item) => sum + item.quantity * Number(item.costPrice || 0), 0);
+    const stockRetailValue = inventory.reduce((sum, item) => sum + item.quantity * Number(item.mrp || 0), 0);
+    const potentialMargin = stockRetailValue - stockCostValue;
     const chartData = useMemo(() => {
         const months = new Map<string, { name: string; revenue: number; sales: number }>();
         for (const sale of sales) {
@@ -75,18 +78,25 @@ export default function DashboardHome() {
         return [...months.values()].reverse().slice(-7);
     }, [sales]);
 
-    const metrics = [
+    const standardMetrics = [
         { label: 'Total Revenue', value: `${currency}${totalRevenue.toLocaleString()}`, icon: DollarSign },
         { label: 'Transactions', value: sales.length.toLocaleString(), icon: ReceiptText },
         { label: 'Low Stock Items', value: lowStock.toLocaleString(), icon: AlertTriangle },
         { label: 'Units In Stock', value: stockUnits.toLocaleString(), icon: Package },
     ];
+    const retailMetrics = [
+        { label: 'Sales Revenue', value: `${currency}${totalRevenue.toLocaleString()}`, icon: DollarSign },
+        { label: 'Stock at Cost', value: `${currency}${stockCostValue.toLocaleString()}`, icon: Package },
+        { label: 'Potential Gross Margin', value: `${currency}${potentialMargin.toLocaleString()}`, icon: ArrowUpRight },
+        { label: 'Reorder Required', value: lowStock.toLocaleString(), icon: AlertTriangle },
+    ];
+    const metrics = activeIndustry === 'retail' ? retailMetrics : standardMetrics;
 
     return (
         <div className="space-y-8">
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+                    <h2 className="text-3xl font-bold tracking-tight">{activeIndustry === 'retail' ? 'Retail Stock Intelligence' : 'Dashboard'}</h2>
                     <p className="text-sm text-muted-foreground mt-1">{organization?.name ?? 'Your organization'} live overview</p>
                 </div>
                 <Link href="/dashboard/reports"><Button variant="outline">Open reports <ArrowUpRight className="w-4 h-4 ml-2" /></Button></Link>

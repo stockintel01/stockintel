@@ -8,22 +8,22 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { MOCK_AGRIC_INVENTORY, FARM_ZONES } from '@/lib/agric/mock-data';
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
 import { EquipmentCheckout, FarmZone } from '@/lib/agric/types';
-
-const equipmentItems = MOCK_AGRIC_INVENTORY.filter(i => i.category === 'equipment' && i.isActive);
+import { getAgricultureProfile } from '@/lib/agric/config';
 
 export default function EquipmentPage() {
-  const { checkouts, checkout: checkoutItem, returnItem } = useAgric();
-  const { user } = useAppStore();
+  const { checkouts, inventory, checkout: checkoutItem, returnItem } = useAgric();
+  const { user, organization } = useAppStore();
+  const equipmentItems = inventory.filter(i => i.category === 'equipment' && i.isActive);
+  const farmZones = getAgricultureProfile(organization?.settings).farmZones.length ? getAgricultureProfile(organization?.settings).farmZones : ['Main Farm'];
   const currentUserName = user?.name ?? 'Supervisor';
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'out' | 'overdue' | 'returned'>('all');
   const [showCheckout, setShowCheckout] = useState(false);
   const [newCheckout, setNewCheckout] = useState<Partial<EquipmentCheckout>>({
-    farmZone: 'Banana', supervisorName: currentUserName, supervisorId: user?.id ?? 's01'
+    farmZone: farmZones[0] as FarmZone, supervisorName: currentUserName, supervisorId: user?.id ?? 's01'
   });
 
   function filtered() {
@@ -58,7 +58,7 @@ export default function EquipmentPage() {
       purpose: newCheckout.purpose,
       isReturned: false, isOverdue: false,
     });
-    setNewCheckout({ farmZone: 'Banana', supervisorName: 'Kofi Asante', supervisorId: 's01' });
+    setNewCheckout({ farmZone: farmZones[0] as FarmZone, supervisorName: currentUserName, supervisorId: user?.id ?? 'user' });
     setShowCheckout(false);
   }
 
@@ -241,7 +241,7 @@ export default function EquipmentPage() {
               <div>
                 <label className="text-sm font-medium">Farm Zone *</label>
                 <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newCheckout.farmZone} onChange={e => setNewCheckout(p => ({ ...p, farmZone: e.target.value as FarmZone }))}>
-                  {FARM_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                  {farmZones.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
               </div>
               <div>

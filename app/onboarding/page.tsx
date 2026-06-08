@@ -8,6 +8,7 @@ import { createOrganization } from '@/lib/firebase-utils';
 import { inviteMember } from '@/lib/firebase-utils';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { buildAgricultureProfile, type AgricultureOperation } from '@/lib/agric/config';
 import {
     Pill, Leaf, Store, Building2, Globe, Receipt,
     Users, CheckCircle, ArrowRight, ArrowLeft,
@@ -25,6 +26,7 @@ interface BusinessSetup {
     taxId: string;
     currency: string;
     country: string;
+    agricultureOperations: AgricultureOperation[];
 }
 
 interface InviteEntry { email: string; role: 'manager' | 'worker' }
@@ -79,6 +81,7 @@ export default function OnboardingPage() {
         taxId: '',
         currency: 'GHS',
         country: 'Ghana',
+        agricultureOperations: ['crop'],
     });
 
     const [invites, setInvites] = useState<InviteEntry[]>([{ email: '', role: 'manager' }]);
@@ -107,7 +110,7 @@ export default function OnboardingPage() {
         setInvites(prev => prev.map((inv, idx) => idx === i ? { ...inv, ...fields } : inv));
 
     const canProceed = () => {
-        if (step === 1) return !!business.industry;
+        if (step === 1) return !!business.industry && (business.industry !== 'agriculture' || business.agricultureOperations.length > 0);
         if (step === 2) return business.businessName.trim().length >= 2;
         return true;
     };
@@ -139,6 +142,12 @@ export default function OnboardingPage() {
                         address: business.address,
                         phone: business.phone,
                         taxId: business.taxId,
+                        settings: business.industry === 'agriculture'
+                            ? {
+                                ...(organization.settings ?? {}),
+                                agriculture: buildAgricultureProfile(business.agricultureOperations),
+                            }
+                            : organization.settings ?? {},
                         onboardingStep: 'business_complete',
                     });
                 }
@@ -320,6 +329,40 @@ export default function OnboardingPage() {
                                     </div>
                                 ))}
                             </div>
+                            {business.industry === 'agriculture' && (
+                                <div style={{ marginTop: 22 }}>
+                                    <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 4 }}>What does your farm produce?</h3>
+                                    <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 12 }}>Choose all that apply. This controls the tools and reports shown to your team.</p>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                                        {([
+                                            ['crop', 'Crop Production'],
+                                            ['livestock', 'Animal Production'],
+                                            ['poultry', 'Poultry'],
+                                        ] as Array<[AgricultureOperation, string]>).map(([operation, label]) => {
+                                            const selected = business.agricultureOperations.includes(operation);
+                                            return (
+                                                <button
+                                                    key={operation}
+                                                    type="button"
+                                                    onClick={() => updateBusiness({
+                                                        agricultureOperations: selected
+                                                            ? business.agricultureOperations.filter(item => item !== operation)
+                                                            : [...business.agricultureOperations, operation],
+                                                    })}
+                                                    style={{
+                                                        padding: '12px 8px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit',
+                                                        border: selected ? '2px solid #16a34a' : '1px solid #d1d5db',
+                                                        background: selected ? '#f0fdf4' : '#fff', color: selected ? '#15803d' : '#374151',
+                                                        fontSize: 12, fontWeight: 600,
+                                                    }}
+                                                >
+                                                    {label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 

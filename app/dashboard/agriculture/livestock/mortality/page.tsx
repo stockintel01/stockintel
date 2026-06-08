@@ -5,9 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, X, AlertTriangle, Download } from 'lucide-react';
-import { MOCK_MORTALITY, MOCK_FLOCKS } from '@/lib/agric/livestock-mock-data';
 import type { MortalityRecord } from '@/lib/agric/livestock-types';
 import { useAppStore } from '@/lib/store';
+import { useLivestock } from '@/lib/agric/useLivestock';
 
 const today = new Date().toISOString().slice(0, 10);
 const REASONS = ['disease','predator','injury','heat_stress','cold_stress','nutritional_deficiency','unknown','culled','sold'];
@@ -15,10 +15,10 @@ const DISPOSAL = ['buried','incinerated','composted','biogas','other'];
 
 export default function MortalityPage() {
   const { user } = useAppStore();
-  const [records, setRecords] = useState<MortalityRecord[]>(MOCK_MORTALITY);
+  const { mortality: records, flocks, addRecord } = useLivestock();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
-    flockId: MOCK_FLOCKS[0]?.id ?? '', date: today, count: 1,
+    flockId: '', date: today, count: 1,
     reason: 'unknown', symptoms: '', disposalMethod: 'buried',
     vetVisitRequired: false, notes: ''
   });
@@ -27,8 +27,8 @@ export default function MortalityPage() {
   const vetPending = records.filter(r => r.vetVisitRequired && !r.vetVisitDate).length;
   const totalThisWeek = records.reduce((s,r) => s + r.count, 0);
 
-  function submit() {
-    const flock = MOCK_FLOCKS.find(f => f.id === form.flockId);
+  async function submit() {
+    const flock = flocks.find(f => f.id === form.flockId);
     if (!flock) return;
     const rec: MortalityRecord = {
       id: `mr_${Date.now()}`,
@@ -42,9 +42,9 @@ export default function MortalityPage() {
       recordedBy: user?.name ?? 'Farm Manager',
       notes: form.notes || undefined,
     };
-    setRecords(prev => [rec, ...prev]);
+    await addRecord('mortality', rec);
     setShowForm(false);
-    setForm({ flockId: MOCK_FLOCKS[0]?.id ?? '', date: today, count: 1, reason: 'unknown', symptoms: '', disposalMethod: 'buried', vetVisitRequired: false, notes: '' });
+    setForm({ flockId: flocks[0]?.id ?? '', date: today, count: 1, reason: 'unknown', symptoms: '', disposalMethod: 'buried', vetVisitRequired: false, notes: '' });
   }
 
   function exportCSV() {
@@ -89,7 +89,7 @@ export default function MortalityPage() {
           <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
             <CardHeader><CardTitle className="flex items-center justify-between">Record Mortality <button onClick={() => setShowForm(false)}><X className="w-4 h-4"/></button></CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <div><label className="text-xs font-medium text-muted-foreground uppercase">Flock / Herd *</label><select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={form.flockId} onChange={e=>setForm(f=>({...f,flockId:e.target.value}))}>{MOCK_FLOCKS.filter(f=>f.status==='active').map(fl=><option key={fl.id} value={fl.id}>{fl.name}</option>)}</select></div>
+              <div><label className="text-xs font-medium text-muted-foreground uppercase">Flock / Herd *</label><select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={form.flockId} onChange={e=>setForm(f=>({...f,flockId:e.target.value}))}><option value="">Select flock or herd</option>{flocks.filter(f=>f.status==='active').map(fl=><option key={fl.id} value={fl.id}>{fl.name}</option>)}</select></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-xs font-medium text-muted-foreground uppercase">Date</label><Input type="date" className="mt-1" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
                 <div><label className="text-xs font-medium text-muted-foreground uppercase">Count *</label><Input type="number" min={1} className="mt-1" value={form.count} onChange={e=>setForm(f=>({...f,count:parseInt(e.target.value)||1}))}/></div>

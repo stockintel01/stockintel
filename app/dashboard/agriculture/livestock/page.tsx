@@ -9,12 +9,10 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-  MOCK_FLOCKS, MOCK_PENS, MOCK_EGG_RECORDS, MOCK_MORTALITY,
-  MOCK_FEED_LOGS, MOCK_MILK_RECORDS, MOCK_LIVESTOCK_SALES,
-  EGG_PRODUCTION_TREND, MOCK_EGG_SALES,
-} from '@/lib/agric/livestock-mock-data';
+import { Input } from '@/components/ui/input';
+import { useLivestock } from '@/lib/agric/useLivestock';
 import type { AnimalFlockHerd, PoultrySpecies, LivestockSpecies } from '@/lib/agric/livestock-types';
+import { useAppStore } from '@/lib/store';
 
 // ── Species config ────────────────────────────────────────────
 const SPECIES_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
@@ -57,7 +55,18 @@ function MortalityRate({ flock }: { flock: AnimalFlockHerd }) {
 }
 
 export default function LivestockOverviewPage() {
+  const {
+    flocks: MOCK_FLOCKS, pens: MOCK_PENS, eggRecords: MOCK_EGG_RECORDS,
+    mortality: MOCK_MORTALITY, feedLogs: MOCK_FEED_LOGS, milkRecords: MOCK_MILK_RECORDS,
+    livestockSales: MOCK_LIVESTOCK_SALES, eggSales: MOCK_EGG_SALES, addRecord,
+  } = useLivestock();
+  const { user } = useAppStore();
+  const EGG_PRODUCTION_TREND = [...MOCK_EGG_RECORDS].sort((a, b) => a.date.localeCompare(b.date)).slice(-7).map(record => ({
+    day: record.date, layRate: record.layRate ?? 0, eggs: record.totalEggsCollected, gradeA: record.gradeA,
+  }));
   const [selectedFlock, setSelectedFlock] = useState<AnimalFlockHerd | null>(null);
+  const [showNewFlock, setShowNewFlock] = useState(false);
+  const [newFlock, setNewFlock] = useState({ name: '', species: 'chicken_layer', purpose: 'egg_production', count: 0, penName: '' });
   const today = new Date().toISOString().slice(0, 10);
 
   // Today's eggs (all layer flocks)
@@ -97,10 +106,29 @@ export default function LivestockOverviewPage() {
   const mortalityAlerts = MOCK_MORTALITY.filter(m => m.vetVisitRequired && !m.vetVisitDate?.includes('past'));
 
   // 7-day avg lay rate
-  const avgLayRate = (EGG_PRODUCTION_TREND.reduce((s, d) => s + d.layRate, 0) / EGG_PRODUCTION_TREND.length).toFixed(1);
+  const avgLayRate = EGG_PRODUCTION_TREND.length ? (EGG_PRODUCTION_TREND.reduce((s, d) => s + d.layRate, 0) / EGG_PRODUCTION_TREND.length).toFixed(1) : '0.0';
 
   // Pen occupancy
   const penAlerts = MOCK_PENS.filter(p => p.currentOccupancy / p.capacity > 0.95);
+
+  async function createFlock() {
+    if (!newFlock.name || !newFlock.count) return;
+    await addRecord('flock', {
+      id: `flock_${Date.now()}`,
+      name: newFlock.name,
+      species: newFlock.species as PoultrySpecies | LivestockSpecies,
+      purpose: newFlock.purpose as AnimalFlockHerd['purpose'],
+      penHouseId: `pen_${Date.now()}`,
+      penHouseName: newFlock.penName || 'Unassigned',
+      currentCount: newFlock.count,
+      initialCount: newFlock.count,
+      status: 'active',
+      createdBy: user?.name ?? 'Farm Manager',
+      createdAt: new Date().toISOString(),
+    });
+    setNewFlock({ name: '', species: 'chicken_layer', purpose: 'egg_production', count: 0, penName: '' });
+    setShowNewFlock(false);
+  }
 
   return (
     <div className="space-y-6">
@@ -123,11 +151,28 @@ export default function LivestockOverviewPage() {
           <Link href="/dashboard/agriculture/livestock/feed">
             <Button variant="outline" size="sm">🌾 Feed Log</Button>
           </Link>
-          <Button size="sm" className="bg-green-600 hover:bg-green-700">
+          <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => setShowNewFlock(true)}>
             <Plus className="w-4 h-4 mr-1" /> New Flock / Herd
           </Button>
         </div>
       </div>
+
+      {showNewFlock && (
+        <Card className="border-green-200">
+          <CardHeader><CardTitle className="text-base">Create Flock or Herd</CardTitle></CardHeader>
+          <CardContent className="grid md:grid-cols-5 gap-3">
+            <Input placeholder="Name or batch" value={newFlock.name} onChange={event => setNewFlock(value => ({ ...value, name: event.target.value }))} />
+            <select className="border rounded-md px-3 text-sm bg-background" value={newFlock.species} onChange={event => setNewFlock(value => ({ ...value, species: event.target.value }))}>
+              {Object.entries(SPECIES_CONFIG).map(([value, config]) => <option key={value} value={value}>{config.label}</option>)}
+            </select>
+            <select className="border rounded-md px-3 text-sm bg-background" value={newFlock.purpose} onChange={event => setNewFlock(value => ({ ...value, purpose: event.target.value }))}>
+              <option value="egg_production">Egg production</option><option value="meat_production">Meat production</option><option value="dairy">Dairy</option><option value="breeding">Breeding</option><option value="dual_purpose">Dual purpose</option>
+            </select>
+            <Input type="number" min={1} placeholder="Animal count" value={newFlock.count || ''} onChange={event => setNewFlock(value => ({ ...value, count: Number(event.target.value) }))} />
+            <div className="flex gap-2"><Button onClick={createFlock}>Save</Button><Button variant="outline" onClick={() => setShowNewFlock(false)}>Cancel</Button></div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Mortality alerts */}
       {(todayMortality > 0 || mortalityAlerts.length > 0) && (

@@ -9,7 +9,9 @@ import {
   ChevronRight, Bell, Cloud, Sun, CloudRain, CloudLightning,
   Droplets, Wind, Thermometer, AlertTriangle, TrendingUp
 } from 'lucide-react';
-import { MOCK_AGRIC_ALERTS, MOCK_STOCK_REQUESTS, MOCK_EQUIPMENT_CHECKOUTS } from '@/lib/agric/mock-data';
+import { useAppStore } from '@/lib/store';
+import { useAgric } from '@/lib/agric/useAgric';
+import { getAgricultureProfile, type FarmLocation } from '@/lib/agric/config';
 
 // Nav sections
 const CROP_NAV: Array<{ href: string; label: string; icon: any; badgeKey?: string }> = [
@@ -32,11 +34,6 @@ const LIVESTOCK_NAV: Array<{ href: string; label: string; icon: any; badgeKey?: 
   { href: '/dashboard/agriculture/livestock/milk', label: '🥛 Milk Production', icon: Boxes },
 ];
 
-const NAV_ITEMS: Array<{ href: string; label: string; icon: any; badgeKey?: string }> = [...CROP_NAV, ...LIVESTOCK_NAV,
-  { href: '/dashboard/agriculture/weather', label: 'Live Weather', icon: Cloud, badgeKey: 'weather' },
-  { href: '/dashboard/agriculture/reports', label: 'Reports', icon: BarChart3 },
-];
-
 function decodeWMO(code: number) {
   if (code === 0) return { label: 'Clear', icon: Sun, color: 'text-yellow-500' };
   if (code <= 2) return { label: 'Partly Cloudy', icon: Cloud, color: 'text-blue-400' };
@@ -48,7 +45,7 @@ function decodeWMO(code: number) {
   return { label: 'Cloudy', icon: Cloud, color: 'text-slate-400' };
 }
 
-function SidebarWeatherWidget({ collapsed }: { collapsed: boolean }) {
+function SidebarWeatherWidget({ collapsed, location }: { collapsed: boolean; location?: FarmLocation }) {
   const [wx, setWx] = useState<any>(null);
   const [alertLevel, setAlertLevel] = useState<'good' | 'caution' | 'bad'>('good');
 
@@ -56,7 +53,7 @@ function SidebarWeatherWidget({ collapsed }: { collapsed: boolean }) {
     async function load() {
       try {
         const res = await fetch(
-          'https://api.open-meteo.com/v1/forecast?latitude=5.6037&longitude=-0.1870&current=temperature_2m,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&timezone=Africa%2FAccra'
+          `https://api.open-meteo.com/v1/forecast?latitude=${location?.latitude ?? 5.6037}&longitude=${location?.longitude ?? -0.187}&current=temperature_2m,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&timezone=auto`
         );
         if (!res.ok) return;
         const data = await res.json();
@@ -72,7 +69,7 @@ function SidebarWeatherWidget({ collapsed }: { collapsed: boolean }) {
     load();
     const t = setInterval(load, 15 * 60 * 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [location?.latitude, location?.longitude]);
 
   if (!wx) return null;
 
@@ -101,7 +98,7 @@ function SidebarWeatherWidget({ collapsed }: { collapsed: boolean }) {
             <WxIcon className={`w-4 h-4 ${decoded.color}`} />
             <span className="text-sm font-bold">{wx.temperature_2m.toFixed(0)}°C</span>
           </div>
-          <span className="text-xs text-muted-foreground">Accra</span>
+          <span className="text-xs text-muted-foreground truncate max-w-20">{location?.name ?? 'Set farm location'}</span>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">{decoded.label}</p>
         <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
@@ -117,10 +114,26 @@ function SidebarWeatherWidget({ collapsed }: { collapsed: boolean }) {
 export default function AgricultureLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const { organization } = useAppStore();
+  const { requests, checkouts, alerts } = useAgric();
+  const profile = getAgricultureProfile(organization?.settings);
 
-  const pendingRequests = MOCK_STOCK_REQUESTS.filter(r => r.status === 'pending').length;
-  const overdueEquipment = MOCK_EQUIPMENT_CHECKOUTS.filter(e => e.isOverdue && !e.isReturned).length;
-  const unreadAlerts = MOCK_AGRIC_ALERTS.filter(a => !a.isRead).length;
+  const pendingRequests = requests.filter(r => r.status === 'pending').length;
+  const overdueEquipment = checkouts.filter(e => e.isOverdue && !e.isReturned).length;
+  const unreadAlerts = alerts.filter(a => !a.isRead).length;
+
+  const navItems = [
+    ...(profile.modules.crops ? CROP_NAV : [{ href: '/dashboard/agriculture', label: 'Farm Overview', icon: LayoutDashboard }]),
+    ...(profile.modules.livestock
+      ? LIVESTOCK_NAV.filter(item => {
+          if (item.href.endsWith('/egg-production')) return profile.modules.eggProduction;
+          if (item.href.endsWith('/milk')) return profile.modules.dairy;
+          return true;
+        })
+      : []),
+    ...(profile.modules.weather ? [{ href: '/dashboard/agriculture/weather', label: 'Live Weather', icon: Cloud, badgeKey: 'weather' }] : []),
+    ...(profile.modules.reports ? [{ href: '/dashboard/agriculture/reports', label: 'Reports', icon: BarChart3 }] : []),
+  ];
 
   const getBadge = (key?: string): number => {
     if (key === 'requests') return pendingRequests;
@@ -155,7 +168,7 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
         </div>
 
         {/* Live Weather Widget */}
-        <SidebarWeatherWidget collapsed={collapsed} />
+        {profile.modules.weather && <SidebarWeatherWidget collapsed={collapsed} location={profile.location} />}
 
         {/* Alerts Badge */}
         {!collapsed && unreadAlerts > 0 && (
@@ -167,7 +180,7 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
 
         {/* Nav Items */}
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-          {NAV_ITEMS.map(({ href, label, icon: Icon, badgeKey }) => {
+          {navItems.map(({ href, label, icon: Icon, badgeKey }) => {
             const isActive = pathname === href || (href !== '/dashboard/agriculture' && pathname.startsWith(href));
             const badge = getBadge(badgeKey);
             const isWeather = href.includes('weather');

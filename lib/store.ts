@@ -53,6 +53,11 @@ export interface Organization {
         trialEndsAt: Date | string;
         currentPeriodEnd?: Date | string;
     };
+    settings?: Record<string, unknown>;
+    currency?: string;
+    address?: string;
+    phone?: string;
+    taxId?: string;
 }
 
 export interface User {

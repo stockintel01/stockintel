@@ -8,30 +8,23 @@ import {
   Plus, Download, X, TrendingUp, TrendingDown,
   AlertTriangle, CheckCircle2
 } from 'lucide-react';
-import {
-  MOCK_EGG_RECORDS, MOCK_EGG_SALES, MOCK_FLOCKS,
-  EGG_PRODUCTION_TREND,
-} from '@/lib/agric/livestock-mock-data';
 import type { EggProductionRecord, EggSaleRecord } from '@/lib/agric/livestock-types';
 import { useAppStore } from '@/lib/store';
-
-const LAYER_FLOCKS = MOCK_FLOCKS.filter(f =>
-  f.species === 'chicken_layer' && f.status === 'active'
-);
+import { useLivestock } from '@/lib/agric/useLivestock';
 
 export default function EggProductionPage() {
   const { user } = useAppStore();
+  const { eggRecords: records, eggSales: sales, flocks, addRecord } = useLivestock();
+  const layerFlocks = flocks.filter(f => f.species === 'chicken_layer' && f.status === 'active');
   const today = new Date().toISOString().slice(0, 10);
 
-  const [records, setRecords]     = useState<EggProductionRecord[]>(MOCK_EGG_RECORDS);
-  const [sales, setSales]         = useState<EggSaleRecord[]>(MOCK_EGG_SALES);
   const [activeTab, setActiveTab] = useState<'production' | 'sales' | 'inventory'>('production');
   const [showForm, setShowForm]   = useState(false);
   const [showSaleForm, setShowSaleForm] = useState(false);
 
   // Form state - production
   const [form, setForm] = useState({
-    flockId: LAYER_FLOCKS[0]?.id ?? '',
+    flockId: '',
     date: today, shift: 'morning',
     totalEggsCollected: 0, gradeA: 0, gradeB: 0, gradeC: 0,
     dirtyEggs: 0, softShellEggs: 0, collectedBy: user?.name ?? '',
@@ -57,7 +50,7 @@ export default function EggProductionPage() {
     : '—';
 
   // 7-day totals
-  const weekTotal  = records.slice(0, 7 * LAYER_FLOCKS.length).reduce((s, r) => s + r.totalEggsCollected, 0);
+  const weekTotal  = records.filter(r => r.date >= new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10)).reduce((s, r) => s + r.totalEggsCollected, 0);
   const weekTrays  = Math.floor(weekTotal / 30);
   const weekCrates = Math.floor(weekTotal / 360);
 
@@ -70,19 +63,25 @@ export default function EggProductionPage() {
   const stockGradeB  = Math.max(0, records.reduce((s, r) => s + r.gradeB, 0) - sales.reduce((s, r) => s + r.gradeB, 0));
 
   // Lay rate trend arrow
-  const latestRate = parseFloat(EGG_PRODUCTION_TREND[EGG_PRODUCTION_TREND.length - 1]?.layRate.toFixed(1) ?? '0');
-  const prevRate   = parseFloat(EGG_PRODUCTION_TREND[EGG_PRODUCTION_TREND.length - 2]?.layRate.toFixed(1) ?? '0');
+  const productionTrend = [...records].sort((a, b) => a.date.localeCompare(b.date)).slice(-7);
+  const eggTrend = productionTrend.map(record => ({
+    day: record.date,
+    eggs: record.totalEggsCollected,
+    layRate: record.layRate ?? 0,
+  }));
+  const latestRate = parseFloat(productionTrend[productionTrend.length - 1]?.layRate?.toFixed(1) ?? '0');
+  const prevRate   = parseFloat(productionTrend[productionTrend.length - 2]?.layRate?.toFixed(1) ?? '0');
   const trending   = latestRate >= prevRate;
 
   function autoCalcLayRate() {
-    const flock = LAYER_FLOCKS.find(f => f.id === form.flockId);
+    const flock = layerFlocks.find(f => f.id === form.flockId);
     if (!flock || !form.totalEggsCollected) return;
     return ((form.totalEggsCollected / flock.currentCount) * 100).toFixed(1);
   }
 
-  function submitProduction() {
+  async function submitProduction() {
     if (!form.flockId || !form.totalEggsCollected) return;
-    const flock = LAYER_FLOCKS.find(f => f.id === form.flockId)!;
+    const flock = layerFlocks.find(f => f.id === form.flockId)!;
     const layRate = parseFloat(autoCalcLayRate() ?? '0');
     const rec: EggProductionRecord = {
       id: `ep_${Date.now()}`,
@@ -104,12 +103,12 @@ export default function EggProductionPage() {
       cratesCollected: Math.floor(form.totalEggsCollected / 360),
       collectedBy: form.collectedBy || user?.name || 'Unknown',
     };
-    setRecords(prev => [rec, ...prev]);
+    await addRecord('eggProduction', rec);
     setShowForm(false);
-    setForm({ flockId: LAYER_FLOCKS[0]?.id ?? '', date: today, shift: 'morning', totalEggsCollected: 0, gradeA: 0, gradeB: 0, gradeC: 0, dirtyEggs: 0, softShellEggs: 0, collectedBy: user?.name ?? '' });
+    setForm({ flockId: layerFlocks[0]?.id ?? '', date: today, shift: 'morning', totalEggsCollected: 0, gradeA: 0, gradeB: 0, gradeC: 0, dirtyEggs: 0, softShellEggs: 0, collectedBy: user?.name ?? '' });
   }
 
-  function submitSale() {
+  async function submitSale() {
     if (!saleForm.buyerName || !saleForm.pricePerTray) return;
     const totalEggs = saleForm.gradeA + saleForm.gradeB + saleForm.gradeC;
     const trays     = Math.ceil(totalEggs / 30);
@@ -128,7 +127,7 @@ export default function EggProductionPage() {
       invoiceNumber: saleForm.invoiceNumber || undefined,
       soldBy: user?.name ?? 'Farm Manager',
     };
-    setSales(prev => [rec, ...prev]);
+    await addRecord('eggSale', rec);
     setShowSaleForm(false);
     setSaleForm({ buyerName: '', buyerContact: '', gradeA: 0, gradeB: 0, gradeC: 0, pricePerTray: 0, currency: 'GHS', paymentStatus: 'cash', invoiceNumber: '', date: today });
   }
@@ -250,10 +249,10 @@ export default function EggProductionPage() {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="flex items-end gap-2 h-20">
-                {EGG_PRODUCTION_TREND.map((d, i) => {
-                  const maxEggs = Math.max(...EGG_PRODUCTION_TREND.map(x => x.eggs));
+                {eggTrend.map((d, i) => {
+                  const maxEggs = Math.max(1, ...eggTrend.map(x => x.eggs));
                   const h = (d.eggs / maxEggs) * 72;
-                  const isToday = i === EGG_PRODUCTION_TREND.length - 1;
+                  const isToday = i === eggTrend.length - 1;
                   return (
                     <div key={d.day} className="flex-1 flex flex-col items-center gap-0.5">
                       <p className="text-xs text-muted-foreground">{d.layRate}%</p>
@@ -264,9 +263,9 @@ export default function EggProductionPage() {
                 })}
               </div>
               <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-muted-foreground border-t pt-2">
-                <span>7-day avg: <strong>{(EGG_PRODUCTION_TREND.reduce((s, d) => s + d.layRate, 0) / EGG_PRODUCTION_TREND.length).toFixed(1)}%</strong></span>
-                <span>Best day: <strong>{Math.max(...EGG_PRODUCTION_TREND.map(d => d.layRate))}%</strong></span>
-                <span>Total 7d: <strong>{EGG_PRODUCTION_TREND.reduce((s, d) => s + d.eggs, 0).toLocaleString()} eggs</strong></span>
+                <span>7-day avg: <strong>{eggTrend.length ? (eggTrend.reduce((s, d) => s + d.layRate, 0) / eggTrend.length).toFixed(1) : '0.0'}%</strong></span>
+                <span>Best day: <strong>{eggTrend.length ? Math.max(...eggTrend.map(d => d.layRate)) : 0}%</strong></span>
+                <span>Total 7d: <strong>{eggTrend.reduce((s, d) => s + d.eggs, 0).toLocaleString()} eggs</strong></span>
               </div>
             </CardContent>
           </Card>
@@ -441,7 +440,7 @@ export default function EggProductionPage() {
                 <div className="col-span-2">
                   <label className="text-xs font-medium text-muted-foreground uppercase">Flock *</label>
                   <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={form.flockId} onChange={e => setForm(f => ({ ...f, flockId: e.target.value }))}>
-                    {LAYER_FLOCKS.map(fl => <option key={fl.id} value={fl.id}>{fl.name}</option>)}
+                    <option value="">Select layer flock</option>{layerFlocks.map(fl => <option key={fl.id} value={fl.id}>{fl.name}</option>)}
                   </select>
                 </div>
                 <div>

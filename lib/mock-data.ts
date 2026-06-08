@@ -10,6 +10,11 @@ export interface InventoryItem {
     costPrice: number;
     category: string;
     location: string;
+    barcode?: string;
+    brand?: string;
+    supplier?: string;
+    reorderLevel?: number;
+    taxRate?: number;
 }
 
 export let MOCK_INVENTORY: InventoryItem[] = [

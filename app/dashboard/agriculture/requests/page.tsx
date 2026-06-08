@@ -9,10 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { MOCK_AGRIC_INVENTORY, FARM_ZONES } from '@/lib/agric/mock-data';
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
 import { StockRequest, StockRequestItem, RequestStatus, FarmZone, AgricCategory } from '@/lib/agric/types';
+import { getAgricultureProfile } from '@/lib/agric/config';
 
 const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon: any }> = {
   pending: { label: 'Pending', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Clock },
@@ -26,8 +26,9 @@ const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon:
 const CURRENT_ROLE: 'farm_manager' | 'stockkeeper' = 'stockkeeper';
 
 export default function RequestsPage() {
-  const { requests, approveRequest, rejectRequest, dispatchReq, confirmReceived, createRequest } = useAgric();
-  const { user } = useAppStore();
+  const { requests, inventory, approveRequest, rejectRequest, dispatchReq, confirmReceived, createRequest } = useAgric();
+  const { user, organization } = useAppStore();
+  const farmZones = getAgricultureProfile(organization?.settings).farmZones.length ? getAgricultureProfile(organization?.settings).farmZones : ['Main Farm'];
   const currentUserName = user?.name ?? 'Farm Manager';
   const currentUserId = user?.id ?? 'user';
   const [search, setSearch] = useState('');
@@ -38,7 +39,7 @@ export default function RequestsPage() {
 
   // New request state
   const [newReq, setNewReq] = useState<Partial<StockRequest>>({
-    farmZone: 'Banana', priority: 'normal', items: []
+    farmZone: farmZones[0] as FarmZone, priority: 'normal', items: []
   });
   const [newReqItem, setNewReqItem] = useState<Partial<StockRequestItem>>({});
 
@@ -70,7 +71,7 @@ export default function RequestsPage() {
 
   function addNewReqItem() {
     if (!newReqItem.itemId || !newReqItem.requestedQty) return;
-    const invItem = MOCK_AGRIC_INVENTORY.find(i => i.id === newReqItem.itemId);
+    const invItem = inventory.find(i => i.id === newReqItem.itemId);
     if (!invItem) return;
     const item: StockRequestItem = {
       itemId: invItem.id, itemName: invItem.name, category: invItem.category as AgricCategory,
@@ -89,7 +90,7 @@ export default function RequestsPage() {
       items: newReq.items!, status: 'pending', note: newReq.note,
       requiredByDate: newReq.requiredByDate,
     });
-    setNewReq({ farmZone: 'Banana', priority: 'normal', items: [] });
+    setNewReq({ farmZone: farmZones[0] as FarmZone, priority: 'normal', items: [] });
     setShowNewRequest(false);
   }
 
@@ -325,7 +326,7 @@ export default function RequestsPage() {
                 <div>
                   <label className="text-sm font-medium">Farm Zone *</label>
                   <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newReq.farmZone} onChange={e => setNewReq(p => ({ ...p, farmZone: e.target.value as FarmZone }))}>
-                    {FARM_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                    {farmZones.map(z => <option key={z} value={z}>{z}</option>)}
                   </select>
                 </div>
                 <div>
@@ -350,7 +351,7 @@ export default function RequestsPage() {
                 <div className="flex gap-2">
                   <select className="flex-1 border rounded-md px-3 py-2 text-sm bg-background" value={newReqItem.itemId || ''} onChange={e => setNewReqItem(p => ({ ...p, itemId: e.target.value }))}>
                     <option value="">Select item...</option>
-                    {MOCK_AGRIC_INVENTORY.filter(i => i.isActive).map(i => (
+                    {inventory.filter(i => i.isActive).map(i => (
                       <option key={i.id} value={i.id}>{i.name} ({i.currentStock} {i.uom} available)</option>
                     ))}
                   </select>

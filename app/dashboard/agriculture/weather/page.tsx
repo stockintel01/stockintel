@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { useAppStore } from '@/lib/store';
+import { getAgricultureProfile } from '@/lib/agric/config';
 
 // ── Farm locations (Moonlight Fresco context, editable) ─────
 const FARM_LOCATIONS = [
@@ -17,6 +19,8 @@ const FARM_LOCATIONS = [
   { id: 'north', name: 'North Block — Kumasi', lat: 6.6885, lon: -1.6244, timezone: 'Africa/Accra' },
   { id: 'coast', name: 'Coastal Block — Takoradi', lat: 4.8845, lon: -1.7554, timezone: 'Africa/Accra' },
 ];
+
+type WeatherLocation = (typeof FARM_LOCATIONS)[number];
 
 // ── WMO weather code → label + icon mapping ──────────────────
 function decodeWMO(code: number): { label: string; icon: string; lucide: any; color: string } {
@@ -140,7 +144,16 @@ function DailyRow({ date, maxTemp, minTemp, precip, precipProb, code }: any) {
 
 // ── Main page ─────────────────────────────────────────────────
 export default function WeatherPage() {
-  const [selectedLocation, setSelectedLocation] = useState(FARM_LOCATIONS[0]);
+  const { organization } = useAppStore();
+  const agricultureProfile = getAgricultureProfile(organization?.settings);
+  const savedFarmLocation = agricultureProfile.location;
+  const [selectedLocation, setSelectedLocation] = useState<WeatherLocation>(() => savedFarmLocation ? {
+    id: 'saved',
+    name: savedFarmLocation.name,
+    lat: savedFarmLocation.latitude,
+    lon: savedFarmLocation.longitude,
+    timezone: savedFarmLocation.timezone ?? 'auto',
+  } : FARM_LOCATIONS[0]);
   const [weatherData, setWeatherData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -148,8 +161,9 @@ export default function WeatherPage() {
   const [customLat, setCustomLat] = useState('');
   const [customLon, setCustomLon] = useState('');
   const [showCustom, setShowCustom] = useState(false);
+  const [locating, setLocating] = useState(false);
 
-  const fetchWeather = useCallback(async (loc: typeof FARM_LOCATIONS[0]) => {
+  const fetchWeather = useCallback(async (loc: WeatherLocation) => {
     setLoading(true);
     setError(null);
     try {
@@ -197,9 +211,34 @@ export default function WeatherPage() {
     const lat = parseFloat(customLat);
     const lon = parseFloat(customLon);
     if (isNaN(lat) || isNaN(lon)) return;
-    const loc = { id: 'custom', name: `Custom (${lat.toFixed(2)}, ${lon.toFixed(2)})`, lat, lon, timezone: 'Africa/Accra' };
+    const loc = { id: 'custom', name: `Custom (${lat.toFixed(2)}, ${lon.toFixed(2)})`, lat, lon, timezone: 'auto' };
     setSelectedLocation(loc);
     setShowCustom(false);
+  }
+
+  function useCurrentLocation() {
+    if (!navigator.geolocation) {
+      setError('Location services are not supported by this browser.');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        setSelectedLocation({
+          id: 'current',
+          name: 'Current Farm Location',
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          timezone: 'auto',
+        });
+        setLocating(false);
+      },
+      () => {
+        setError('Could not access your current location. Allow location access or enter GPS coordinates.');
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000 },
+    );
   }
 
   const current = weatherData?.current;
@@ -272,6 +311,9 @@ export default function WeatherPage() {
           <div className="flex flex-wrap gap-2 items-center">
             <MapPin className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm font-medium mr-1">Farm Location:</span>
+            <Button variant="outline" size="sm" onClick={useCurrentLocation} disabled={locating}>
+              <MapPin className="w-4 h-4 mr-1" /> {locating ? 'Locating...' : 'Use Current Location'}
+            </Button>
             {FARM_LOCATIONS.map(loc => (
               <button
                 key={loc.id}

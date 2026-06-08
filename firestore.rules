@@ -204,6 +204,8 @@ service cloud.firestore {
       match /agric_adjustments/{id} { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
       match /agric_alerts/{id}      { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
       match /agric_deletion_log/{id}{ allow read: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager(); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_livestock/{id}   { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_crop_plans/{id}  { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
     }
 
     // ── Invitations ──────────────────────────────────────────────

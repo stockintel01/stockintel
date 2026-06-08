@@ -12,7 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { useAgric } from '@/lib/agric/useAgric';
-import { USAGE_HISTORY } from '@/lib/agric/mock-data';
+import { useAppStore } from '@/lib/store';
+import { getAgricultureProfile, type FarmLocation } from '@/lib/agric/config';
 
 const CATEGORY_LABELS: Record<string, string> = {
   fungicide: 'Fungicides', insecticide: 'Insecticides', herbicide: 'Herbicides',
@@ -28,12 +29,12 @@ function getStockStatus(item: { currentStock: number; minimumStock: number; isAc
 }
 
 // ── Mini Weather Banner ───────────────────────────────────────
-function WeatherBanner() {
+function WeatherBanner({ location }: { location?: FarmLocation }) {
   const [wx, setWx] = useState<any>(null);
   useEffect(() => {
-    fetch('https://api.open-meteo.com/v1/forecast?latitude=5.6037&longitude=-0.1870&current=temperature_2m,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&timezone=Africa%2FAccra')
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${location?.latitude ?? 5.6037}&longitude=${location?.longitude ?? -0.187}&current=temperature_2m,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&timezone=auto`)
       .then(r => r.json()).then(d => setWx(d.current)).catch(() => {});
-  }, []);
+  }, [location?.latitude, location?.longitude]);
   if (!wx) return null;
   const code = wx.weather_code;
   const isRaining = code >= 51, isStorm = code >= 95, windHigh = wx.wind_speed_10m > 20;
@@ -65,9 +66,19 @@ function WeatherBanner() {
 
 export default function AgricOverviewPage() {
   const {
-    inventory, alerts, requests, checkouts, packingRecords, plans,
+    inventory, usageLogs, alerts, requests, checkouts, packingRecords, plans,
     loading, isLive, readAlert,
   } = useAgric();
+  const { organization } = useAppStore();
+  const profile = getAgricultureProfile(organization?.settings);
+  const usageHistory = Array.from({ length: 6 }, (_, offset) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (5 - offset) * 7);
+    const week = Math.ceil((((date.getTime() - new Date(date.getFullYear(), 0, 1).getTime()) / 86400000) + 1) / 7);
+    const logs = usageLogs.filter(log => log.weekNumber === week);
+    const total = (category: string) => logs.filter(log => log.category === category).reduce((sum, log) => sum + log.quantity, 0);
+    return { week: `W${week}`, fungicide: total('fungicide'), insecticide: total('insecticide'), herbicide: total('herbicide') };
+  });
 
   const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
 
@@ -134,7 +145,7 @@ export default function AgricOverviewPage() {
       </div>
 
       {/* Weather */}
-      <WeatherBanner />
+      <WeatherBanner location={profile.location} />
 
       {/* Critical Alerts */}
       {unreadAlerts.filter(a => a.severity === 'critical').length > 0 && (
@@ -267,9 +278,9 @@ export default function AgricOverviewPage() {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="flex gap-1 items-end h-16 mt-2">
-                {USAGE_HISTORY.map(w => {
+                {usageHistory.map(w => {
                   const total = w.fungicide + w.insecticide + w.herbicide;
-                  const maxTotal = Math.max(...USAGE_HISTORY.map(x => x.fungicide + x.insecticide + x.herbicide));
+                  const maxTotal = Math.max(1, ...usageHistory.map(x => x.fungicide + x.insecticide + x.herbicide));
                   return (
                     <div key={w.week} className="flex-1 flex flex-col justify-end items-center gap-0.5" style={{ height: `${(total / maxTotal) * 56}px` }}>
                       <div className="w-full bg-blue-400" style={{ height: `${(w.fungicide / total) * 100}%` }} />
@@ -280,7 +291,7 @@ export default function AgricOverviewPage() {
                 })}
               </div>
               <div className="flex justify-between mt-1">
-                {USAGE_HISTORY.map(w => <p key={w.week} className="text-xs text-muted-foreground flex-1 text-center">{w.week}</p>)}
+                {usageHistory.map(w => <p key={w.week} className="text-xs text-muted-foreground flex-1 text-center">{w.week}</p>)}
               </div>
               <div className="flex gap-3 mt-2 text-xs text-muted-foreground">
                 <span><span className="inline-block w-2 h-2 bg-blue-400 rounded-sm mr-1" />Fungicide</span>

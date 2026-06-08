@@ -8,10 +8,6 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-  MOCK_AGRIC_INVENTORY, MOCK_PACKING_RECORDS, MOCK_SHIPPING_RECORDS,
-  MOCK_EQUIPMENT_CHECKOUTS, USAGE_HISTORY, MOCK_WEEKLY_REPORT
-} from '@/lib/agric/mock-data';
 import { useAgric } from '@/lib/agric/useAgric';
 
 type ReportPeriod = 'daily' | 'weekly' | 'monthly';
@@ -27,13 +23,12 @@ const CATEGORY_ICONS: Record<string, any> = {
 };
 
 export default function ReportsPage() {
-  const { inventory: liveInv, packingRecords: livePacking, shippingRecords: liveShipping, checkouts: liveCheckouts, isLive } = useAgric();
+  const { inventory: liveInv, usageLogs, packingRecords: livePacking, shippingRecords: liveShipping, checkouts: liveCheckouts } = useAgric();
   const [period, setPeriod] = useState<ReportPeriod>('weekly');
   const [reportType, setReportType] = useState<ReportType>('full');
   const [weekNum, setWeekNum] = useState(10);
 
-  // Compute from mock data
-  const inventory = (isLive && liveInv.length > 0 ? liveInv : MOCK_AGRIC_INVENTORY).filter(i => i.isActive);
+  const inventory = liveInv.filter(i => i.isActive);
   const criticalItems = inventory.filter(i => i.currentStock <= i.minimumStock * 0.5);
   const lowItems = inventory.filter(i => i.currentStock > i.minimumStock * 0.5 && i.currentStock <= i.minimumStock);
   const inStockItems = inventory.filter(i => i.currentStock > i.minimumStock);
@@ -45,21 +40,43 @@ export default function ReportsPage() {
       const critical = items.filter(i => i.currentStock <= i.minimumStock).length;
       return { cat, count: items.length, critical };
     });
-  }, []);
+  }, [inventory]);
 
-  // Weekly stock movements from the Week 10 report
-  const weeklyMovements = MOCK_WEEKLY_REPORT.items;
+  const weeklyMovements = inventory.map(item => ({
+    itemId: item.id,
+    itemName: item.name,
+    category: item.category,
+    uom: item.uom,
+    openingStock: item.currentStock,
+    received: 0,
+    totalUsage: item.avgWeeklyUsage ?? 0,
+    damaged: 0,
+    closingStock: item.currentStock,
+  }));
 
   // Packing summary
-  const packingToday = (isLive && livePacking.length > 0 ? livePacking : MOCK_PACKING_RECORDS).filter(r => r.date === new Date().toISOString().slice(0, 10));
+  const packingToday = livePacking.filter(r => r.date === new Date().toISOString().slice(0, 10));
   const totalPacked = packingToday.reduce((s, r) => s + r.packedBoxes, 0);
   const totalTarget = packingToday.reduce((s, r) => s + r.targetBoxes, 0);
   const totalRejected = packingToday.reduce((s, r) => s + r.rejectedBoxes, 0);
-  const totalShipped = (isLive && liveShipping.length > 0 ? liveShipping : MOCK_SHIPPING_RECORDS).reduce((s, r) => s + r.boxesShipped, 0);
+  const totalShipped = liveShipping.reduce((s, r) => s + r.boxesShipped, 0);
 
   // Equipment stats
-  const overdueEquip = MOCK_EQUIPMENT_CHECKOUTS.filter(e => e.isOverdue && !e.isReturned).length;
-  const currentlyOut = MOCK_EQUIPMENT_CHECKOUTS.filter(e => !e.isReturned).length;
+  const overdueEquip = liveCheckouts.filter(e => e.isOverdue && !e.isReturned).length;
+  const currentlyOut = liveCheckouts.filter(e => !e.isReturned).length;
+  const usageHistory = Array.from({ length: 6 }, (_, offset) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (5 - offset) * 7);
+    const week = Math.ceil((((date.getTime() - new Date(date.getFullYear(), 0, 1).getTime()) / 86400000) + 1) / 7);
+    const logs = usageLogs.filter(log => log.weekNumber === week);
+    return {
+      week: `W${week}`,
+      fungicide: logs.filter(log => log.category === 'fungicide').reduce((sum, log) => sum + log.quantity, 0),
+      insecticide: logs.filter(log => log.category === 'insecticide').reduce((sum, log) => sum + log.quantity, 0),
+      herbicide: logs.filter(log => log.category === 'herbicide').reduce((sum, log) => sum + log.quantity, 0),
+      fertilizer: logs.filter(log => log.category === 'fertilizer').reduce((sum, log) => sum + log.quantity, 0),
+    };
+  });
 
   function exportReport() {
     const lines: string[] = [];
@@ -322,7 +339,7 @@ export default function ReportsPage() {
                   <thead className="bg-muted/30 border-b">
                     <tr>
                       <th className="text-left px-4 py-2 font-medium">Category</th>
-                      {USAGE_HISTORY.map(w => <th key={w.week} className="text-right px-3 py-2 font-medium">{w.week}</th>)}
+                      {usageHistory.map(w => <th key={w.week} className="text-right px-3 py-2 font-medium">{w.week}</th>)}
                       <th className="text-right px-4 py-2 font-medium">Avg/Wk</th>
                     </tr>
                   </thead>
@@ -333,7 +350,7 @@ export default function ReportsPage() {
                       { label: 'Herbicide', key: 'herbicide', color: 'text-yellow-600' },
                       { label: 'Fertilizer', key: 'fertilizer', color: 'text-green-600' },
                     ].map(row => {
-                      const values = USAGE_HISTORY.map(w => w[row.key as keyof typeof w] as number);
+                      const values = usageHistory.map(w => w[row.key as keyof typeof w] as number);
                       const avg = Math.round(values.reduce((s, v) => s + v, 0) / values.length);
                       return (
                         <tr key={row.key} className="border-b">
@@ -377,7 +394,7 @@ export default function ReportsPage() {
               </Card>
             ))}
           </div>
-          {MOCK_PACKING_RECORDS.length > 0 && (
+          {livePacking.length > 0 && (
             <Card>
               <CardContent className="p-0">
                 <table className="w-full text-sm">
@@ -393,7 +410,7 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {MOCK_PACKING_RECORDS.map((r, i) => {
+                    {livePacking.map((r, i) => {
                       const eff = r.targetBoxes > 0 ? Math.round((r.packedBoxes / r.targetBoxes) * 100) : 100;
                       return (
                         <tr key={r.id} className={`border-b ${i % 2 === 0 ? '' : 'bg-muted/10'}`}>
@@ -422,7 +439,7 @@ export default function ReportsPage() {
             <Tractor className="w-5 h-5 text-slate-600" /> 4. Equipment Tracking
           </h2>
           <div className="grid grid-cols-3 gap-3">
-            <Card><CardContent className="pt-4"><p className="text-3xl font-bold">{MOCK_EQUIPMENT_CHECKOUTS.length}</p><p className="text-sm text-muted-foreground">Total Transactions</p></CardContent></Card>
+            <Card><CardContent className="pt-4"><p className="text-3xl font-bold">{liveCheckouts.length}</p><p className="text-sm text-muted-foreground">Total Transactions</p></CardContent></Card>
             <Card className="border-l-4 border-l-amber-500"><CardContent className="pt-4"><p className="text-3xl font-bold text-amber-600">{currentlyOut}</p><p className="text-sm text-muted-foreground">Currently Out</p></CardContent></Card>
             <Card className="border-l-4 border-l-red-500"><CardContent className="pt-4"><p className="text-3xl font-bold text-red-600">{overdueEquip}</p><p className="text-sm text-muted-foreground">Overdue Returns</p></CardContent></Card>
           </div>
@@ -440,7 +457,7 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {MOCK_EQUIPMENT_CHECKOUTS.map((c, i) => (
+                  {liveCheckouts.map((c, i) => (
                     <tr key={c.id} className={`border-b ${c.isOverdue && !c.isReturned ? 'bg-red-50' : i % 2 === 0 ? '' : 'bg-muted/10'}`}>
                       <td className="px-4 py-2 font-medium">{c.itemName}</td>
                       <td className="px-4 py-2">{c.checkoutBy}</td>

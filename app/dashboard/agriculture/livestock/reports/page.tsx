@@ -4,16 +4,20 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Download, BarChart3 } from 'lucide-react';
-import {
-  MOCK_FLOCKS, MOCK_EGG_RECORDS, MOCK_FEED_LOGS,
-  MOCK_MORTALITY, MOCK_MILK_RECORDS, MOCK_LIVESTOCK_SALES,
-  MOCK_EGG_SALES, EGG_PRODUCTION_TREND,
-} from '@/lib/agric/livestock-mock-data';
+import { useLivestock } from '@/lib/agric/useLivestock';
 
 const today = new Date().toISOString().slice(0, 10);
 type Period = 'daily' | 'weekly' | 'monthly';
 
 export default function LivestockReportsPage() {
+  const {
+    flocks: MOCK_FLOCKS, eggRecords: MOCK_EGG_RECORDS, feedLogs: MOCK_FEED_LOGS,
+    mortality: MOCK_MORTALITY, milkRecords: MOCK_MILK_RECORDS,
+    livestockSales: MOCK_LIVESTOCK_SALES, eggSales: MOCK_EGG_SALES,
+  } = useLivestock();
+  const EGG_PRODUCTION_TREND = [...MOCK_EGG_RECORDS].sort((a, b) => a.date.localeCompare(b.date)).slice(-7).map(record => ({
+    day: record.date, layRate: record.layRate ?? 0, eggs: record.totalEggsCollected, gradeA: record.gradeA,
+  }));
   const [period, setPeriod] = useState<Period>('weekly');
 
   // Summary stats

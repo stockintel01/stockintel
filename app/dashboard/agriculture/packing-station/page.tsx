@@ -8,10 +8,10 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FARM_ZONES } from '@/lib/agric/mock-data';
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
 import { PackingRecord, ShippingRecord, FarmZone } from '@/lib/agric/types';
+import { getAgricultureProfile } from '@/lib/agric/config';
 
 const STATIONS = ['Packing Station A', 'Packing Station B', 'Packing Station C'];
 const PRODUCE_TYPES = ['Banana', 'Okra', 'Papaya', 'Tomato', 'Beans', 'Moringa', 'Passion Fruit'];
@@ -20,7 +20,9 @@ const SHIFTS = ['morning', 'afternoon', 'evening'] as const;
 export default function PackingStationPage() {
   const today = new Date().toISOString().slice(0, 10);
   const { packingRecords, shippingRecords, addPacking, addShipping } = useAgric();
-  const { user } = useAppStore();
+  const { user, organization } = useAppStore();
+  const profile = getAgricultureProfile(organization?.settings);
+  const farmZones = profile.farmZones.length ? profile.farmZones : ['Main Farm'];
   const currentUserName = user?.name ?? 'Supervisor';
   const currentUserId = user?.id ?? 's01';
   const [showNewPacking, setShowNewPacking] = useState(false);
@@ -268,7 +270,7 @@ export default function PackingStationPage() {
                 <div>
                   <label className="text-sm font-medium">Farm Zone</label>
                   <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newPacking.farmZone} onChange={e => setNewPacking(p => ({ ...p, farmZone: e.target.value as FarmZone }))}>
-                    {FARM_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                    {farmZones.map(z => <option key={z} value={z}>{z}</option>)}
                   </select>
                 </div>
                 <div>

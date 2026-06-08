@@ -5,24 +5,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, X, Download, AlertTriangle } from 'lucide-react';
-import {
-  MOCK_FEED_LOGS, MOCK_FLOCKS,
-  MOCK_LIVESTOCK_FEED_INVENTORY, MOCK_LIVESTOCK_FEED_PLANS,
-} from '@/lib/agric/livestock-mock-data';
 import type { FeedConsumptionLog, LivestockFeedPlan } from '@/lib/agric/livestock-types';
 import { useAppStore } from '@/lib/store';
+import { useLivestock } from '@/lib/agric/useLivestock';
+import { useAgric } from '@/lib/agric/useAgric';
 
 const today = new Date().toISOString().slice(0, 10);
 
 export default function LivestockFeedPage() {
   const { user } = useAppStore();
-  const [logs, setLogs]   = useState<FeedConsumptionLog[]>(MOCK_FEED_LOGS);
-  const [plans]           = useState<LivestockFeedPlan[]>(MOCK_LIVESTOCK_FEED_PLANS);
+  const { feedLogs: logs, feedPlans: plans, flocks, addRecord } = useLivestock();
+  const { inventory } = useAgric();
+  const feedInventory = inventory.filter(item => item.category === 'other' && item.isActive);
   const [tab, setTab]     = useState<'daily' | 'plans' | 'inventory'>('daily');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
-    flockHerdId: MOCK_FLOCKS[0]?.id ?? '',
-    feedItemId: MOCK_LIVESTOCK_FEED_INVENTORY[0]?.id ?? '',
+    flockHerdId: '',
+    feedItemId: '',
     quantityKg: 0, feedsPerDay: 2, date: today, notes: '',
   });
 
@@ -31,16 +30,16 @@ export default function LivestockFeedPage() {
   const todayFeedCost = todayLogs.reduce((s, l) => s + (l.totalCost ?? 0), 0);
 
   // Low-stock feed items
-  const lowFeedItems = MOCK_LIVESTOCK_FEED_INVENTORY.filter(i =>
+  const lowFeedItems = feedInventory.filter(i =>
     i.isActive && i.currentStock <= i.minimumStock
   );
 
   // Feed plans with shortfall
   const shortfallPlans = plans.filter(p => !p.isStockSufficient && p.status === 'active');
 
-  function submitLog() {
-    const flock = MOCK_FLOCKS.find(f => f.id === form.flockHerdId);
-    const feed  = MOCK_LIVESTOCK_FEED_INVENTORY.find(i => i.id === form.feedItemId);
+  async function submitLog() {
+    const flock = flocks.find(f => f.id === form.flockHerdId);
+    const feed  = feedInventory.find(i => i.id === form.feedItemId);
     if (!flock || !feed || !form.quantityKg) return;
     const rec: FeedConsumptionLog = {
       id: `fc_${Date.now()}`,
@@ -57,9 +56,9 @@ export default function LivestockFeedPage() {
       recordedBy: user?.name ?? 'Farm Manager',
       notes: form.notes || undefined,
     };
-    setLogs(prev => [rec, ...prev]);
+    await addRecord('feedLog', rec);
     setShowForm(false);
-    setForm({ flockHerdId: MOCK_FLOCKS[0]?.id ?? '', feedItemId: MOCK_LIVESTOCK_FEED_INVENTORY[0]?.id ?? '', quantityKg: 0, feedsPerDay: 2, date: today, notes: '' });
+    setForm({ flockHerdId: flocks[0]?.id ?? '', feedItemId: feedInventory[0]?.id ?? '', quantityKg: 0, feedsPerDay: 2, date: today, notes: '' });
   }
 
   function exportCSV() {
@@ -235,7 +234,7 @@ export default function LivestockFeedPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {MOCK_LIVESTOCK_FEED_INVENTORY.filter(i => i.isActive).map(item => {
+                  {feedInventory.map(item => {
                     const weeksLeft = item.avgWeeklyUsage && item.avgWeeklyUsage > 0
                       ? (item.currentStock / item.avgWeeklyUsage).toFixed(1)
                       : '∞';
@@ -275,13 +274,13 @@ export default function LivestockFeedPage() {
               <div>
                 <label className="text-xs font-medium text-muted-foreground uppercase">Flock / Herd *</label>
                 <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={form.flockHerdId} onChange={e => setForm(f => ({ ...f, flockHerdId: e.target.value }))}>
-                  {MOCK_FLOCKS.filter(f => f.status === 'active').map(fl => <option key={fl.id} value={fl.id}>{fl.name}</option>)}
+                  <option value="">Select flock or herd</option>{flocks.filter(f => f.status === 'active').map(fl => <option key={fl.id} value={fl.id}>{fl.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground uppercase">Feed Item *</label>
                 <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={form.feedItemId} onChange={e => setForm(f => ({ ...f, feedItemId: e.target.value }))}>
-                  {MOCK_LIVESTOCK_FEED_INVENTORY.filter(i => i.isActive).map(i => <option key={i.id} value={i.id}>{i.name} ({i.currentStock}{i.uom} in stock)</option>)}
+                  <option value="">Select feed inventory item</option>{feedInventory.map(i => <option key={i.id} value={i.id}>{i.name} ({i.currentStock}{i.uom} in stock)</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -303,8 +302,8 @@ export default function LivestockFeedPage() {
               {form.quantityKg > 0 && form.flockHerdId && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-xs text-green-800">
                   {(() => {
-                    const fl = MOCK_FLOCKS.find(f => f.id === form.flockHerdId);
-                    const fi = MOCK_LIVESTOCK_FEED_INVENTORY.find(i => i.id === form.feedItemId);
+                    const fl = flocks.find(f => f.id === form.flockHerdId);
+                    const fi = feedInventory.find(i => i.id === form.feedItemId);
                     if (!fl || !fi) return null;
                     const gPerAnimal = ((form.quantityKg * 1000) / fl.currentCount).toFixed(0);
                     const cost = form.quantityKg * (fi.unitCost ?? 0);

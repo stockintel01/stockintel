@@ -5,18 +5,61 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { User, Globe, Lock, Scroll } from 'lucide-react';
+import { User, Globe, Lock, Scroll, Leaf, MapPin } from 'lucide-react';
 import { useState } from 'react';
 import Link from 'next/link';
 import { doc, updateDoc } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
+import {
+    agricultureProfileLabel,
+    buildAgricultureProfile,
+    getAgricultureProfile,
+    type AgricultureOperation,
+} from '@/lib/agric/config';
 
 export default function SettingsPage() {
     const { user, organization, currency, setCurrency, taxSettings, updateTaxSettings, setStoreUser } = useAppStore();
     const [successMsg, setSuccessMsg] = useState('');
     const [name, setName] = useState(user?.name ?? '');
     const [saving, setSaving] = useState(false);
+    const [agricultureProfile, setAgricultureProfile] = useState(() => getAgricultureProfile(organization?.settings));
+    const [locating, setLocating] = useState(false);
+
+    const toggleAgricultureOperation = (operation: AgricultureOperation) => {
+        const selected = agricultureProfile.operationTypes.includes(operation);
+        const next = selected
+            ? agricultureProfile.operationTypes.filter(item => item !== operation)
+            : [...agricultureProfile.operationTypes, operation];
+        setAgricultureProfile(buildAgricultureProfile(next, agricultureProfile));
+    };
+
+    const useCurrentLocation = () => {
+        if (!navigator.geolocation) {
+            setSuccessMsg('Location services are not supported by this browser.');
+            return;
+        }
+        setLocating(true);
+        navigator.geolocation.getCurrentPosition(
+            position => {
+                setAgricultureProfile(profile => ({
+                    ...profile,
+                    location: {
+                        name: profile.location?.name || 'Main Farm',
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    },
+                }));
+                setLocating(false);
+            },
+            () => {
+                setSuccessMsg('Could not access your location. Check browser location permissions.');
+                setLocating(false);
+            },
+            { enableHighAccuracy: true, timeout: 15000 },
+        );
+    };
 
     const handleSave = async () => {
         if (!user || !auth.currentUser) return;
@@ -27,11 +70,23 @@ export default function SettingsPage() {
                 updateDoc(doc(db, 'users', user.id), { displayName: name.trim(), updatedAt: new Date() }),
                 organization?.id ? updateDoc(doc(db, 'organizations', organization.id), {
                     currency,
-                    settings: { tax: taxSettings },
+                    settings: {
+                        ...(organization.settings ?? {}),
+                        tax: taxSettings,
+                        ...(organization.industry === 'agriculture' ? { agriculture: agricultureProfile } : {}),
+                    },
                     updatedAt: new Date(),
                 }) : Promise.resolve(),
             ]);
-            setStoreUser({ ...user, name: name.trim() }, organization);
+            setStoreUser({ ...user, name: name.trim() }, organization ? {
+                ...organization,
+                currency,
+                settings: {
+                    ...(organization.settings ?? {}),
+                    tax: taxSettings,
+                    ...(organization.industry === 'agriculture' ? { agriculture: agricultureProfile } : {}),
+                },
+            } : null);
             setSuccessMsg('Settings saved!');
             setTimeout(() => setSuccessMsg(''), 3000);
         } catch { setSuccessMsg('Failed to save. Try again.'); }
@@ -67,6 +122,125 @@ export default function SettingsPage() {
                         <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Settings'}</Button>
                     </CardContent>
                 </Card>
+
+                {organization?.industry === 'agriculture' && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Leaf className="w-5 h-5 text-green-600" /> Agriculture Workspace
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-5">
+                            <div>
+                                <Label className="text-base">Farm operations</Label>
+                                <p className="text-sm text-muted-foreground mb-3">
+                                    Current workspace: {agricultureProfileLabel(agricultureProfile)}
+                                </p>
+                                <div className="grid sm:grid-cols-3 gap-3">
+                                    {([
+                                        ['crop', 'Crop Production'],
+                                        ['livestock', 'Animal Production'],
+                                        ['poultry', 'Poultry'],
+                                    ] as Array<[AgricultureOperation, string]>).map(([operation, label]) => (
+                                        <label key={operation} className="flex items-center gap-3 rounded-lg border p-3 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={agricultureProfile.operationTypes.includes(operation)}
+                                                onChange={() => toggleAgricultureOperation(operation)}
+                                                className="w-4 h-4"
+                                            />
+                                            <span className="text-sm font-medium">{label}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="grid md:grid-cols-3 gap-3">
+                                <div className="space-y-2">
+                                    <Label>Farm zones / fields</Label>
+                                    <Input
+                                        placeholder="North Field, Poultry Block"
+                                        value={agricultureProfile.farmZones.join(', ')}
+                                        onChange={event => setAgricultureProfile(profile => ({ ...profile, farmZones: event.target.value.split(',').map(value => value.trim()).filter(Boolean) }))}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Crop types</Label>
+                                    <Input
+                                        placeholder="Maize, Tomato, Cocoa"
+                                        value={agricultureProfile.cropTypes.join(', ')}
+                                        onChange={event => setAgricultureProfile(profile => ({ ...profile, cropTypes: event.target.value.split(',').map(value => value.trim()).filter(Boolean) }))}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Animal types</Label>
+                                    <Input
+                                        placeholder="Layers, Broilers, Cattle"
+                                        value={agricultureProfile.livestockTypes.join(', ')}
+                                        onChange={event => setAgricultureProfile(profile => ({ ...profile, livestockTypes: event.target.value.split(',').map(value => value.trim()).filter(Boolean) }))}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="border-t pt-5 space-y-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <Label className="text-base flex items-center gap-2"><MapPin className="w-4 h-4" /> Main farm location</Label>
+                                        <p className="text-sm text-muted-foreground">Used for live weather and farm advice.</p>
+                                    </div>
+                                    <Button variant="outline" onClick={useCurrentLocation} disabled={locating}>
+                                        {locating ? 'Locating...' : 'Use Current Location'}
+                                    </Button>
+                                </div>
+                                <div className="grid md:grid-cols-3 gap-3">
+                                    <Input
+                                        placeholder="Main Farm"
+                                        value={agricultureProfile.location?.name ?? ''}
+                                        onChange={event => setAgricultureProfile(profile => ({
+                                            ...profile,
+                                            location: {
+                                                name: event.target.value,
+                                                latitude: profile.location?.latitude ?? 0,
+                                                longitude: profile.location?.longitude ?? 0,
+                                                timezone: profile.location?.timezone,
+                                            },
+                                        }))}
+                                    />
+                                    <Input
+                                        type="number"
+                                        step="any"
+                                        placeholder="Latitude"
+                                        value={agricultureProfile.location?.latitude ?? ''}
+                                        onChange={event => setAgricultureProfile(profile => ({
+                                            ...profile,
+                                            location: {
+                                                name: profile.location?.name ?? 'Main Farm',
+                                                latitude: Number(event.target.value),
+                                                longitude: profile.location?.longitude ?? 0,
+                                                timezone: profile.location?.timezone,
+                                            },
+                                        }))}
+                                    />
+                                    <Input
+                                        type="number"
+                                        step="any"
+                                        placeholder="Longitude"
+                                        value={agricultureProfile.location?.longitude ?? ''}
+                                        onChange={event => setAgricultureProfile(profile => ({
+                                            ...profile,
+                                            location: {
+                                                name: profile.location?.name ?? 'Main Farm',
+                                                latitude: profile.location?.latitude ?? 0,
+                                                longitude: Number(event.target.value),
+                                                timezone: profile.location?.timezone,
+                                            },
+                                        }))}
+                                    />
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
 
                 {/* Preferences Section */}
                 <Card>

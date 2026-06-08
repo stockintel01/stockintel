@@ -193,6 +193,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     items: [
                         { name: 'Overview', href: '/dashboard', icon: Home },
                         { name: 'Inventory', href: '/dashboard/inventory', icon: Box },
+                        { name: 'Bulk Import', href: '/dashboard/inventory/import', icon: PackageCheck },
                         { name: 'Orders & Sales', href: '/dashboard/sales', icon: Package },
                         { name: 'Customers', href: '/dashboard/customers', icon: Users },
                     ],
