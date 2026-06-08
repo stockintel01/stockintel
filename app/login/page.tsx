@@ -91,7 +91,7 @@ function LoginInner() {
       const orgId = await createOrganization(
         cred.user.uid,
         industry,
-        name.trim() + "'s Business",
+        'New Business',
         referralCode ?? undefined,
       );
 

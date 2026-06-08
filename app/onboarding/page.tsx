@@ -65,7 +65,7 @@ const CURRENCIES = [
 
 export default function OnboardingPage() {
     const router = useRouter();
-    const { user, organization, setIndustry, setCurrency, updateReceiptSettings, setAuthenticated } = useAppStore();
+    const { user, organization, setIndustry, setCurrency, updateReceiptSettings, setAuthenticated, setStoreUser } = useAppStore();
     const { signInWithGoogle } = useAuth();
 
     const [step, setStep] = useState(0);
@@ -73,7 +73,7 @@ export default function OnboardingPage() {
     const [error, setError] = useState('');
 
     const [business, setBusiness] = useState<BusinessSetup>({
-        businessName: organization?.name ?? '',
+        businessName: organization?.name === 'New Business' || organization?.name?.endsWith("'s Business") ? '' : organization?.name ?? '',
         industry: (organization?.industry ?? 'pharmacy') as IndustryType,
         address: '',
         phone: '',
@@ -135,6 +135,12 @@ export default function OnboardingPage() {
 
                 // Persist to Firestore org document if user is logged in
                 if (organization?.id) {
+                    const agricultureSettings = business.industry === 'agriculture'
+                        ? {
+                            ...(organization.settings ?? {}),
+                            agriculture: buildAgricultureProfile(business.agricultureOperations),
+                        }
+                        : organization.settings ?? {};
                     await updateDoc(doc(db, 'organizations', organization.id), {
                         name: business.businessName,
                         industry: business.industry,
@@ -142,14 +148,21 @@ export default function OnboardingPage() {
                         address: business.address,
                         phone: business.phone,
                         taxId: business.taxId,
-                        settings: business.industry === 'agriculture'
-                            ? {
-                                ...(organization.settings ?? {}),
-                                agriculture: buildAgricultureProfile(business.agricultureOperations),
-                            }
-                            : organization.settings ?? {},
+                        settings: agricultureSettings,
                         onboardingStep: 'business_complete',
                     });
+                    if (user) {
+                        setStoreUser(user, {
+                            ...organization,
+                            name: business.businessName,
+                            industry: business.industry,
+                            currency: business.currency,
+                            address: business.address,
+                            phone: business.phone,
+                            taxId: business.taxId,
+                            settings: agricultureSettings,
+                        });
+                    }
                 }
             } catch (err) {
                 console.error('Failed to save business details:', err);

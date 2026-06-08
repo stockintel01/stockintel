@@ -227,7 +227,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const baseConfig = industryConfig[activeIndustry || 'pharmacy'];
     const config = activeIndustry === 'agriculture' ? {
         ...baseConfig,
-        name: agricultureProfileLabel(agricultureProfile),
+        name: organization?.name || 'Agriculture Workspace',
         groups: [
           ...baseConfig.groups.map(group => ({
             ...group,

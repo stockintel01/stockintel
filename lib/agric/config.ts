@@ -90,7 +90,12 @@ export function getAgricultureProfile(settings?: Record<string, unknown>): Agric
 }
 
 export function agricultureProfileLabel(profile: AgricultureProfile): string {
-  return profile.operationTypes
-    .map(type => type === 'crop' ? 'Crop Production' : type === 'livestock' ? 'Animal Production' : 'Poultry')
-    .join(' + ');
+  const operations = profile.operationTypes;
+  if (operations.length > 1) {
+    if (!operations.includes('crop') && operations.includes('livestock') && operations.includes('poultry')) return 'Livestock & Poultry';
+    return 'Integrated Farm';
+  }
+  if (operations[0] === 'livestock') return 'Livestock Farm';
+  if (operations[0] === 'poultry') return 'Poultry Farm';
+  return 'Crop Farm';
 }

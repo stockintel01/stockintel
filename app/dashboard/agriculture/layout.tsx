@@ -153,8 +153,8 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
                 <Leaf className="w-4 h-4 text-white" />
               </div>
               <div>
-                <p className="font-semibold text-sm leading-none">{agricultureProfileLabel(profile)}</p>
-                <p className="text-xs text-muted-foreground">{organization?.name ?? 'Agriculture Workspace'}</p>
+                <p className="font-semibold text-sm leading-none">{organization?.name || 'Agriculture Workspace'}</p>
+                <p className="text-xs text-muted-foreground">{agricultureProfileLabel(profile)}</p>
               </div>
             </div>
           )}
@@ -221,7 +221,7 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
       {/* Main Content */}
       <div className="sticky top-16 z-30 border-b bg-background/95 px-3 py-2 backdrop-blur md:hidden">
         <div className="mb-2 flex items-center justify-between">
-          <div><p className="text-sm font-semibold">{agricultureProfileLabel(profile)}</p><p className="text-[11px] text-muted-foreground">{organization?.name}</p></div>
+          <div><p className="text-sm font-semibold">{organization?.name || 'Agriculture Workspace'}</p><p className="text-[11px] text-muted-foreground">{agricultureProfileLabel(profile)}</p></div>
           <Link href="/dashboard/settings" className="text-xs font-medium text-green-700">Customize</Link>
         </div>
         <nav className="flex gap-2 overflow-x-auto pb-1">

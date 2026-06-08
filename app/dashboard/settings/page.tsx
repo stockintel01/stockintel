@@ -22,6 +22,7 @@ export default function SettingsPage() {
     const { user, organization, currency, setCurrency, taxSettings, updateTaxSettings, setStoreUser } = useAppStore();
     const [successMsg, setSuccessMsg] = useState('');
     const [name, setName] = useState(user?.name ?? '');
+    const [businessName, setBusinessName] = useState(organization?.name ?? '');
     const [saving, setSaving] = useState(false);
     const [agricultureProfile, setAgricultureProfile] = useState(() => getAgricultureProfile(organization?.settings));
     const [locating, setLocating] = useState(false);
@@ -70,6 +71,7 @@ export default function SettingsPage() {
                 updateProfile(auth.currentUser, { displayName: name.trim() }),
                 updateDoc(doc(db, 'users', user.id), { displayName: name.trim(), updatedAt: new Date() }),
                 organization?.id ? updateDoc(doc(db, 'organizations', organization.id), {
+                    name: businessName.trim() || organization.name,
                     currency,
                     settings: {
                         ...(organization.settings ?? {}),
@@ -80,6 +82,7 @@ export default function SettingsPage() {
             ]);
             setStoreUser({ ...user, name: name.trim() }, organization ? {
                 ...organization,
+                name: businessName.trim() || organization.name,
                 currency,
                 settings: {
                     ...(organization.settings ?? {}),
@@ -144,6 +147,20 @@ export default function SettingsPage() {
                             </div>
                         </div>
                         <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Profile & General Settings'}</Button>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Organization Identity</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="space-y-2 max-w-lg">
+                            <Label>Business / Organization Name</Label>
+                            <Input value={businessName} onChange={event => setBusinessName(event.target.value)} placeholder="Enter the registered or trading name" />
+                            <p className="text-sm text-muted-foreground">This name appears throughout dashboards, reports, navigation, and team workspaces.</p>
+                        </div>
+                        <Button onClick={handleSave} disabled={saving || !businessName.trim()}>{saving ? 'Saving...' : 'Save Organization Name'}</Button>
                     </CardContent>
                 </Card>
 

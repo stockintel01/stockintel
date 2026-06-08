@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (!existing) {
                     const orgId = await createOrganization(
                         result.user.uid, 'pharmacy',
-                        result.user.displayName || 'My Business'
+                        'New Business'
                     );
                     await createUserProfile({
                         uid: result.user.uid,
@@ -207,7 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 organizationId = await createOrganization(
                     fbUser.uid,
                     'pharmacy', // placeholder; onboarding will update industry
-                    fbUser.displayName || 'My Business',
+                    'New Business',
                     referrerCode ?? undefined
                 );
             }
