@@ -36,6 +36,22 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
+function getSuperAdminOrganization(): Organization {
+    return {
+        id: 'system',
+        name: 'StockIntel System Preview',
+        industry: 'pharmacy',
+        ownerId: 'system',
+        referralCode: 'SYSTEM',
+        subscription: {
+            plan: 'enterprise',
+            status: 'active',
+            trialEndsAt: new Date('2099-12-31'),
+            currentPeriodEnd: new Date('2099-12-31'),
+        },
+    };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
     // authReady: true once Firebase has resolved the initial auth state
@@ -90,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             organizationId: '',
                             role:           isSuperAdminEmail(currentUser.email) ? 'super_admin' : 'owner',
                         };
-                        setStoreUser(storeUser, null);
+                        setStoreUser(storeUser, isSuperAdminEmail(currentUser.email) ? getSuperAdminOrganization() : null);
                         setAuthenticated(true);
                     } else {
                         // Super admin role override
@@ -118,7 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             photoURL:       profile.photoURL,
                         };
 
-                        setStoreUser(storeUser, orgData);
+                        setStoreUser(storeUser, orgData ?? (isSuperAdminEmail(currentUser.email) ? getSuperAdminOrganization() : null));
                         setAuthenticated(true);
                     }
                 } catch (err) {
@@ -133,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         organizationId: '',
                         role:           isSuperAdminEmail(currentUser.email) ? 'super_admin' : 'owner',
                     };
-                    setStoreUser(storeUser, null);
+                    setStoreUser(storeUser, isSuperAdminEmail(currentUser.email) ? getSuperAdminOrganization() : null);
                     setAuthenticated(true);
                 }
             } else {

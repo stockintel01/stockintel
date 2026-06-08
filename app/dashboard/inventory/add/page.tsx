@@ -9,11 +9,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAppStore } from '@/lib/store';
 import { ArrowLeft, Save } from 'lucide-react';
 import Link from 'next/link';
+import { addItem } from '@/lib/inventory-service';
+import { getPlanLimit } from '@/lib/plans';
+import { isSuperAdminEmail } from '@/lib/access-control';
 
 export default function AddInventoryPage() {
     const router = useRouter();
-    const { activeIndustry, currency, addInventoryItem } = useAppStore();
+    const { activeIndustry, currency, organization, user, inventory } = useAppStore();
     const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
 
     // Controlled form state — all fields wired up so data actually saves
     const [name, setName] = useState('');
@@ -36,11 +40,20 @@ export default function AddInventoryPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!organization?.id || !user?.id) {
+            setError('A signed-in organization is required.');
+            return;
+        }
+        const limit = getPlanLimit(organization.subscription, 'inventoryItems', isSuperAdminEmail(user.email));
+        if (inventory.length >= limit) {
+            setError(`Your plan allows up to ${limit} inventory items. Upgrade to add more.`);
+            return;
+        }
         setIsLoading(true);
+        setError('');
 
         // Build new item and persist it in Zustand store (survives navigation)
         const newItem = {
-            id: `item_${Date.now()}`,
             name: name.trim(),
             sku: sku.trim() || `SKU-${Date.now()}`,
             batchNumber: batchNumber.trim(),
@@ -53,10 +66,14 @@ export default function AddInventoryPage() {
             location: location.trim() || 'Main Store',
         };
 
-        addInventoryItem(newItem);
-
-        await new Promise(resolve => setTimeout(resolve, 600));
-        router.push('/dashboard/inventory');
+        try {
+            await addItem(organization.id, newItem, user.id);
+            router.push('/dashboard/inventory');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Unable to save inventory item.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -175,6 +192,7 @@ export default function AddInventoryPage() {
                         </div>
 
                         <div className="flex justify-end gap-3 pt-6">
+                            {error && <p className="mr-auto text-sm text-red-600">{error}</p>}
                             <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
                             <Button type="submit" disabled={isLoading} size="lg">
                                 <Save className="w-4 h-4 mr-2" />

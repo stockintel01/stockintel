@@ -44,6 +44,10 @@ export async function POST(req: NextRequest) {
         if (plan !== 'pro' && plan !== 'enterprise') {
             return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
         }
+        const priceId = getPriceId(plan);
+        if (!priceId.startsWith('price_') || priceId === 'price_pro_monthly' || priceId === 'price_enterprise_monthly') {
+            throw new ApiError(`Stripe price for ${plan} is not configured`, 503);
+        }
 
         // Check if org already has a Stripe customer ID (reuse it)
         const orgSnap = await adminDb.collection('organizations').doc(organizationId).get();
@@ -54,7 +58,7 @@ export async function POST(req: NextRequest) {
         const sessionConfig: Stripe.Checkout.SessionCreateParams = {
             mode:                   'subscription',
             payment_method_types:   ['card'],
-            line_items:             [{ price: getPriceId(plan), quantity: 1 }],
+            line_items:             [{ price: priceId, quantity: 1 }],
             success_url:            `${APP_URL}/dashboard/billing?success=true&session_id={CHECKOUT_SESSION_ID}`,
             cancel_url:             `${APP_URL}/dashboard/billing?canceled=true`,
             metadata:               { organizationId, userId: user.uid, plan },

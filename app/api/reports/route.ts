@@ -4,14 +4,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { ApiError, requireUser } from '@/lib/api-auth';
+import { ApiError, requireFeature, requireUser } from '@/lib/api-auth';
 import { generateAiText, getAiProvider } from '@/lib/ai-provider';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
     try {
-    await requireUser(req);
+    const user = await requireUser(req);
+    requireFeature(user, 'advancedReports');
     if (!getAiProvider()) {
         return NextResponse.json({ error: 'AI not configured' }, { status: 503 });
     }

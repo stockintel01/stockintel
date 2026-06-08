@@ -329,9 +329,9 @@ export default function LandingPage() {
             </div>
             <div className="plan-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {[
-                { name: 'Starter', price: '$9', period: '/mo', features: ['Single Location', 'Basic Inventory', 'POS Billing', 'Email Support'], highlight: false },
-                { name: 'Professional', price: '$2499', period: '/mo', features: ['3 Locations', 'Advanced Inventory', 'GST Reports', 'Priority Support', 'AI Recommendations', 'Team Access'], highlight: true },
-                { name: 'Enterprise', price: 'Custom', period: '', features: ['Unlimited Locations', 'Dedicated Manager', 'API Access', 'Custom Integration', 'SLA Guarantee', 'On-site Training'], highlight: false },
+                { name: 'Free Trial', price: '$0', period: '/14 days', features: ['Up to 100 items', '3 team members', 'Basic Inventory', 'POS Billing'], highlight: false },
+                { name: 'Professional', price: '$9', period: '/mo', features: ['Up to 5,000 items', '25 team members', 'Advanced Reports', 'Bulk Import', 'AI Features'], highlight: true },
+                { name: 'Enterprise', price: '$27', period: '/mo', features: ['Unlimited Inventory', 'Unlimited Team Members', 'All Pro Features', 'Custom Integrations', 'Dedicated Support'], highlight: false },
               ].map(plan => (
                 <div key={plan.name} className={`plan-card${plan.highlight ? ' highlight' : ''}`}>
                   {plan.highlight && (

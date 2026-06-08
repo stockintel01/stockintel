@@ -77,9 +77,9 @@ export async function createOrganization(
     const orgRef = doc(collection(db, "organizations"));
     const referralCode = generateReferralCode(orgName);
 
-    // Default 3 Month Trial
+    // Default 14-day trial
     const trialEndsAt = new Date();
-    trialEndsAt.setMonth(trialEndsAt.getMonth() + 3);
+    trialEndsAt.setDate(trialEndsAt.getDate() + 14);
 
     const orgData: FirestoreOrg = {
         id: orgRef.id,
@@ -148,18 +148,16 @@ export async function createOrganization(
 // --- Invitations ---
 
 export async function inviteMember(email: string, role: string, orgId: string, orgName?: string, invitedByName?: string) {
-    const ref = await addDoc(collection(db, "invitations"), {
-        email: email.toLowerCase(),
-        role,
-        organizationId: orgId,
-        orgName: orgName ?? '',
-        invitedBy: invitedByName ?? '',
-        status: 'pending',
-        createdAt: serverTimestamp(),
+    const response = await authenticatedFetch('/api/invitations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, role, organizationId: orgId, orgName, invitedBy: invitedByName }),
     });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? 'Unable to create invitation');
     // Return the invite link so the caller can send it via email / copy it
-    const inviteLink = `${typeof window !== 'undefined' ? (typeof window !== 'undefined' ? window.location.origin : '') : ''}/join?invite=${ref.id}`;
-    return { inviteId: ref.id, inviteLink };
+    const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/join?invite=${data.inviteId}`;
+    return { inviteId: data.inviteId, inviteLink };
 }
 
 export async function checkPendingInvitation(email: string) {
@@ -181,36 +179,15 @@ function generateReferralCode(name: string): string {
 }
 
 export async function activateCredit(orgId: string, creditId: string, months: number) {
-    // This should ideally be a Cloud Function to prevent abuse.
-    // Client-side simulation:
-
-    await runTransaction(db, async (tx) => {
-        const orgRef = doc(db, "organizations", orgId);
-        const creditRef = doc(db, `organizations/${orgId}/credits/${creditId}`);
-
-        const orgSnap = await tx.get(orgRef);
-        const creditSnap = await tx.get(creditRef);
-
-        if (!creditSnap.exists() || creditSnap.data().status !== 'available') {
-            throw new Error("Credit not available");
-        }
-
-        const orgData = orgSnap.data() as FirestoreOrg;
-        let newTrialEnd = orgData.subscription.trialEndsAt.toDate();
-
-        // Add months
-        newTrialEnd.setMonth(newTrialEnd.getMonth() + months);
-
-        tx.update(orgRef, {
-            "subscription.trialEndsAt": Timestamp.fromDate(newTrialEnd),
-            "subscription.status": "active" // Ensure active
-        });
-
-        tx.update(creditRef, {
-            status: 'used',
-            usedAt: serverTimestamp()
-        });
+    void orgId;
+    void months;
+    const response = await authenticatedFetch('/api/credits/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creditId }),
     });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? 'Unable to activate credit');
 }
 
 // ─── Sales ────────────────────────────────────────────────────────────────────

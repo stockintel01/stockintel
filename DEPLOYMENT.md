@@ -5,7 +5,7 @@
 - Node.js 18+ and npm
 - Vercel account (free tier works)
 - Firebase project (Blaze plan required for Cloud Functions)
-- Stripe account
+- Stripe account with Pro and Enterprise recurring prices
 - Twilio account (optional — for WhatsApp/SMS alerts)
 - OpenAI, Google Gemini, or Anthropic API key (optional — for AI features)
 

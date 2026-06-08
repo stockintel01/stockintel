@@ -17,6 +17,7 @@ type FilterStatus = 'all' | 'low' | 'expiring' | 'expired';
 
 export default function InventoryPage() {
     const { activeIndustry, currency, inventory, organization, user } = useAppStore();
+    const canManageInventory = !!user && ['super_admin', 'owner', 'manager'].includes(user.role);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
     const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -114,15 +115,15 @@ export default function InventoryPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                    <Link href="/dashboard/inventory/import">
+                    {canManageInventory && <Link href="/dashboard/inventory/import">
                         <Button variant="outline" size="sm"><Upload className="w-4 h-4 mr-2" /> Import</Button>
-                    </Link>
+                    </Link>}
                     <Button variant="outline" size="sm" onClick={handleExport}>
                         <Download className="w-4 h-4 mr-2" /> Export CSV
                     </Button>
-                    <Link href="/dashboard/inventory/add">
+                    {canManageInventory && <Link href="/dashboard/inventory/add">
                         <Button size="sm"><Plus className="w-4 h-4 mr-2" /> Add Item</Button>
-                    </Link>
+                    </Link>}
                 </div>
             </div>
 

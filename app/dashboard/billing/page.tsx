@@ -1,15 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAppStore } from '@/lib/store';
-import { loadStripe, type Stripe as StripeClient } from '@stripe/stripe-js'; // ✅ Import type with alias
 import { CreditCard, Calendar, AlertCircle, CheckCircle, Loader2, ShieldCheck } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
 import { isSuperAdminEmail } from '@/lib/access-control';
-
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
 export default function BillingPage() {
     const { user, organization } = useAppStore();
@@ -57,17 +54,31 @@ export default function BillingPage() {
                 throw new Error(data.error || 'Failed to create checkout session');
             }
 
-            // Redirect to Stripe Checkout
-            const stripe = await stripePromise;
-            if (stripe && data.sessionId) {
-                // ✅ Use type assertion to bypass strict typing
-                await (stripe as any).redirectToCheckout({ sessionId: data.sessionId });
-            } else if (data.url) {
-                window.location.href = data.url;
-            }
-        } catch (err: any) {
+            if (!data.url) throw new Error('Stripe checkout URL was not returned');
+            window.location.href = data.url;
+        } catch (err: unknown) {
             console.error('Upgrade error:', err);
-            setError(err.message || 'Failed to start checkout');
+            setError(err instanceof Error ? err.message : 'Failed to start checkout');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePortal = async () => {
+        if (!organization?.id) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await authenticatedFetch('/api/checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ organizationId: organization.id, action: 'portal' }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Unable to open billing portal');
+            window.location.href = data.url;
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Unable to open billing portal');
         } finally {
             setLoading(false);
         }
@@ -152,13 +163,13 @@ export default function BillingPage() {
                     <Card className="border-2 border-blue-200">
                         <CardHeader>
                             <CardTitle>Pro Plan</CardTitle>
-                            <div className="text-3xl font-bold">$5<span className="text-lg text-muted-foreground">/month</span></div>
+                            <div className="text-3xl font-bold">$9<span className="text-lg text-muted-foreground">/month</span></div>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <ul className="space-y-2">
                                 <li className="flex items-center gap-2">
                                     <CheckCircle className="w-4 h-4 text-green-600" />
-                                    <span>Up to 20 team members</span>
+                                    <span>Up to 25 team members</span>
                                 </li>
                                 <li className="flex items-center gap-2">
                                     <CheckCircle className="w-4 h-4 text-green-600" />
@@ -190,7 +201,7 @@ export default function BillingPage() {
                                 Enterprise
                                 <span className="px-2 py-0.5 bg-purple-600 text-white text-xs rounded-full">Popular</span>
                             </CardTitle>
-                            <div className="text-3xl font-bold">$15<span className="text-lg text-muted-foreground">/month</span></div>
+                            <div className="text-3xl font-bold">$27<span className="text-lg text-muted-foreground">/month</span></div>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <ul className="space-y-2">
@@ -242,6 +253,7 @@ export default function BillingPage() {
                             <span className="text-muted-foreground">Billing Cycle</span>
                             <span className="font-medium">Monthly</span>
                         </div>
+                        {!isSuperAdmin && <Button className="mt-4" variant="outline" disabled={loading} onClick={handlePortal}>Manage Payment Method or Cancel</Button>}
                     </CardContent>
                 </Card>
             )}

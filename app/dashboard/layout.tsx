@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAppStore } from '@/lib/store';
+import { useAppStore, type IndustryType } from '@/lib/store';
 import { isSuperAdminEmail } from '@/lib/access-control';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthContext';
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useInventory } from '@/lib/hooks/useInventory';
+import { canUseFeature, isSubscriptionActive, type PlanFeature } from '@/lib/plans';
 
 interface NavItem {
     name: string;
@@ -31,7 +32,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     useInventory();
     const router = useRouter();
     const pathname = usePathname();
-    const { user, activeIndustry, isAuthenticated, inventory } = useAppStore();
+    const { user, organization, activeIndustry, setIndustry, isAuthenticated, inventory } = useAppStore();
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [expiringCount, setExpiringCount] = useState(0);
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
@@ -55,6 +56,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }, [inventory]);
 
     const { loading: authLoading, logout } = useAuth();
+    const superAdmin = isSuperAdminEmail(user?.email);
+
+    useEffect(() => {
+        if (!superAdmin && organization?.industry && activeIndustry !== organization.industry) {
+            setIndustry(organization.industry);
+        }
+    }, [activeIndustry, organization?.industry, setIndustry, superAdmin]);
 
     // Auth guard — only redirect after Firebase has fully resolved auth state.
     // Without the authLoading check, the guard fires with isAuthenticated=false
@@ -62,8 +70,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     useEffect(() => {
         if (!authLoading && !user && !isAuthenticated) {
             router.replace('/login');
+            return;
         }
-    }, [authLoading, user, isAuthenticated, router]);
+        if (!authLoading && user && !superAdmin && !isSubscriptionActive(organization?.subscription) && pathname !== '/dashboard/billing') {
+            router.replace('/dashboard/billing');
+            return;
+        }
+        const featureRoutes: Array<[string, PlanFeature]> = [
+            ['/dashboard/inventory/import', 'bulkImport'],
+            ['/dashboard/reports', 'advancedReports'],
+            ['/dashboard/pharmacy/analytics', 'advancedReports'],
+            ['/dashboard/pharmacy/consultation', 'ai'],
+            ['/dashboard/prescriptions', 'ai'],
+        ];
+        const required = featureRoutes.find(([path]) => pathname.startsWith(path))?.[1];
+        if (!authLoading && required && !canUseFeature(organization?.subscription, required, superAdmin)) {
+            router.replace('/dashboard/billing');
+            return;
+        }
+        const managerOnlyRoutes = ['/dashboard/team', '/dashboard/inventory/add', '/dashboard/inventory/import'];
+        if (!authLoading && managerOnlyRoutes.some(path => pathname.startsWith(path)) && !['super_admin', 'owner', 'manager'].includes(user?.role ?? '')) {
+            router.replace('/dashboard');
+        }
+    }, [authLoading, user, isAuthenticated, organization?.subscription, pathname, router, superAdmin]);
 
     if (authLoading || !user || !isAuthenticated) {
         return (
@@ -105,7 +134,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Billing', href: '/dashboard/billing', icon: Wallet },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                        ...(isSuperAdminEmail(user?.email) ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
+                        ...(superAdmin ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
                     ],
                 },
             ],
@@ -149,7 +178,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         { name: 'Team', href: '/dashboard/team', icon: UserCog },
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                        ...(isSuperAdminEmail(user?.email) ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
+                        ...(superAdmin ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
                     ],
                 },
             ],
@@ -164,7 +193,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     items: [
                         { name: 'Overview', href: '/dashboard', icon: Home },
                         { name: 'Inventory', href: '/dashboard/inventory', icon: Box },
-                        { name: 'Orders', href: '/dashboard/orders', icon: Package },
+                        { name: 'Orders & Sales', href: '/dashboard/sales', icon: Package },
                         { name: 'Customers', href: '/dashboard/customers', icon: Users },
                     ],
                 },
@@ -181,7 +210,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         { name: 'Team', href: '/dashboard/team', icon: UserCog },
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                        ...(isSuperAdminEmail(user?.email) ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
+                        ...(superAdmin ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
                     ],
                 },
             ],
@@ -193,6 +222,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     const toggleGroup = (label: string) => {
         setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
+    };
+
+    const switchIndustry = (industry: IndustryType) => {
+        setIndustry(industry);
+        router.push(industry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard');
     };
 
     return (
@@ -213,6 +247,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                 {/* Nav groups — scrollable */}
                 <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
+                    {superAdmin && (
+                        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-2">
+                            <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Super Admin Preview</p>
+                            <div className="grid grid-cols-3 gap-1">
+                                {([
+                                    { id: 'pharmacy' as const, label: 'Pharmacy', icon: Pill },
+                                    { id: 'agriculture' as const, label: 'Agri', icon: Leaf },
+                                    { id: 'retail' as const, label: 'Retail', icon: Store },
+                                ]).map(industry => (
+                                    <button
+                                        key={industry.id}
+                                        type="button"
+                                        title={`Preview ${industry.label}`}
+                                        onClick={() => switchIndustry(industry.id)}
+                                        className={cn(
+                                            'flex flex-col items-center gap-1 rounded-md px-1 py-2 text-[10px] font-medium transition-colors',
+                                            activeIndustry === industry.id ? 'bg-emerald-600 text-white' : 'text-emerald-800 hover:bg-emerald-100',
+                                        )}
+                                    >
+                                        <industry.icon className="w-4 h-4" />
+                                        {industry.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     {config.groups.map(group => {
                         const isOpen = openGroups[group.label] !== false; // default open
                         return (
@@ -284,6 +344,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <Menu className="w-5 h-5" />
                     </button>
                     <div className="ml-auto flex items-center gap-2">
+                        {superAdmin && (
+                            <div className="hidden sm:flex items-center gap-1 rounded-lg border bg-background p-1" aria-label="Super admin industry preview">
+                                {([
+                                    { id: 'pharmacy' as const, label: 'Pharmacy', icon: Pill },
+                                    { id: 'agriculture' as const, label: 'Agriculture', icon: Leaf },
+                                    { id: 'retail' as const, label: 'Retail', icon: Store },
+                                ]).map(industry => (
+                                    <button
+                                        key={industry.id}
+                                        type="button"
+                                        onClick={() => switchIndustry(industry.id)}
+                                        className={cn(
+                                            'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+                                            activeIndustry === industry.id
+                                                ? 'bg-primary text-primary-foreground'
+                                                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                                        )}
+                                    >
+                                        <industry.icon className="w-3.5 h-3.5" />
+                                        {industry.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         {expiringCount > 0 && (
                             <Link href="/dashboard/inventory">
                                 <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-1.5 rounded-full font-medium">

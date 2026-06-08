@@ -50,6 +50,17 @@ service cloud.firestore {
       return orgId() == resourceOrgId;
     }
 
+    function hasActiveSubscription(resourceOrgId) {
+      let subscription = get(/databases/$(database)/documents/organizations/$(resourceOrgId)).data.subscription;
+      return isSuperAdmin() || (
+        subscription.status == 'active' &&
+        (
+          (subscription.plan == 'free_trial' && subscription.trialEndsAt > request.time) ||
+          (subscription.plan != 'free_trial' && (!('currentPeriodEnd' in subscription) || subscription.currentPeriodEnd > request.time))
+        )
+      );
+    }
+
     // ── Super Admin — full access to everything ──────────────────
     match /{document=**} {
       allow read, write: if isSuperAdmin();
@@ -109,12 +120,14 @@ service cloud.firestore {
         allow read: if isSignedIn() && isSameOrg(orgId);
         allow create: if isSignedIn()
           && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
           && isOwnerOrManager()
           && request.resource.data.keys().hasAll(['name', 'sku', 'quantity', 'mrp', 'costPrice'])
           && request.resource.data.quantity >= 0
           && request.resource.data.mrp >= 0;
         allow update: if isSignedIn()
           && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
           && (
             isOwnerOrManager() ||
             (isWorker() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'updatedAt']))
@@ -131,42 +144,44 @@ service cloud.firestore {
       // ── Customers ─────────────────────────────────────────────
       match /customers/{custId} {
         allow read: if isSignedIn() && isSameOrg(orgId);
-        allow create, update: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
         allow delete: if isSignedIn() && isSameOrg(orgId) && isOwner();
       }
 
       // ── Sales ─────────────────────────────────────────────────
       match /sales/{saleId} {
         allow read: if isSignedIn() && isSameOrg(orgId);
-        allow create: if isSignedIn() && isSameOrg(orgId);
-        allow update: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId);
+        allow update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
         allow delete: if isSignedIn() && isSameOrg(orgId) && isOwner();
       }
 
       match /locations/{locationId} {
         allow read: if isSignedIn() && isSameOrg(orgId);
-        allow create, update: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
         allow delete: if isSignedIn() && isSameOrg(orgId) && isOwner();
       }
 
       match /transfers/{transferId} {
         allow read: if isSignedIn() && isSameOrg(orgId);
-        allow create, update: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
         allow delete: if isSignedIn() && isSameOrg(orgId) && isOwner();
       }
 
       match /shifts/{shiftId} {
         allow read: if isSignedIn() && isSameOrg(orgId);
-        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
       }
 
       // ── Consultations ─────────────────────────────────────────
       match /consultations/{cId} {
-        allow read, write: if isSignedIn() && isSameOrg(orgId);
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId);
       }
 
       match /patients/{patientId} {
-        allow read, create, update: if isSignedIn() && isSameOrg(orgId);
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId);
         allow delete: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
       }
 
@@ -179,22 +194,21 @@ service cloud.firestore {
       }
 
       // ── Agric collections ──────────────────────────────────────
-      match /agric_inventory/{id}   { allow read, write: if isSignedIn() && isSameOrg(orgId); }
-      match /agric_usage/{id}       { allow read, write: if isSignedIn() && isSameOrg(orgId); }
-      match /agric_requests/{id}    { allow read, write: if isSignedIn() && isSameOrg(orgId); }
-      match /agric_equipment/{id}   { allow read, write: if isSignedIn() && isSameOrg(orgId); }
-      match /agric_plans/{id}       { allow read, write: if isSignedIn() && isSameOrg(orgId); }
-      match /agric_packing/{id}     { allow read, write: if isSignedIn() && isSameOrg(orgId); }
-      match /agric_shipping/{id}    { allow read, write: if isSignedIn() && isSameOrg(orgId); }
-      match /agric_adjustments/{id} { allow read, write: if isSignedIn() && isSameOrg(orgId); }
-      match /agric_alerts/{id}      { allow read, write: if isSignedIn() && isSameOrg(orgId); }
-      match /agric_deletion_log/{id}{ allow read: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager(); allow write: if isSignedIn() && isSameOrg(orgId); }
+      match /agric_inventory/{id}   { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_usage/{id}       { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_requests/{id}    { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_equipment/{id}   { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_plans/{id}       { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_packing/{id}     { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_shipping/{id}    { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_adjustments/{id} { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_alerts/{id}      { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_deletion_log/{id}{ allow read: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager(); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
     }
 
     // ── Invitations ──────────────────────────────────────────────
     match /invitations/{inviteId} {
-      allow create: if isSignedIn() && isOwnerOrManager()
-        && request.resource.data.organizationId == orgId();
+      allow create: if false;
       allow read: if isSignedIn() && isSameOrg(resource.data.organizationId);
       allow update: if false;
       allow delete: if isSuperAdmin();

@@ -51,6 +51,7 @@ export interface Organization {
         plan: 'free_trial' | 'pro' | 'enterprise';
         status: 'active' | 'expired' | 'cancelled';
         trialEndsAt: Date | string;
+        currentPeriodEnd?: Date | string;
     };
 }
 
@@ -197,6 +198,12 @@ export const useAppStore = create<AppState>()(
         }),
         {
             name: 'intellistock-storage',
+            partialize: (state) => ({
+                activeIndustry: state.activeIndustry,
+                currency: state.currency,
+                receiptSettings: state.receiptSettings,
+                taxSettings: state.taxSettings,
+            }),
         }
     )
 );

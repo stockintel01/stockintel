@@ -1,3 +1,8 @@
+import nextEnv from '@next/env';
+
+const { loadEnvConfig } = nextEnv;
+loadEnvConfig(process.cwd());
+
 const required = [
   'NEXT_PUBLIC_FIREBASE_API_KEY',
   'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN',
@@ -8,10 +13,14 @@ const required = [
   'FIREBASE_ADMIN_PROJECT_ID',
   'FIREBASE_ADMIN_CLIENT_EMAIL',
   'FIREBASE_ADMIN_PRIVATE_KEY',
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  'NEXT_PUBLIC_STRIPE_PRICE_PRO',
+  'NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE',
   'NEXT_PUBLIC_APP_URL',
 ];
 
-const optional = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'OPENAI_API_KEY or GEMINI_API_KEY or ANTHROPIC_API_KEY', 'TWILIO_ACCOUNT_SID'];
+const optional = ['OPENAI_API_KEY or GEMINI_API_KEY or ANTHROPIC_API_KEY', 'TWILIO_ACCOUNT_SID'];
 const missing = required.filter(name => !process.env[name]);
 
 if (missing.length) {

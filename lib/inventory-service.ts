@@ -187,9 +187,9 @@ export async function bulkImport(
 ): Promise<number> {
     // Fetch existing SKUs to deduplicate
     const existing = await getDocs(inventoryRef(orgId));
-    const existingSkus = new Set(existing.docs.map(d => d.data().sku as string));
+    const existingSkus = new Set(existing.docs.map(d => String(d.data().sku ?? '').toLowerCase()));
 
-    const toWrite = items.filter(i => !existingSkus.has(i.sku));
+    const toWrite = items.filter(i => !existingSkus.has(i.sku.toLowerCase()));
     if (toWrite.length === 0) return 0;
 
     // Firestore batches are limited to 500 ops

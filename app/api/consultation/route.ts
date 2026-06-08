@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { ApiError, requireUser } from '@/lib/api-auth';
+import { ApiError, requireFeature, requireUser } from '@/lib/api-auth';
 import { generateAiText, getAiProvider } from '@/lib/ai-provider';
 
 interface InventoryItem { id: string; name: string; sku: string; category: string; quantity: number; mrp: number; }
@@ -23,7 +23,8 @@ interface ConsultationResponse {
 
 export async function POST(request: NextRequest) {
     try {
-    await requireUser(request);
+    const user = await requireUser(request);
+    requireFeature(user, 'ai');
     const { symptoms, patientAge, patientWeight, isPregnant, existingConditions, inventory }: ConsultationRequest
         = await request.json();
 

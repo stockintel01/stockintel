@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/lib/store';
 import { inviteMember } from '@/lib/firebase-utils';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { addDoc, collection, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Users, MoreHorizontal, Shield, Mail, UserPlus, Clock, Calendar as CalendarIcon } from 'lucide-react';
 
@@ -30,12 +30,17 @@ interface Shift {
 export default function TeamPage() {
     const { user, organization } = useAppStore();
     const [team, setTeam] = useState<TeamMember[]>([]);
-    const [shifts] = useState<Shift[]>([]);
+    const [shifts, setShifts] = useState<Shift[]>([]);
     const [isInviteOpen, setIsInviteOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('members');
     const [inviteEmail, setInviteEmail] = useState('');
     const [inviteRole, setInviteRole] = useState('worker');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [shiftUserId, setShiftUserId] = useState('');
+    const [shiftDate, setShiftDate] = useState('');
+    const [shiftStart, setShiftStart] = useState('08:00');
+    const [shiftEnd, setShiftEnd] = useState('16:00');
+    const [error, setError] = useState('');
 
     // Listen to team members
     useEffect(() => {
@@ -63,6 +68,13 @@ export default function TeamPage() {
         return () => unsubscribe();
     }, [organization?.id]);
 
+    useEffect(() => {
+        if (!organization?.id) return;
+        return onSnapshot(collection(db, `organizations/${organization.id}/shifts`), snapshot => {
+            setShifts(snapshot.docs.map(shift => ({ id: shift.id, ...shift.data() } as Shift)));
+        });
+    }, [organization?.id]);
+
     const [inviteLink, setInviteLink] = useState('');
     const [copied, setCopied] = useState(false);
 
@@ -77,6 +89,7 @@ export default function TeamPage() {
         if (!organization?.id || !inviteEmail) return;
 
         setIsSubmitting(true);
+        setError('');
         try {
             const result = await inviteMember(
                 inviteEmail, inviteRole, organization.id,
@@ -86,7 +99,29 @@ export default function TeamPage() {
             setInviteEmail('');
         } catch (error) {
             console.error('Error inviting member:', error);
-            console.warn('Failed to send invitation');
+            setError(error instanceof Error ? error.message : 'Failed to send invitation');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleAssignShift = async (event: React.FormEvent) => {
+        event.preventDefault();
+        const member = team.find(item => item.id === shiftUserId);
+        if (!organization?.id || !member || !shiftDate) {
+            setError('Select a staff member and date.');
+            return;
+        }
+        setIsSubmitting(true);
+        setError('');
+        try {
+            await addDoc(collection(db, `organizations/${organization.id}/shifts`), {
+                userId: member.id, userName: member.name, date: shiftDate,
+                startTime: shiftStart, endTime: shiftEnd, status: 'Scheduled',
+                createdBy: user?.id ?? '', createdAt: serverTimestamp(),
+            });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Unable to assign shift');
         } finally {
             setIsSubmitting(false);
         }
@@ -99,10 +134,11 @@ export default function TeamPage() {
                     <h1 className="text-3xl font-bold tracking-tight">Team Management</h1>
                     <p className="text-muted-foreground">Manage access and roles for your organization.</p>
                 </div>
-                <Button onClick={() => setIsInviteOpen(!isInviteOpen)}>
+                <Button onClick={() => setIsInviteOpen(!isInviteOpen)} disabled={!user || !['owner', 'manager', 'super_admin'].includes(user.role)}>
                     <UserPlus className="w-4 h-4 mr-2" /> Invite Member
                 </Button>
             </div>
+            {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
             {/* Tabs Navigation */}
             <div className="flex border-b border-border mb-6">
@@ -231,25 +267,26 @@ export default function TeamPage() {
                             <CardTitle className="text-lg">Assign New Shift</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <form className="grid sm:grid-cols-4 gap-4 items-end" onSubmit={(e) => e.preventDefault()}>
+                            <form className="grid sm:grid-cols-4 gap-4 items-end" onSubmit={handleAssignShift}>
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium">Staff Member</label>
-                                    <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                                        {team.map(m => <option key={m.id}>{m.name}</option>)}
+                                    <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={shiftUserId} onChange={event => setShiftUserId(event.target.value)} required>
+                                        <option value="">Select staff</option>
+                                        {team.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                                     </select>
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium">Date</label>
-                                    <Input type="date" />
+                                    <Input type="date" value={shiftDate} onChange={event => setShiftDate(event.target.value)} required />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium">Time Slot (Start - End)</label>
                                     <div className="flex gap-2">
-                                        <Input type="time" defaultValue="08:00" />
-                                        <Input type="time" defaultValue="16:00" />
+                                        <Input type="time" value={shiftStart} onChange={event => setShiftStart(event.target.value)} required />
+                                        <Input type="time" value={shiftEnd} onChange={event => setShiftEnd(event.target.value)} required />
                                     </div>
                                 </div>
-                                <Button>Assign Shift</Button>
+                                <Button disabled={isSubmitting}>{isSubmitting ? 'Assigning...' : 'Assign Shift'}</Button>
                             </form>
                         </CardContent>
                     </Card>

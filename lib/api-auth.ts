@@ -1,12 +1,14 @@
 import { NextRequest } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { isSuperAdminEmail } from '@/lib/access-control';
+import { canUseFeature, isSubscriptionActive, type PlanFeature, type SubscriptionLike } from '@/lib/plans';
 
 export interface AuthenticatedUser {
     uid: string;
     email: string;
     organizationId: string;
     role: 'super_admin' | 'owner' | 'manager' | 'worker';
+    subscription: SubscriptionLike | null;
 }
 
 export class ApiError extends Error {
@@ -29,6 +31,7 @@ export async function requireUser(request: NextRequest): Promise<AuthenticatedUs
                 email: decoded.email ?? '',
                 organizationId: 'system',
                 role: 'super_admin',
+                subscription: { plan: 'enterprise', status: 'active' },
             };
         }
 
@@ -36,11 +39,16 @@ export async function requireUser(request: NextRequest): Promise<AuthenticatedUs
         if (!profile.exists) throw new ApiError('User profile not found', 403);
 
         const data = profile.data() ?? {};
+        const organizationId = String(data.organizationId ?? '');
+        const organization = organizationId
+            ? await adminDb.collection('organizations').doc(organizationId).get()
+            : null;
         return {
             uid: decoded.uid,
             email: decoded.email ?? '',
-            organizationId: String(data.organizationId ?? ''),
+            organizationId,
             role: data.role as AuthenticatedUser['role'],
+            subscription: organization?.data()?.subscription ?? null,
         };
     } catch (error) {
         if (error instanceof ApiError) throw error;
@@ -48,6 +56,19 @@ export async function requireUser(request: NextRequest): Promise<AuthenticatedUs
     }
 }
 
+export function requireActiveSubscription(user: AuthenticatedUser) {
+    if (user.role !== 'super_admin' && !isSubscriptionActive(user.subscription)) {
+        throw new ApiError('An active subscription is required', 402);
+    }
+}
+
+export function requireFeature(user: AuthenticatedUser, feature: PlanFeature) {
+    if (!canUseFeature(user.subscription, feature, user.role === 'super_admin')) {
+        throw new ApiError(`Your current plan does not include ${feature}`, 403);
+    }
+}
+
 export function requireRole(user: AuthenticatedUser, roles: AuthenticatedUser['role'][]) {
+    if (user.role === 'super_admin') return;
     if (!roles.includes(user.role)) throw new ApiError('Insufficient permissions', 403);
 }

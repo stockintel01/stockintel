@@ -8,17 +8,34 @@ import { Label } from '@/components/ui/label';
 import { User, Globe, Lock, Scroll } from 'lucide-react';
 import { useState } from 'react';
 import Link from 'next/link';
+import { doc, updateDoc } from 'firebase/firestore';
+import { updateProfile } from 'firebase/auth';
+import { auth, db } from '@/lib/firebase';
 
 export default function SettingsPage() {
-    const { user, currency, setCurrency, taxSettings, updateTaxSettings } = useAppStore();
+    const { user, organization, currency, setCurrency, taxSettings, updateTaxSettings, setStoreUser } = useAppStore();
     const [successMsg, setSuccessMsg] = useState('');
+    const [name, setName] = useState(user?.name ?? '');
+    const [saving, setSaving] = useState(false);
 
     const handleSave = async () => {
-        // In production: update Firestore user profile
+        if (!user || !auth.currentUser) return;
+        setSaving(true);
         try {
+            await Promise.all([
+                updateProfile(auth.currentUser, { displayName: name.trim() }),
+                updateDoc(doc(db, 'users', user.id), { displayName: name.trim(), updatedAt: new Date() }),
+                organization?.id ? updateDoc(doc(db, 'organizations', organization.id), {
+                    currency,
+                    settings: { tax: taxSettings },
+                    updatedAt: new Date(),
+                }) : Promise.resolve(),
+            ]);
+            setStoreUser({ ...user, name: name.trim() }, organization);
             setSuccessMsg('Settings saved!');
             setTimeout(() => setSuccessMsg(''), 3000);
         } catch { setSuccessMsg('Failed to save. Try again.'); }
+        finally { setSaving(false); }
     };
 
     return (
@@ -40,14 +57,14 @@ export default function SettingsPage() {
                         <div className="grid md:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label>Full Name</Label>
-                                <Input defaultValue={user?.name} />
+                                <Input value={name} onChange={event => setName(event.target.value)} />
                             </div>
                             <div className="space-y-2">
                                 <Label>Email Address</Label>
                                 <Input defaultValue={user?.email} disabled className="bg-muted" />
                             </div>
                         </div>
-                        <Button onClick={handleSave}>Update Profile</Button>
+                        <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Settings'}</Button>
                     </CardContent>
                 </Card>
 
