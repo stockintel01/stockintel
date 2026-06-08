@@ -154,7 +154,7 @@ export default function StockManagementPage() {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'Total Active SKUs', value: stats.total, color: 'text-foreground' },
           { label: 'Out of Stock', value: stats.outOfStock, color: 'text-red-600' },

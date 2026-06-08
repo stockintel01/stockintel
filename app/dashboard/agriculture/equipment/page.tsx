@@ -83,7 +83,7 @@ export default function EquipmentPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="border-l-4 border-l-blue-500 cursor-pointer" onClick={() => setFilter('out')}>
           <CardContent className="pt-4">
             <p className="text-3xl font-bold text-blue-600">{stats.out}</p>

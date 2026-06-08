@@ -103,7 +103,7 @@ export default function LivestockFeedPage() {
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
           { label: 'Feed Today',    value: `${todayFeedKg.toLocaleString()} kg`,    color: 'border-l-green-500' },
           { label: 'Feed Cost Today', value: `GHS ${todayFeedCost.toFixed(0)}`,      color: 'border-l-blue-500' },

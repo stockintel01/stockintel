@@ -40,7 +40,6 @@ export function useInventory(): UseInventoryReturn {
             },
             err => {
                 console.error('[useInventory]', err);
-                setInventory([]);
                 setError(err);
                 setLoading(false);
             },

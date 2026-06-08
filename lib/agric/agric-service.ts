@@ -177,6 +177,9 @@ export async function addUsageLog(
   orgId: string,
   log: Omit<UsageLog, 'id'>,
 ): Promise<void> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw new Error('Usage logging requires a connection so available stock can be verified safely.');
+  }
   // Also decrement inventory stock atomically
   await runTransaction(db, async tx => {
     const invRef = ref(orgId, 'agric_inventory', log.itemId);

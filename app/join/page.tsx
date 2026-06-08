@@ -129,7 +129,7 @@ function JoinInner() {
                                     You're invited!
                                 </h1>
                                 <p style={{ color: '#6b7280', fontSize: 15, lineHeight: 1.6 }}>
-                                    You've been invited to join a workspace on <strong>IntelliStock AI</strong>.
+                                    You've been invited to join a workspace on <strong>StockIntel</strong>.
                                 </p>
                             </div>
 
@@ -178,7 +178,7 @@ function JoinInner() {
                             </button>
 
                             <p style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', marginTop: 16, lineHeight: 1.5 }}>
-                                By accepting, you agree to IntelliStock's Terms. Sign in with the same Google account as your invited email.
+                                By accepting, you agree to StockIntel's Terms. Sign in with the same Google account as your invited email.
                             </p>
                         </>
                     )}

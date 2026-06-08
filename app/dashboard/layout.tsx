@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useInventory } from '@/lib/hooks/useInventory';
 import { canUseFeature, isSubscriptionActive, type PlanFeature } from '@/lib/plans';
+import { agricultureProfileLabel, getAgricultureProfile } from '@/lib/agric/config';
 
 interface NavItem {
     name: string;
@@ -33,7 +34,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const router = useRouter();
     const pathname = usePathname();
     const { user, organization, activeIndustry, setIndustry, isAuthenticated, inventory } = useAppStore();
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [expiringCount, setExpiringCount] = useState(0);
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
         'Clinical': true, 'Operations': true, 'Business': false,
@@ -63,6 +64,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             setIndustry(organization.industry);
         }
     }, [activeIndustry, organization?.industry, setIndustry, superAdmin]);
+
+    useEffect(() => {
+        setIsSidebarOpen(false);
+    }, [pathname]);
 
     // Auth guard — only redirect after Firebase has fully resolved auth state.
     // Without the authLoading check, the guard fires with isAuthenticated=false
@@ -218,7 +223,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         },
     };
 
-    const config = industryConfig[activeIndustry || 'pharmacy'];
+    const agricultureProfile = getAgricultureProfile(organization?.settings);
+    const baseConfig = industryConfig[activeIndustry || 'pharmacy'];
+    const config = activeIndustry === 'agriculture' ? {
+        ...baseConfig,
+        name: agricultureProfileLabel(agricultureProfile),
+        groups: [
+          ...baseConfig.groups.map(group => ({
+            ...group,
+            items: group.items.filter(item => {
+                if (!agricultureProfile.modules.crops && ['/dashboard/agriculture/requests', '/dashboard/agriculture/usage-tracker', '/dashboard/agriculture/planner', '/dashboard/agriculture/packing-station'].includes(item.href)) return false;
+                return true;
+            }),
+          })).filter(group => group.items.length > 0),
+          ...(agricultureProfile.modules.livestock ? [{
+            label: agricultureProfile.modules.poultry ? 'Animals & Poultry' : 'Animal Production',
+            items: [
+              { name: 'Livestock Overview', href: '/dashboard/agriculture/livestock', icon: Leaf },
+              ...(agricultureProfile.modules.eggProduction ? [{ name: 'Egg Production', href: '/dashboard/agriculture/livestock/egg-production', icon: BarChart3 }] : []),
+              { name: 'Feed Management', href: '/dashboard/agriculture/livestock/feed', icon: Package },
+              { name: 'Health & Vaccines', href: '/dashboard/agriculture/livestock/health', icon: FlaskConical },
+              { name: 'Growth & Weight', href: '/dashboard/agriculture/livestock/growth', icon: BarChart3 },
+              ...(agricultureProfile.modules.dairy ? [{ name: 'Milk Production', href: '/dashboard/agriculture/livestock/milk', icon: PackageCheck }] : []),
+            ],
+          }] : []),
+        ],
+    } : baseConfig;
     const ActiveIcon = config.icon;
 
     const toggleGroup = (label: string) => {
@@ -234,7 +264,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="min-h-screen bg-muted/20 flex">
             {/* Sidebar */}
             <aside className={cn(
-                'fixed inset-y-0 left-0 z-50 w-64 bg-background border-r flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0',
+                'fixed inset-y-0 left-0 z-50 h-screen w-64 bg-background border-r flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 lg:sticky lg:top-0',
                 !isSidebarOpen && '-translate-x-full'
             )}>
                 {/* Logo */}
@@ -385,10 +415,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </div>
                 </header>
 
-                <main className="flex-1 p-6">
+                <main className="flex-1 p-3 pb-24 sm:p-6 sm:pb-6">
                     {children}
                 </main>
             </div>
+
+            <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-4 border-t bg-background/95 px-1 py-1.5 shadow-lg backdrop-blur lg:hidden">
+                {([
+                    { name: 'Home', href: activeIndustry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard', icon: Home },
+                    { name: activeIndustry === 'agriculture' ? 'Stock' : 'Inventory', href: activeIndustry === 'agriculture' ? '/dashboard/agriculture/stock-management' : '/dashboard/inventory', icon: Box },
+                    { name: activeIndustry === 'agriculture' && agricultureProfile.modules.livestock ? 'Animals' : 'Sales', href: activeIndustry === 'agriculture' && agricultureProfile.modules.livestock ? '/dashboard/agriculture/livestock' : '/dashboard/sales', icon: activeIndustry === 'agriculture' ? Leaf : ShoppingCart },
+                    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+                ]).map(item => (
+                    <Link key={item.name} href={item.href} className={cn('flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-medium', pathname === item.href ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}>
+                        <item.icon className="h-5 w-5" /><span>{item.name}</span>
+                    </Link>
+                ))}
+            </nav>
 
             {/* Mobile overlay */}
             {isSidebarOpen && (

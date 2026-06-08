@@ -67,7 +67,7 @@ export default function MortalityPage() {
         </div>
       </div>
       {vetPending > 0 && <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-3 text-sm"><AlertTriangle className="w-4 h-4 text-red-600"/><p className="text-red-800"><strong>{vetPending} case{vetPending>1?'s':''}</strong> require a vet visit — schedule immediately.</p></div>}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[{label:'Deaths Today',value:totalToday,color:'border-l-red-500'},{label:'Vet Visits Pending',value:vetPending,color:'border-l-amber-500'},{label:'Deaths This Period',value:totalThisWeek,color:'border-l-slate-400'}].map(k=>(
           <Card key={k.label} className={`border-l-4 ${k.color}`}><CardContent className="pt-3 pb-3"><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></CardContent></Card>
         ))}

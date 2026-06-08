@@ -211,7 +211,7 @@ export default function PrescriptionsPage() {
       {scanError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{scanError}</div>}
 
       {/* Daily KPIs */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: 'Patients Today', value: stats.patientsServed, color: 'text-blue-600' },
           { label: 'Prescriptions Filled', value: stats.prescriptionsFilled, color: 'text-green-600' },

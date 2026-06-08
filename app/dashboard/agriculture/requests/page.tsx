@@ -108,7 +108,7 @@ export default function RequestsPage() {
       </div>
 
       {/* Pipeline Stats */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'Pending', count: stats.pending, color: 'border-l-amber-500 text-amber-700', bg: 'bg-amber-50' },
           { label: 'Approved', count: stats.approved, color: 'border-l-blue-500 text-blue-700', bg: 'bg-blue-50' },

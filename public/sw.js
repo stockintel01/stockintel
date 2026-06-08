@@ -1,4 +1,4 @@
-const CACHE_NAME = 'intellistock-v2';
+const CACHE_NAME = 'intellistock-v3';
 const OFFLINE_URL = '/offline';
 const STATIC_ASSETS = [OFFLINE_URL, '/manifest.json', '/logo.svg'];
 
@@ -21,7 +21,10 @@ self.addEventListener('fetch', event => {
     }
 
     if (request.mode === 'navigate') {
-        event.respondWith(fetch(request).catch(() => caches.match(OFFLINE_URL)));
+        event.respondWith(fetch(request).then(response => {
+            if (response.ok) caches.open(CACHE_NAME).then(cache => cache.put(request, response.clone()));
+            return response;
+        }).catch(() => caches.match(request).then(cached => cached || caches.match(OFFLINE_URL))));
         return;
     }
 

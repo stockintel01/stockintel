@@ -278,7 +278,7 @@ export default function OnboardingPage() {
                                 <Sparkles size={28} color="#6366f1" />
                             </div>
                             <h1 style={{ fontSize: 26, fontWeight: 700, color: '#111827', marginBottom: 10 }}>
-                                Welcome to IntelliStock AI
+                                Welcome to StockIntel
                             </h1>
                             <p style={{ color: '#6b7280', fontSize: 15, lineHeight: 1.6, marginBottom: 32, maxWidth: 380, margin: '0 auto 32px' }}>
                                 Let's set up your workspace in under 2 minutes. We'll collect just the essentials to get you started.

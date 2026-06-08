@@ -12,6 +12,7 @@ import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
 import { UsageLog, FarmZone, AgricCategory } from '@/lib/agric/types';
 import { getAgricultureProfile } from '@/lib/agric/config';
+import { getFarmWeek, getRecentFarmWeeks } from '@/lib/agric/week';
 
 const CATEGORY_COLORS: Record<string, string> = {
   fungicide: 'bg-blue-100 text-blue-800',
@@ -26,6 +27,7 @@ export default function UsageTrackerPage() {
   const { usageLogs: logs, inventory, logUsage } = useAgric();
   const { user, organization } = useAppStore();
   const farmZones = getAgricultureProfile(organization?.settings).farmZones.length ? getAgricultureProfile(organization?.settings).farmZones : ['Main Farm'];
+  const weekStartsOn = getAgricultureProfile(organization?.settings).weekStartsOn;
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<AgricCategory | 'all'>('all');
   const [zoneFilter, setZoneFilter] = useState<FarmZone | 'all'>('all');
@@ -69,19 +71,17 @@ export default function UsageTrackerPage() {
     });
     return map;
   }, [filtered]);
-  const usageHistory = useMemo(() => Array.from({ length: 6 }, (_, offset) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (5 - offset) * 7);
-    const week = getWeekNumber(date.toISOString().slice(0, 10));
-    const weekLogs = logs.filter(log => log.weekNumber === week);
+  const usageHistory = useMemo(() => getRecentFarmWeeks(new Date(), 6, weekStartsOn).map(period => {
+    const weekLogs = logs.filter(log => log.weekNumber === period.week && (!log.weekYear || log.weekYear === period.year));
     const total = (category: AgricCategory) => weekLogs.filter(log => log.category === category).reduce((sum, log) => sum + log.quantity, 0);
-    return { week: `W${week}`, fungicide: total('fungicide'), insecticide: total('insecticide'), herbicide: total('herbicide') };
-  }), [logs]);
+    return { week: `W${period.week}`, fungicide: total('fungicide'), insecticide: total('insecticide'), herbicide: total('herbicide') };
+  }), [logs, weekStartsOn]);
 
   async function submitLog() {
     if (!newLog.itemId || !newLog.quantity || !newLog.farmZone) return;
     const invItem = inventory.find(i => i.id === newLog.itemId);
     if (!invItem) return;
+    const farmWeek = getFarmWeek(newLog.date || new Date(), weekStartsOn);
     await logUsage({
       itemId: invItem.id, itemName: invItem.name,
       category: invItem.category as AgricCategory,
@@ -92,16 +92,13 @@ export default function UsageTrackerPage() {
       appliedBy: newLog.appliedBy || user?.name || 'Unknown',
       batchNumber: newLog.batchNumber,
       notes: newLog.notes,
-      weekNumber: getWeekNumber(newLog.date || ''),
+      weekNumber: farmWeek.week,
+      weekYear: farmWeek.year,
+      weekStartDate: farmWeek.startDate,
+      weekEndDate: farmWeek.endDate,
     });
     setNewLog({ date: new Date().toISOString().slice(0, 10), farmZone: farmZones[0] as FarmZone, category: 'fungicide' });
     setShowLogModal(false);
-  }
-
-  function getWeekNumber(dateStr: string): number {
-    const d = new Date(dateStr);
-    const start = new Date(d.getFullYear(), 0, 1);
-    return Math.ceil(((d.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7);
   }
 
   function exportCSV() {

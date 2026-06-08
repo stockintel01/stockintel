@@ -33,7 +33,7 @@ export default function ReceiptDesignerPage() {
                     <CardHeader>
                         <CardTitle>Template Style</CardTitle>
                     </CardHeader>
-                    <CardContent className="grid grid-cols-3 gap-4">
+                    <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         {(['thermal', 'a4', 'minimal'] as const).map((t) => (
                             <div
                                 key={t}
@@ -218,7 +218,7 @@ export default function ReceiptDesignerPage() {
                     {/* Footer */}
                     <div className="text-center mt-auto pt-6 text-gray-500">
                         <p className="mb-2 italic">&quot;{receiptSettings.footerText}&quot;</p>
-                        <div className="text-[10px] uppercase tracking-widest mt-4">Powered by IntelliStock AI</div>
+                        <div className="text-[10px] uppercase tracking-widest mt-4">Powered by StockIntel</div>
                         {receiptSettings.template === 'thermal' && (
                             <div className="mt-4 border-t border-dashed border-gray-400 pt-2">
                                 * * * * *

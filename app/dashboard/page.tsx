@@ -51,9 +51,8 @@ export default function DashboardHome() {
             setError('');
         }, err => {
             console.error('[dashboard sales]', err);
-            setSales([]);
             setLoading(false);
-            setError('Sales data could not be loaded. Check Firebase rules and connectivity.');
+            setError(navigator.onLine ? 'Sales data could not be loaded. Check Firebase rules and connectivity.' : 'Offline mode: showing the latest cached sales data.');
         });
     }, [organization?.id]);
 

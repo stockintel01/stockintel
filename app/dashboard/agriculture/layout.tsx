@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
-import { getAgricultureProfile, type FarmLocation } from '@/lib/agric/config';
+import { agricultureProfileLabel, getAgricultureProfile, type FarmLocation } from '@/lib/agric/config';
 
 // Nav sections
 const CROP_NAV: Array<{ href: string; label: string; icon: any; badgeKey?: string }> = [
@@ -142,9 +142,9 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
   };
 
   return (
-    <div className="flex h-full min-h-screen bg-background">
+    <div className="flex h-full min-h-screen flex-col bg-background md:flex-row">
       {/* Agric Sidebar */}
-      <aside className={`${collapsed ? 'w-16' : 'w-56'} flex-shrink-0 border-r bg-card transition-all duration-200 flex flex-col`}>
+      <aside className={`${collapsed ? 'w-16' : 'w-56'} sticky top-0 hidden h-screen flex-shrink-0 border-r bg-card transition-all duration-200 md:flex md:flex-col`}>
         {/* Header */}
         <div className={`flex items-center ${collapsed ? 'justify-center px-2' : 'justify-between px-4'} py-4 border-b`}>
           {!collapsed && (
@@ -153,8 +153,8 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
                 <Leaf className="w-4 h-4 text-white" />
               </div>
               <div>
-                <p className="font-semibold text-sm leading-none">Farm Ops</p>
-                <p className="text-xs text-muted-foreground">Agriculture</p>
+                <p className="font-semibold text-sm leading-none">{agricultureProfileLabel(profile)}</p>
+                <p className="text-xs text-muted-foreground">{organization?.name ?? 'Agriculture Workspace'}</p>
               </div>
             </div>
           )}
@@ -219,8 +219,22 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
       </aside>
 
       {/* Main Content */}
+      <div className="sticky top-16 z-30 border-b bg-background/95 px-3 py-2 backdrop-blur md:hidden">
+        <div className="mb-2 flex items-center justify-between">
+          <div><p className="text-sm font-semibold">{agricultureProfileLabel(profile)}</p><p className="text-[11px] text-muted-foreground">{organization?.name}</p></div>
+          <Link href="/dashboard/settings" className="text-xs font-medium text-green-700">Customize</Link>
+        </div>
+        <nav className="flex gap-2 overflow-x-auto pb-1">
+          {navItems.map(({ href, label, icon: Icon }) => (
+            <Link key={href} href={href} className={`flex min-w-max items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-medium ${pathname === href ? 'border-green-600 bg-green-600 text-white' : 'bg-card text-muted-foreground'}`}>
+              <Icon className="h-3.5 w-3.5" />{label}
+            </Link>
+          ))}
+        </nav>
+      </div>
+
       <main className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto px-6 py-6">
+        <div className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-6">
           {children}
         </div>
       </main>

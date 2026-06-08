@@ -55,6 +55,9 @@ export interface UsageLog {
   batchNumber?: string;
   notes?: string;
   weekNumber?: number;
+  weekYear?: number;
+  weekStartDate?: string;
+  weekEndDate?: string;
 }
 
 // ── Weekly Stock Report (from End-of-Week Excel) ─────────────

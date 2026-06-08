@@ -9,6 +9,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAgric } from '@/lib/agric/useAgric';
+import { useAppStore } from '@/lib/store';
+import { getAgricultureProfile } from '@/lib/agric/config';
+import { getFarmWeek, getRecentFarmWeeks } from '@/lib/agric/week';
 
 type ReportPeriod = 'daily' | 'weekly' | 'monthly';
 type ReportType = 'stock' | 'usage' | 'packing' | 'equipment' | 'full';
@@ -24,9 +27,11 @@ const CATEGORY_ICONS: Record<string, any> = {
 
 export default function ReportsPage() {
   const { inventory: liveInv, usageLogs, packingRecords: livePacking, shippingRecords: liveShipping, checkouts: liveCheckouts } = useAgric();
+  const { organization } = useAppStore();
+  const weekStartsOn = getAgricultureProfile(organization?.settings).weekStartsOn;
   const [period, setPeriod] = useState<ReportPeriod>('weekly');
   const [reportType, setReportType] = useState<ReportType>('full');
-  const [weekNum, setWeekNum] = useState(10);
+  const [weekNum, setWeekNum] = useState(() => getFarmWeek(new Date(), weekStartsOn).week);
 
   const inventory = liveInv.filter(i => i.isActive);
   const criticalItems = inventory.filter(i => i.currentStock <= i.minimumStock * 0.5);
@@ -64,13 +69,10 @@ export default function ReportsPage() {
   // Equipment stats
   const overdueEquip = liveCheckouts.filter(e => e.isOverdue && !e.isReturned).length;
   const currentlyOut = liveCheckouts.filter(e => !e.isReturned).length;
-  const usageHistory = Array.from({ length: 6 }, (_, offset) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (5 - offset) * 7);
-    const week = Math.ceil((((date.getTime() - new Date(date.getFullYear(), 0, 1).getTime()) / 86400000) + 1) / 7);
-    const logs = usageLogs.filter(log => log.weekNumber === week);
+  const usageHistory = getRecentFarmWeeks(new Date(), 6, weekStartsOn).map(period => {
+    const logs = usageLogs.filter(log => log.weekNumber === period.week && (!log.weekYear || log.weekYear === period.year));
     return {
-      week: `W${week}`,
+      week: `W${period.week}`,
       fungicide: logs.filter(log => log.category === 'fungicide').reduce((sum, log) => sum + log.quantity, 0),
       insecticide: logs.filter(log => log.category === 'insecticide').reduce((sum, log) => sum + log.quantity, 0),
       herbicide: logs.filter(log => log.category === 'herbicide').reduce((sum, log) => sum + log.quantity, 0),
@@ -164,7 +166,7 @@ export default function ReportsPage() {
                 <div className="flex items-center gap-2">
                   <button className="border rounded px-2 py-1 text-sm" onClick={() => setWeekNum(w => Math.max(1, w - 1))}>−</button>
                   <span className="text-sm font-mono w-16 text-center">Week {weekNum}</span>
-                  <button className="border rounded px-2 py-1 text-sm" onClick={() => setWeekNum(w => Math.min(53, w + 1))}>+</button>
+                  <button className="border rounded px-2 py-1 text-sm" onClick={() => setWeekNum(w => Math.min(52, w + 1))}>+</button>
                 </div>
               </div>
             )}
@@ -197,7 +199,7 @@ export default function ReportsPage() {
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Package className="w-5 h-5 text-green-600" /> 1. Inventory Status
           </h2>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Card className="border-l-4 border-l-green-500">
               <CardContent className="pt-4">
                 <p className="text-3xl font-bold text-green-700">{inStockItems.length}</p>
@@ -227,7 +229,7 @@ export default function ReportsPage() {
               <CardTitle className="text-sm">Inventory by Category</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {categorySummary.map(({ cat, count, critical }) => {
                   const Icon = CATEGORY_ICONS[cat] || Package;
                   return (
@@ -379,7 +381,7 @@ export default function ReportsPage() {
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Boxes className="w-5 h-5 text-purple-600" /> 3. Packing Station Performance
           </h2>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               { label: 'Target', value: totalTarget, unit: 'boxes', color: 'text-blue-600' },
               { label: 'Packed', value: totalPacked, unit: 'boxes', color: 'text-green-600' },
@@ -438,7 +440,7 @@ export default function ReportsPage() {
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Tractor className="w-5 h-5 text-slate-600" /> 4. Equipment Tracking
           </h2>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Card><CardContent className="pt-4"><p className="text-3xl font-bold">{liveCheckouts.length}</p><p className="text-sm text-muted-foreground">Total Transactions</p></CardContent></Card>
             <Card className="border-l-4 border-l-amber-500"><CardContent className="pt-4"><p className="text-3xl font-bold text-amber-600">{currentlyOut}</p><p className="text-sm text-muted-foreground">Currently Out</p></CardContent></Card>
             <Card className="border-l-4 border-l-red-500"><CardContent className="pt-4"><p className="text-3xl font-bold text-red-600">{overdueEquip}</p><p className="text-sm text-muted-foreground">Overdue Returns</p></CardContent></Card>

@@ -224,6 +224,9 @@ export async function persistSale(
     orgId: string,
     sale: Omit<SaleRecord, 'id' | 'createdAt'>,
 ): Promise<string> {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        throw new Error('Sales checkout requires an internet connection so stock can be verified safely. Other supported changes will continue syncing automatically.');
+    }
     const saleRef = doc(collection(db, `organizations/${orgId}/sales`));
 
     await runTransaction(db, async (tx) => {

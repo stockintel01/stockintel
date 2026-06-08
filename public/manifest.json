@@ -1,6 +1,6 @@
 {
-  "name": "IntelliStock AI",
-  "short_name": "IntelliStock",
+  "name": "StockIntel",
+  "short_name": "StockIntel",
   "description": "Live inventory and operations management for pharmacy, agriculture, and retail.",
   "start_url": "/dashboard",
   "display": "standalone",

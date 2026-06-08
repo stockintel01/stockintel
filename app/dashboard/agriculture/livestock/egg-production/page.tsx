@@ -212,7 +212,7 @@ export default function EggProductionPage() {
                 <CardTitle className="text-sm">Today's Egg Grades — {today}</CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
-                <div className="grid grid-cols-5 gap-3 text-center text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center text-sm">
                   {[
                     { label: 'Grade A', value: totalGradeA, color: 'text-green-600', bg: 'bg-green-50', desc: 'Premium' },
                     { label: 'Grade B', value: totalGradeB, color: 'text-blue-600',  bg: 'bg-blue-50',  desc: 'Table' },

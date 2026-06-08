@@ -27,6 +27,8 @@ export interface AgricultureProfile {
   farmZones: string[];
   modules: AgricultureModules;
   location?: FarmLocation;
+  locations: FarmLocation[];
+  weekStartsOn: number;
 }
 
 export const DEFAULT_AGRICULTURE_PROFILE: AgricultureProfile = {
@@ -34,6 +36,8 @@ export const DEFAULT_AGRICULTURE_PROFILE: AgricultureProfile = {
   cropTypes: [],
   livestockTypes: [],
   farmZones: [],
+  locations: [],
+  weekStartsOn: 0,
   modules: {
     crops: true,
     livestock: false,
@@ -64,6 +68,8 @@ export function buildAgricultureProfile(
     cropTypes: existing?.cropTypes ?? [],
     livestockTypes: existing?.livestockTypes ?? [],
     farmZones: existing?.farmZones ?? [],
+    locations: existing?.locations ?? (existing?.location ? [existing.location] : []),
+    weekStartsOn: existing?.weekStartsOn ?? 0,
     modules: {
       ...DEFAULT_AGRICULTURE_PROFILE.modules,
       ...existing?.modules,

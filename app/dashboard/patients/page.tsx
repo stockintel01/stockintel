@@ -73,7 +73,7 @@ export default function PatientsPage() {
       {!selectedPatient ? (
         <div className="space-y-8">
           {/* KPIs */}
-          <div className="grid gap-4 grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
             {statCards.map((s, i) => (
               <div key={i} className="bg-background border rounded-xl p-4 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">

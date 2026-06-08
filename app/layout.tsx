@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/auth/AuthContext";
+import { PwaBanner } from "@/components/pwa/PwaBanner";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IntelliStock AI - Intelligent Multi-Industry Management",
+  title: "StockIntel - Intelligent Multi-Industry Management",
   description: "Advanced AI-powered inventory and management system for Pharmacy, Agriculture, and Retail.",
   manifest: "/manifest.json",
   icons: { icon: "/logo.svg", apple: "/logo.svg" },
@@ -30,7 +31,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider><PwaBanner />{children}</AuthProvider>
       </body>
     </html>
   );

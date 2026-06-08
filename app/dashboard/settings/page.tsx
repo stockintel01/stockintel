@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { User, Globe, Lock, Scroll, Leaf, MapPin } from 'lucide-react';
+import { User, Globe, Lock, Scroll, Leaf, MapPin, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import Link from 'next/link';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -25,6 +25,7 @@ export default function SettingsPage() {
     const [saving, setSaving] = useState(false);
     const [agricultureProfile, setAgricultureProfile] = useState(() => getAgricultureProfile(organization?.settings));
     const [locating, setLocating] = useState(false);
+    const [savingAgriculture, setSavingAgriculture] = useState(false);
 
     const toggleAgricultureOperation = (operation: AgricultureOperation) => {
         const selected = agricultureProfile.operationTypes.includes(operation);
@@ -73,7 +74,6 @@ export default function SettingsPage() {
                     settings: {
                         ...(organization.settings ?? {}),
                         tax: taxSettings,
-                        ...(organization.industry === 'agriculture' ? { agriculture: agricultureProfile } : {}),
                     },
                     updatedAt: new Date(),
                 }) : Promise.resolve(),
@@ -84,13 +84,37 @@ export default function SettingsPage() {
                 settings: {
                     ...(organization.settings ?? {}),
                     tax: taxSettings,
-                    ...(organization.industry === 'agriculture' ? { agriculture: agricultureProfile } : {}),
                 },
             } : null);
             setSuccessMsg('Settings saved!');
             setTimeout(() => setSuccessMsg(''), 3000);
         } catch { setSuccessMsg('Failed to save. Try again.'); }
         finally { setSaving(false); }
+    };
+
+    const handleAgricultureSave = async () => {
+        if (!organization?.id || !user) return;
+        setSavingAgriculture(true);
+        try {
+            const settings = { ...(organization.settings ?? {}), agriculture: agricultureProfile };
+            await updateDoc(doc(db, 'organizations', organization.id), { settings, updatedAt: new Date() });
+            setStoreUser(user, { ...organization, settings });
+            setSuccessMsg('Agriculture workspace saved.');
+            setTimeout(() => setSuccessMsg(''), 3000);
+        } catch {
+            setSuccessMsg('Failed to save agriculture workspace.');
+        } finally {
+            setSavingAgriculture(false);
+        }
+    };
+
+    const addFarmLocation = () => {
+        const location = agricultureProfile.location;
+        if (!location?.name || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) return;
+        setAgricultureProfile(profile => ({
+            ...profile,
+            locations: [...profile.locations.filter(item => item.name.toLowerCase() !== location.name.toLowerCase()), location],
+        }));
     };
 
     return (
@@ -119,7 +143,7 @@ export default function SettingsPage() {
                                 <Input defaultValue={user?.email} disabled className="bg-muted" />
                             </div>
                         </div>
-                        <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Settings'}</Button>
+                        <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Profile & General Settings'}</Button>
                     </CardContent>
                 </Card>
 
@@ -237,6 +261,36 @@ export default function SettingsPage() {
                                         }))}
                                     />
                                 </div>
+                                <div className="flex justify-end">
+                                    <Button variant="outline" onClick={addFarmLocation}><Plus className="w-4 h-4 mr-2" />Add or Update Location</Button>
+                                </div>
+                                {agricultureProfile.locations.length > 0 && (
+                                    <div className="space-y-2">
+                                        {agricultureProfile.locations.map(location => (
+                                            <div key={`${location.name}-${location.latitude}-${location.longitude}`} className="flex items-center justify-between rounded-lg border p-3 text-sm">
+                                                <button type="button" className="text-left" onClick={() => setAgricultureProfile(profile => ({ ...profile, location }))}>
+                                                    <span className="font-medium">{location.name}</span>
+                                                    <span className="ml-2 text-muted-foreground">{location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}</span>
+                                                </button>
+                                                <Button variant="ghost" size="icon" onClick={() => setAgricultureProfile(profile => ({ ...profile, locations: profile.locations.filter(item => item !== location) }))}><Trash2 className="w-4 h-4 text-red-600" /></Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="border-t pt-5 space-y-2">
+                                <Label className="text-base">Operational week</Label>
+                                <p className="text-sm text-muted-foreground">Weeks are numbered 1-52 within each calendar year. Week 52 automatically absorbs remaining year-end days.</p>
+                                <select className="border rounded-md px-3 py-2 text-sm bg-background" value={agricultureProfile.weekStartsOn} onChange={event => setAgricultureProfile(profile => ({ ...profile, weekStartsOn: Number(event.target.value) }))}>
+                                    {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index}>Week starts on {day}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="flex justify-end border-t pt-5">
+                                <Button className="bg-green-600 hover:bg-green-700" onClick={handleAgricultureSave} disabled={savingAgriculture}>
+                                    {savingAgriculture ? 'Saving Agriculture Workspace...' : 'Save Agriculture Workspace'}
+                                </Button>
                             </div>
                         </CardContent>
                     </Card>

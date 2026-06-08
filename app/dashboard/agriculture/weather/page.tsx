@@ -147,13 +147,20 @@ export default function WeatherPage() {
   const { organization } = useAppStore();
   const agricultureProfile = getAgricultureProfile(organization?.settings);
   const savedFarmLocation = agricultureProfile.location;
+  const organizationLocations = agricultureProfile.locations.map((location, index) => ({
+    id: `organization-${index}`,
+    name: location.name,
+    lat: location.latitude,
+    lon: location.longitude,
+    timezone: location.timezone ?? 'auto',
+  }));
   const [selectedLocation, setSelectedLocation] = useState<WeatherLocation>(() => savedFarmLocation ? {
     id: 'saved',
     name: savedFarmLocation.name,
     lat: savedFarmLocation.latitude,
     lon: savedFarmLocation.longitude,
     timezone: savedFarmLocation.timezone ?? 'auto',
-  } : FARM_LOCATIONS[0]);
+  } : { id: 'unset', name: 'Farm location not configured', lat: 5.6037, lon: -0.187, timezone: 'auto' });
   const [weatherData, setWeatherData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -314,7 +321,7 @@ export default function WeatherPage() {
             <Button variant="outline" size="sm" onClick={useCurrentLocation} disabled={locating}>
               <MapPin className="w-4 h-4 mr-1" /> {locating ? 'Locating...' : 'Use Current Location'}
             </Button>
-            {FARM_LOCATIONS.map(loc => (
+            {organizationLocations.map(loc => (
               <button
                 key={loc.id}
                 onClick={() => setSelectedLocation(loc)}
@@ -329,6 +336,9 @@ export default function WeatherPage() {
             >
               + Custom GPS
             </button>
+            <a href="/dashboard/settings" className="px-3 py-1.5 rounded-lg text-sm border border-dashed border-green-300 text-green-700 hover:bg-green-50">
+              Manage farm locations
+            </a>
           </div>
           {showCustom && (
             <div className="flex gap-2 mt-3 items-center">
@@ -394,7 +404,7 @@ export default function WeatherPage() {
           </div>
 
           {/* Sub-stats */}
-          <div className="grid grid-cols-4 gap-3 mt-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
             {[
               { icon: Droplets, label: 'Humidity', value: `${current.relative_humidity_2m}%` },
               { icon: Wind, label: 'Wind', value: `${current.wind_speed_10m.toFixed(1)} km/h` },
@@ -591,7 +601,7 @@ export default function WeatherPage() {
       )}
 
       <p className="text-xs text-muted-foreground text-center pb-2">
-        Weather data from <a href="https://open-meteo.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">Open-Meteo</a> (open-source, no API key required) · Updates every 10 minutes
+        Live weather conditions and farm advisories. Updates every 10 minutes.
       </p>
     </div>
   );

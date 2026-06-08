@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { useAgric } from '@/lib/agric/useAgric';
 import { useAppStore } from '@/lib/store';
 import { getAgricultureProfile, type FarmLocation } from '@/lib/agric/config';
+import { getRecentFarmWeeks } from '@/lib/agric/week';
 
 const CATEGORY_LABELS: Record<string, string> = {
   fungicide: 'Fungicides', insecticide: 'Insecticides', herbicide: 'Herbicides',
@@ -71,13 +72,10 @@ export default function AgricOverviewPage() {
   } = useAgric();
   const { organization } = useAppStore();
   const profile = getAgricultureProfile(organization?.settings);
-  const usageHistory = Array.from({ length: 6 }, (_, offset) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (5 - offset) * 7);
-    const week = Math.ceil((((date.getTime() - new Date(date.getFullYear(), 0, 1).getTime()) / 86400000) + 1) / 7);
-    const logs = usageLogs.filter(log => log.weekNumber === week);
+  const usageHistory = getRecentFarmWeeks(new Date(), 6, profile.weekStartsOn).map(period => {
+    const logs = usageLogs.filter(log => log.weekNumber === period.week && (!log.weekYear || log.weekYear === period.year));
     const total = (category: string) => logs.filter(log => log.category === category).reduce((sum, log) => sum + log.quantity, 0);
-    return { week: `W${week}`, fungicide: total('fungicide'), insecticide: total('insecticide'), herbicide: total('herbicide') };
+    return { week: `W${period.week}`, fungicide: total('fungicide'), insecticide: total('insecticide'), herbicide: total('herbicide') };
   });
 
   const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);

@@ -112,7 +112,7 @@ export default function PackingStationPage() {
       </div>
 
       {/* Today's KPIs */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'Packed Today', value: totalPackedToday, unit: 'boxes', color: 'border-l-green-500 text-green-700' },
           { label: 'Target', value: totalTargetToday, unit: 'boxes', color: 'border-l-blue-500 text-blue-700' },

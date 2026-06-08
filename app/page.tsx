@@ -141,7 +141,7 @@ export default function LandingPage() {
           <div style={{ maxWidth: 1160, margin: '0 auto', padding: '0 24px', height: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700, fontSize: 18, color: '#fff' }}>
               <div style={{ width: 32, height: 32, borderRadius: 8, background: data.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, transition: 'background 0.3s' }}>IS</div>
-              IntelliStock AI
+              StockIntel
             </div>
             <nav style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
               <a href="#features" className="nav-link">Features</a>
@@ -225,7 +225,7 @@ export default function LandingPage() {
                     <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840' }} />
                   </div>
                   <div style={{ flex: 1, background: 'rgba(255,255,255,0.06)', borderRadius: 6, padding: '4px 10px', fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Mono, monospace' }}>
-                    intellistock.app/dashboard
+                    stockintel.app/dashboard
                   </div>
                 </div>
 
@@ -363,7 +363,7 @@ export default function LandingPage() {
         <section style={{ padding: '0 24px 80px' }}>
           <div style={{ maxWidth: 1160, margin: '0 auto', background: `linear-gradient(135deg, ${data.accent}22 0%, rgba(255,255,255,0.04) 100%)`, border: `1px solid ${data.accent}44`, borderRadius: 20, padding: '56px 48px', textAlign: 'center', transition: 'all 0.5s' }}>
             <h2 style={{ fontSize: 36, fontWeight: 600, color: '#fff', marginBottom: 16, letterSpacing: '-0.02em' }}>Ready to transform your {data.label.toLowerCase()}?</h2>
-            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 17, marginBottom: 36 }}>Join 2,400+ businesses already running on IntelliStock AI.</p>
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 17, marginBottom: 36 }}>Join businesses already running on StockIntel.</p>
             <Link href="/login" className="cta-primary" style={{ fontSize: 17, padding: '16px 40px' }}>
               Start Your Free Trial <ArrowRight size={18} />
             </Link>
