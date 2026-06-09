@@ -135,6 +135,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 {
                     label: 'Business',
                     items: [
+                        { name: 'Expenses', href: '/dashboard/expenses', icon: Wallet },
                         { name: 'Team', href: '/dashboard/team', icon: UserCog },
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Billing', href: '/dashboard/billing', icon: Wallet },
@@ -180,6 +181,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 {
                     label: 'Business',
                     items: [
+                        { name: 'Expenses', href: '/dashboard/expenses', icon: Wallet },
                         { name: 'Team', href: '/dashboard/team', icon: UserCog },
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
@@ -213,6 +215,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 {
                     label: 'Business',
                     items: [
+                        { name: 'Expenses', href: '/dashboard/expenses', icon: Wallet },
                         { name: 'Team', href: '/dashboard/team', icon: UserCog },
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },

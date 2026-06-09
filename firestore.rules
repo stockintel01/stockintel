@@ -194,6 +194,34 @@ service cloud.firestore {
       }
 
       // ── Agric collections ──────────────────────────────────────
+      // Expense intelligence
+      match /expense_categories/{categoryId} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+
+      match /expense_budgets/{budgetId} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+
+      match /expenses/{expenseId} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
+          && request.resource.data.submittedById == request.auth.uid
+          && request.resource.data.amount > 0
+          && (isOwnerOrManager() || request.resource.data.status == 'pending');
+        allow update: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
+          && isOwnerOrManager()
+          && request.resource.data.amount > 0
+          && request.resource.data.submittedById == resource.data.submittedById;
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+
       match /agric_inventory/{id}   { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
       match /agric_usage/{id}       { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
       match /agric_requests/{id}    { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
