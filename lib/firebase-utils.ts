@@ -4,13 +4,12 @@ import {
     doc,
     getDoc,
     setDoc,
-    updateDoc,
     collection,
-    addDoc,
     query,
     where,
     getDocs,
     runTransaction,
+    writeBatch,
     serverTimestamp,
     Timestamp,
     increment
@@ -25,7 +24,7 @@ export interface FirestoreUser {
     photoURL?: string;
     organizationId: string;
     role: UserRole;
-    createdAt: any;
+    createdAt: unknown;
 }
 
 export interface FirestoreOrg {
@@ -38,10 +37,10 @@ export interface FirestoreOrg {
     subscription: {
         plan: 'free_trial' | 'pro' | 'enterprise';
         status: 'active' | 'expired' | 'cancelled';
-        trialEndsAt: any;
-        currentPeriodEnd?: any;
+        trialEndsAt: Timestamp;
+        currentPeriodEnd?: Timestamp;
     };
-    createdAt: any;
+    createdAt: unknown;
 }
 
 export interface Credit {
@@ -50,7 +49,14 @@ export interface Credit {
     reason: 'signup_referral' | 'upgrade_referral';
     status: 'pending' | 'available' | 'used';
     fromOrgId: string; // The org that signed up/upgraded
-    createdAt: any;
+    createdAt: unknown;
+}
+
+export interface PendingInvitation {
+    email: string;
+    organizationId: string;
+    role: 'manager' | 'worker';
+    status: 'pending' | 'accepted' | 'expired';
 }
 
 // --- User & Org Management ---
@@ -95,54 +101,32 @@ export async function createOrganization(
         createdAt: serverTimestamp()
     };
 
-    // Transaction to create Org AND handle Referral Logic if code exists
-    try {
-        await runTransaction(db, async (transaction) => {
-            // 1. Check Referral Code if provided
-            let referrerOrgId = null;
-            if (referrerCode) {
-                const q = query(collection(db, "organizations"), where("referralCode", "==", referrerCode));
-                // We have to execute query outside tx in client SDK usually, but let's try standard flow.
-                // Note: Client SDK transactions require reads to happen before writes.
-                // Since validation is read-only, let's assume we do it before or inside.
-                // For simplicity/perf, we might just look it up first.
-            }
-
-            // Writing the Org
-            transaction.set(orgRef, orgData);
-
-            // If referrer exists, add credit to referrer
-            if (referrerCode) {
-                const q = query(collection(db, "organizations"), where("referralCode", "==", referrerCode));
-                const querySnapshot = await getDocs(q); // READ
-                if (!querySnapshot.empty) {
-                    const referrerOrg = querySnapshot.docs[0];
-                    referrerOrgId = referrerOrg.id;
-
-                    // Add Link to new Org
-                    transaction.update(orgRef, { invitedByOrgId: referrerOrgId });
-
-                    // Create Credit for Referrer (1 Month for Signup)
-                    const creditRef = doc(collection(db, `organizations/${referrerOrgId}/credits`));
-                    transaction.set(creditRef, {
-                        amountMonths: 1,
-                        reason: 'signup_referral',
-                        status: 'available',
-                        fromOrgId: orgRef.id,
-                        createdAt: serverTimestamp()
-                    });
-                }
-            }
-        });
-
-        return orgRef.id;
-    } catch (e) {
-        console.error("Transaction failed: ", e);
-        // Fallback: Create Org without referral if tx fails? Or throw?
-        // For now, let's just create the org simply if tx fails logic is too complex for this demo
+    if (!referrerCode) {
         await setDoc(orgRef, orgData);
         return orgRef.id;
     }
+
+    const referralSnap = await getDocs(
+        query(collection(db, "organizations"), where("referralCode", "==", referrerCode))
+    );
+
+    if (referralSnap.empty) {
+        await setDoc(orgRef, orgData);
+        return orgRef.id;
+    }
+
+    const referrerOrgId = referralSnap.docs[0].id;
+    const batch = writeBatch(db);
+    batch.set(orgRef, { ...orgData, invitedByOrgId: referrerOrgId });
+    batch.set(doc(collection(db, `organizations/${referrerOrgId}/credits`)), {
+        amountMonths: 1,
+        reason: 'signup_referral',
+        status: 'available',
+        fromOrgId: orgRef.id,
+        createdAt: serverTimestamp()
+    });
+    await batch.commit();
+    return orgRef.id;
 }
 
 // --- Invitations ---
@@ -160,14 +144,14 @@ export async function inviteMember(email: string, role: string, orgId: string, o
     return { inviteId: data.inviteId, inviteLink };
 }
 
-export async function checkPendingInvitation(email: string) {
+export async function checkPendingInvitation(email: string): Promise<PendingInvitation | null> {
     const q = query(
         collection(db, "invitations"),
         where("email", "==", email.toLowerCase()),
         where("status", "==", "pending")
     );
     const snap = await getDocs(q);
-    return snap.empty ? null : snap.docs[0].data();
+    return snap.empty ? null : (snap.docs[0].data() as PendingInvitation);
 }
 
 // --- Utils ---
@@ -213,7 +197,7 @@ export interface SaleRecord {
     taxAmount: number;
     grandTotal: number;
     paymentMethod: 'cash' | 'card' | 'upi' | 'credit';
-    createdAt: any;
+    createdAt: unknown;
 }
 
 /**

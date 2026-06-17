@@ -1,19 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/lib/store';
 import { getDrugPerformance, getExpiryAlerts, type DrugPerformance } from '@/lib/pharmacy-service';
 import {
-  TrendingUp, TrendingDown, AlertTriangle, Package,
-  Calendar, BarChart3, Loader2, RefreshCw, Download,
+  TrendingUp, AlertTriangle, Package,
+  BarChart3, Loader2, RefreshCw, Download,
   Clock, ShieldAlert
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function DrugAnalyticsPage() {
-  const { organization, inventory } = useAppStore();
+  const { organization } = useAppStore();
   const orgId = organization?.id;
 
   const [drugs, setDrugs]               = useState<DrugPerformance[]>([]);
@@ -22,59 +22,29 @@ export default function DrugAnalyticsPage() {
   const [filter, setFilter]             = useState<'all' | 'critical' | 'warning' | 'healthy'>('all');
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      if (orgId) {
-        const [perf, expiry] = await Promise.all([
-          getDrugPerformance(orgId),
-          getExpiryAlerts(orgId, 90),
-        ]);
-        setDrugs(perf);
-        setExpiryAlerts(expiry);
-      } else {
-        // Derive from Zustand inventory when no orgId (demo mode)
-        const derived: DrugPerformance[] = inventory.map(item => {
-          const stock = item.quantity ?? 0;
-          const reorder = (item as any).reorderLevel ?? 50;
-          const avgDaily = (item as any).avgDailySales ?? 1;
-          const days = avgDaily > 0 ? Math.floor(stock / avgDaily) : 999;
-          const status: DrugPerformance['status'] = days <= 7 ? 'critical' : days <= 14 ? 'warning' : 'healthy';
-          return {
-            id: item.id, name: item.name, sku: item.sku ?? '',
-            currentStock: stock, reorderPoint: reorder,
-            avgDailySales: avgDaily, daysUntilStockout: days,
-            status, trend: 'stable' as const, trendPercent: 0,
-            category: item.category ?? 'General',
-            expiryDate: item.expiryDate,
-          };
-        });
-        setDrugs(derived);
-
-        // Expiry alerts from local inventory
-        const today = new Date();
-        const cutoff = new Date(); cutoff.setDate(cutoff.getDate() + 90);
-        setExpiryAlerts(
-          inventory
-            .filter(i => i.expiryDate && new Date(i.expiryDate) <= cutoff && (i.quantity ?? 0) > 0)
-            .map(i => ({
-              id: i.id, name: i.name, sku: i.sku ?? '',
-              expiryDate: i.expiryDate ?? '',
-              quantity: i.quantity ?? 0,
-              daysLeft: Math.ceil((new Date(i.expiryDate ?? '').getTime() - today.getTime()) / 86400000),
-            }))
-            .sort((a, b) => a.daysLeft - b.daysLeft)
-        );
+      if (!orgId) {
+        setDrugs([]);
+        setExpiryAlerts([]);
+        return;
       }
+      const [perf, expiry] = await Promise.all([
+        getDrugPerformance(orgId),
+        getExpiryAlerts(orgId, 90),
+      ]);
+      setDrugs(perf);
+      setExpiryAlerts(expiry);
       setLastRefreshed(new Date());
     } catch (err) {
       console.error('[DrugAnalytics]', err);
     } finally {
       setLoading(false);
     }
-  }
+  }, [orgId]);
 
-  useEffect(() => { load(); }, [orgId]);
+  useEffect(() => { load(); }, [load]);
 
   const filtered  = filter === 'all' ? drugs : drugs.filter(d => d.status === filter);
   const critical  = drugs.filter(d => d.status === 'critical').length;

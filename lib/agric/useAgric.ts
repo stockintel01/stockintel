@@ -2,8 +2,8 @@
  * useAgric.ts
  *
  * Central React hook for the Agriculture module.
- * - Connects to Firestore when authenticated (production)
- * - Falls back to mock data when unauthenticated (demo/dev)
+ * - Connects to tenant-scoped Firestore data in production
+ * - Requires an authenticated organization for every write
  * - Exposes typed state + actions to all agric pages
  */
 
@@ -106,7 +106,7 @@ export function useAgric(): AgricState & AgricActions {
     unsubsRef.current = [];
 
     if (!orgId || !userId) {
-      // Not authenticated — use mock data
+      // Not authenticated: keep state empty and block writes.
       setState(s => ({
         ...s,
         inventory: [],
@@ -116,7 +116,7 @@ export function useAgric(): AgricState & AgricActions {
         packingRecords: [],
         shippingRecords: [],
         alerts: [],
-        loading: false, isLive: false,
+        loading: false, isLive: false, error: 'An authenticated organization is required.',
       }));
       return;
     }
@@ -147,110 +147,110 @@ export function useAgric(): AgricState & AgricActions {
     };
   }, [orgId, userId]);
 
-  // ── Mock helpers (offline/demo mode) ────────────────────
-  function mockUpdate<K extends keyof AgricState>(key: K, updater: (prev: AgricState[K]) => AgricState[K]) {
-    setState(s => ({ ...s, [key]: updater(s[key]) }));
-  }
+  // ── Production write guard ──────────────────────────────
+  const requireLiveContext = useCallback(() => {
+    if (!orgId || !userId) throw new Error('An authenticated organization is required.');
+    return { orgId, userId };
+  }, [orgId, userId]);
 
   // ── Actions ──────────────────────────────────────────────
   const actions: AgricActions = {
     // Inventory
     addItem: useCallback(async (item) => {
-      if (isLive) { await fsAddItem(orgId!, item, userId!); return; }
-      mockUpdate('inventory', prev => [...(prev as AgricInventoryItem[]), { ...item, id: `item_${Date.now()}` }]);
-    }, [isLive, orgId, userId]),
+      const ctx = requireLiveContext();
+      await fsAddItem(ctx.orgId, item, ctx.userId);
+    }, [requireLiveContext]),
 
     updateItem: useCallback(async (id, fields) => {
-      if (isLive) { await updateInventoryItem(orgId!, id, fields); return; }
-      mockUpdate('inventory', prev => (prev as AgricInventoryItem[]).map(i => i.id === id ? { ...i, ...fields } : i));
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await updateInventoryItem(ctx.orgId, id, fields);
+    }, [requireLiveContext]),
 
     deleteItem: useCallback(async (id, note) => {
-      if (isLive) { await softDeleteInventoryItem(orgId!, id, userId!, note); return; }
-      mockUpdate('inventory', prev => (prev as AgricInventoryItem[]).map(i => i.id === id ? { ...i, isActive: false, deletedAt: new Date().toISOString(), deletedBy: userId ?? 'user', deletionNote: note } : i));
-    }, [isLive, orgId, userId]),
+      const ctx = requireLiveContext();
+      await softDeleteInventoryItem(ctx.orgId, id, ctx.userId, note);
+    }, [requireLiveContext]),
 
     submitAdjustment: useCallback(async (adj) => {
-      if (isLive) { await submitStockAdjustment(orgId!, adj); return; }
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await submitStockAdjustment(ctx.orgId, adj);
+    }, [requireLiveContext]),
 
     approveAdjustment: useCallback(async (adjId, itemId, newQty, note) => {
-      if (isLive) { await approveStockAdjustment(orgId!, adjId, itemId, newQty, userId!, note); return; }
-      mockUpdate('inventory', prev => (prev as AgricInventoryItem[]).map(i => i.id === itemId ? { ...i, currentStock: newQty } : i));
-    }, [isLive, orgId, userId]),
+      const ctx = requireLiveContext();
+      await approveStockAdjustment(ctx.orgId, adjId, itemId, newQty, ctx.userId, note);
+    }, [requireLiveContext]),
 
     // Usage
     logUsage: useCallback(async (log) => {
-      if (isLive) { await addUsageLog(orgId!, log); return; }
-      mockUpdate('usageLogs', prev => [{ ...log, id: `ul_${Date.now()}` }, ...(prev as UsageLog[])]);
-      mockUpdate('inventory', prev => (prev as AgricInventoryItem[]).map(i => i.id === log.itemId ? { ...i, currentStock: Math.max(0, i.currentStock - log.quantity) } : i));
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await addUsageLog(ctx.orgId, log);
+    }, [requireLiveContext]),
 
     // Requests
     createRequest: useCallback(async (req) => {
-      if (isLive) { await createStockRequest(orgId!, req); return; }
-      const yr = new Date().getFullYear();
-      mockUpdate('requests', prev => [{ ...req, id: `sr_${Date.now()}`, requestNumber: `REQ-${yr}-${String((prev as StockRequest[]).length + 1).padStart(3, '0')}`, status: 'pending' as const }, ...(prev as StockRequest[])]);
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await createStockRequest(ctx.orgId, req);
+    }, [requireLiveContext]),
 
     approveRequest: useCallback(async (reqId) => {
-      if (isLive) { await updateRequestStatus(orgId!, reqId, { status: 'approved', approvedBy: userId!, approvedAt: new Date().toISOString() }); return; }
-      mockUpdate('requests', prev => (prev as StockRequest[]).map(r => r.id === reqId ? { ...r, status: 'approved' as const, approvedBy: userId ?? '', approvedAt: new Date().toISOString() } : r));
-    }, [isLive, orgId, userId]),
+      const ctx = requireLiveContext();
+      await updateRequestStatus(ctx.orgId, reqId, { status: 'approved', approvedBy: ctx.userId, approvedAt: new Date().toISOString() });
+    }, [requireLiveContext]),
 
     rejectRequest: useCallback(async (reqId, reason) => {
-      if (isLive) { await updateRequestStatus(orgId!, reqId, { status: 'rejected', rejectionReason: reason }); return; }
-      mockUpdate('requests', prev => (prev as StockRequest[]).map(r => r.id === reqId ? { ...r, status: 'rejected' as const, rejectionReason: reason } : r));
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await updateRequestStatus(ctx.orgId, reqId, { status: 'rejected', rejectionReason: reason });
+    }, [requireLiveContext]),
 
     dispatchReq: useCallback(async (reqId, items) => {
-      if (isLive) { await dispatchRequest(orgId!, reqId, userId!, items); return; }
-      mockUpdate('requests', prev => (prev as StockRequest[]).map(r => r.id === reqId ? { ...r, status: 'dispatched' as const, dispatchedBy: userId ?? '', dispatchedAt: new Date().toISOString() } : r));
-    }, [isLive, orgId, userId]),
+      const ctx = requireLiveContext();
+      await dispatchRequest(ctx.orgId, reqId, ctx.userId, items);
+    }, [requireLiveContext]),
 
     confirmReceived: useCallback(async (reqId) => {
-      if (isLive) { await updateRequestStatus(orgId!, reqId, { status: 'received', receivedBy: userId!, receivedAt: new Date().toISOString() }); return; }
-      mockUpdate('requests', prev => (prev as StockRequest[]).map(r => r.id === reqId ? { ...r, status: 'received' as const, receivedAt: new Date().toISOString() } : r));
-    }, [isLive, orgId, userId]),
+      const ctx = requireLiveContext();
+      await updateRequestStatus(ctx.orgId, reqId, { status: 'received', receivedBy: ctx.userId, receivedAt: new Date().toISOString() });
+    }, [requireLiveContext]),
 
     // Equipment
     checkout: useCallback(async (item) => {
-      if (isLive) { await checkoutEquipment(orgId!, item); return; }
-      mockUpdate('checkouts', prev => [{ ...item, id: `ec_${Date.now()}` }, ...(prev as EquipmentCheckout[])]);
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await checkoutEquipment(ctx.orgId, item);
+    }, [requireLiveContext]),
 
     returnItem: useCallback(async (checkoutId, condition, notes) => {
-      if (isLive) { await returnEquipment(orgId!, checkoutId, condition, notes); return; }
-      mockUpdate('checkouts', prev => (prev as EquipmentCheckout[]).map(c => c.id === checkoutId ? { ...c, isReturned: true, isOverdue: false, returnTime: new Date().toISOString(), returnedCondition: condition } : c));
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await returnEquipment(ctx.orgId, checkoutId, condition, notes);
+    }, [requireLiveContext]),
 
     // Plans
     createPlan: useCallback(async (plan) => {
-      if (isLive) { await createSprayPlan(orgId!, plan); return; }
-      mockUpdate('plans', prev => [{ ...plan, id: `sp_${Date.now()}` }, ...(prev as SprayPlan[])]);
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await createSprayPlan(ctx.orgId, plan);
+    }, [requireLiveContext]),
 
     markApplication: useCallback(async (planId, current) => {
-      if (isLive) { await logApplicationComplete(orgId!, planId, current); return; }
-      mockUpdate('plans', prev => (prev as SprayPlan[]).map(p => p.id === planId ? { ...p, completedApplications: Math.min(p.completedApplications + 1, p.totalApplications) } : p));
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await logApplicationComplete(ctx.orgId, planId, current);
+    }, [requireLiveContext]),
 
     // Packing
     addPacking: useCallback(async (record) => {
-      if (isLive) { await addPackingRecord(orgId!, record); return; }
-      mockUpdate('packingRecords', prev => [{ ...record, id: `pr_${Date.now()}` }, ...(prev as PackingRecord[])]);
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await addPackingRecord(ctx.orgId, record);
+    }, [requireLiveContext]),
 
     addShipping: useCallback(async (record) => {
-      if (isLive) { await addShippingRecord(orgId!, record); return; }
-      mockUpdate('shippingRecords', prev => [{ ...record, id: `sh_${Date.now()}` }, ...(prev as ShippingRecord[])]);
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await addShippingRecord(ctx.orgId, record);
+    }, [requireLiveContext]),
 
     // Alerts
     readAlert: useCallback(async (alertId) => {
-      if (isLive) { await markAlertRead(orgId!, alertId); return; }
-      mockUpdate('alerts', prev => (prev as AgricAlert[]).map(a => a.id === alertId ? { ...a, isRead: true } : a));
-    }, [isLive, orgId]),
+      const ctx = requireLiveContext();
+      await markAlertRead(ctx.orgId, alertId);
+    }, [requireLiveContext]),
   };
 
   return { ...state, ...actions };

@@ -3,15 +3,13 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppStore, IndustryType } from '@/lib/store';
-import { useAuth } from '@/components/auth/AuthContext';
-import { createOrganization } from '@/lib/firebase-utils';
 import { inviteMember } from '@/lib/firebase-utils';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { buildAgricultureProfile, type AgricultureOperation } from '@/lib/agric/config';
 import {
     Pill, Leaf, Store, Building2, Globe, Receipt,
-    Users, CheckCircle, ArrowRight, ArrowLeft,
+    CheckCircle, ArrowRight, ArrowLeft,
     Loader2, Plus, X, Sparkles, MapPin, Phone, Mail
 } from 'lucide-react';
 
@@ -66,8 +64,6 @@ const CURRENCIES = [
 export default function OnboardingPage() {
     const router = useRouter();
     const { user, organization, setIndustry, setCurrency, updateReceiptSettings, setAuthenticated, setStoreUser } = useAppStore();
-    const { signInWithGoogle } = useAuth();
-
     const [step, setStep] = useState(0);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
@@ -294,7 +290,7 @@ export default function OnboardingPage() {
                                 Welcome to StockIntel
                             </h1>
                             <p style={{ color: '#6b7280', fontSize: 15, lineHeight: 1.6, marginBottom: 32, maxWidth: 380, margin: '0 auto 32px' }}>
-                                Let's set up your workspace in under 2 minutes. We'll collect just the essentials to get you started.
+                                Set up your workspace in under 2 minutes. We collect just the essentials to get you started.
                             </p>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, textAlign: 'left', background: '#fafafa', borderRadius: 12, padding: '20px 24px', marginBottom: 8 }}>
                                 {[
@@ -317,7 +313,7 @@ export default function OnboardingPage() {
                     {/* ── Step 1: Industry ────────────────────────── */}
                     {step === 1 && (
                         <div>
-                            <h2 style={{ fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 6 }}>What's your industry?</h2>
+                            <h2 style={{ fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 6 }}>Choose your industry</h2>
                             <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 24 }}>
                                 This configures your dashboard, reports, and terminology.
                             </p>
@@ -447,7 +443,7 @@ export default function OnboardingPage() {
                         <div>
                             <h2 style={{ fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 6 }}>Invite your team</h2>
                             <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 24 }}>
-                                They'll receive an email to join <strong>{business.businessName || 'your workspace'}</strong>. Skip if you prefer to do this later.
+                                Team members receive an email to join <strong>{business.businessName || 'your workspace'}</strong>. Skip if you prefer to do this later.
                             </p>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -500,15 +496,15 @@ export default function OnboardingPage() {
                                 <CheckCircle size={36} color="white" />
                             </div>
                             <h2 style={{ fontSize: 24, fontWeight: 700, color: '#111827', marginBottom: 10 }}>
-                                You're all set, {user?.name?.split(' ')[0] ?? 'there'}!
+                                You are all set, {user?.name?.split(' ')[0] ?? 'there'}!
                             </h2>
                             <p style={{ color: '#6b7280', fontSize: 15, marginBottom: 32, lineHeight: 1.65 }}>
-                                <strong>{business.businessName || 'Your workspace'}</strong> is ready to go. Your inventory has been seeded with starter data to help you explore.
+                                <strong>{business.businessName || 'Your workspace'}</strong> is ready to go. You can now add real stock, invite your team, track expenses, and run daily operations from live tenant data.
                             </p>
 
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 32 }}>
                                 {[
-                                    { emoji: '📦', title: 'Inventory', desc: 'Auto-seeded & ready' },
+                                    { emoji: '📦', title: 'Inventory', desc: 'Ready for real stock' },
                                     { emoji: '🔒', title: 'Secure', desc: 'Role-based access' },
                                     { emoji: '📊', title: 'Live Data', desc: 'Real-time Firestore' },
                                 ].map(card => (

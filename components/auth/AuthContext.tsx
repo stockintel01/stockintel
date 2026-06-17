@@ -80,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         organizationId: orgId,
                         role: 'owner',
                         createdAt: new Date(),
-                    } as any);
+                    });
                 }
             }
         }).catch(console.warn);
@@ -91,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             if (currentUser) {
                 try {
-                    let profile = await getUserProfile(currentUser.uid);
+                    const profile = await getUserProfile(currentUser.uid);
 
                     if (!profile) {
                         // No Firestore profile yet — user exists in Auth but hasn't finished
@@ -109,10 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         setStoreUser(storeUser, isSuperAdminEmail(currentUser.email) ? getSuperAdminOrganization() : null);
                         setAuthenticated(true);
                     } else {
-                        // Super admin role override
-                        if (isSuperAdminEmail(currentUser.email)) {
-                            (profile as any).role = 'super_admin';
-                        }
+                        const role = isSuperAdminEmail(currentUser.email) ? 'super_admin' : profile.role;
 
                         // Fetch the org document
                         let orgData: Organization | null = null;
@@ -129,7 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             id:             profile.uid,
                             name:           profile.displayName,
                             email:          profile.email,
-                            role:           profile.role as any,
+                            role,
                             organizationId: profile.organizationId,
                             photoURL:       profile.photoURL,
                         };
@@ -139,18 +136,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     }
                 } catch (err) {
                     console.error('[AuthContext] profile load error:', err);
-                    // Even on error, mark authenticated so the user isn't looped to /login
-                    // when they ARE logged in to Firebase
-                    const storeUser: StoreUser = {
-                        id:             currentUser.uid,
-                        name:           currentUser.displayName || 'User',
-                        email:          currentUser.email || '',
-                        photoURL:       currentUser.photoURL || '',
-                        organizationId: '',
-                        role:           isSuperAdminEmail(currentUser.email) ? 'super_admin' : 'owner',
-                    };
-                    setStoreUser(storeUser, isSuperAdminEmail(currentUser.email) ? getSuperAdminOrganization() : null);
-                    setAuthenticated(true);
+                    // Fail closed. A Firebase Auth user without a readable tenant
+                    // profile must not be treated as a local visitor session.
+                    setStoreUser(null, null);
+                    setAuthenticated(false);
                 }
             } else {
                 // Signed out
@@ -172,12 +161,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Try popup first (works in most desktop browsers)
             const result = await signInWithPopup(auth, googleProvider);
             fbUser = result.user;
-        } catch (popupErr: any) {
+        } catch (popupErr: unknown) {
             // Popup blocked or failed — fall back to redirect flow
             if (
-                popupErr.code === 'auth/popup-blocked' ||
-                popupErr.code === 'auth/popup-closed-by-user' ||
-                popupErr.code === 'auth/cancelled-popup-request'
+                (popupErr instanceof Error && 'code' in popupErr ? String(popupErr.code) : '') === 'auth/popup-blocked' ||
+                (popupErr instanceof Error && 'code' in popupErr ? String(popupErr.code) : '') === 'auth/popup-closed-by-user' ||
+                (popupErr instanceof Error && 'code' in popupErr ? String(popupErr.code) : '') === 'auth/cancelled-popup-request'
             ) {
                 await signInWithRedirect(auth, googleProvider);
                 return { isNewUser: false }; // Page will redirect; onAuthStateChanged handles the rest
@@ -190,14 +179,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (!existingProfile) {
             // New user — create org + profile, then redirect to onboarding
-            let role: 'owner' | 'worker' = 'owner';
+            let role: 'owner' | 'manager' | 'worker' = 'owner';
             let organizationId = '';
 
             // Check for pending invitation first
             if (fbUser.email) {
                 const invitation = await checkPendingInvitation(fbUser.email);
                 if (invitation) {
-                    role           = invitation.role as any;
+                    role           = invitation.role;
                     organizationId = invitation.organizationId;
                 }
             }
@@ -220,7 +209,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 organizationId,
                 role,
                 createdAt:      new Date(),
-            } as any);
+            });
 
             const orgSnap = await getDoc(doc(db, 'organizations', organizationId));
             setStoreUser({
