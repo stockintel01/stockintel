@@ -277,20 +277,18 @@ export async function acceptInvitation(
             throw new Error(`This invitation was sent to ${invite.email}. Sign in with that Google account to accept it.`);
         }
 
-        const orgRef = doc(db, 'organizations', invite.organizationId);
-        const orgSnap = await getDoc(orgRef);
-        if (!orgSnap.exists()) throw new Error('The invited workspace no longer exists.');
-        const organization = { ...(orgSnap.data() as Organization), id: orgSnap.id };
         const access = invite.access ?? [];
         const role = invite.role;
         const userRef = doc(db, 'users', uid);
+        const existingUserSnap = await getDoc(userRef);
         const memberPayload = {
             uid,
             email,
             displayName: displayName || email.split('@')[0] || 'Team member',
             photoURL: photoURL || '',
             organizationId: invite.organizationId,
-            organizationName: organization.name,
+            organizationName: invite.orgName ?? 'Your workspace',
+            industry: invite.industry ?? 'pharmacy',
             role,
             access,
             acceptedInviteId: inviteId,
@@ -298,7 +296,7 @@ export async function acceptInvitation(
         };
 
         const batch = writeBatch(db);
-        batch.set(userRef, {
+        batch.set(userRef, existingUserSnap.exists() ? memberPayload : {
             ...memberPayload,
             createdAt: serverTimestamp(),
         }, { merge: true });
@@ -318,6 +316,17 @@ export async function acceptInvitation(
             acceptedByUid: uid,
         });
         await batch.commit();
+        const orgSnap = await getDoc(doc(db, 'organizations', invite.organizationId)).catch(() => null);
+        const organization = orgSnap?.exists()
+            ? { ...(orgSnap.data() as Organization), id: orgSnap.id }
+            : {
+                id: invite.organizationId,
+                name: invite.orgName ?? 'Your workspace',
+                industry: invite.industry ?? 'pharmacy',
+                ownerId: '',
+                referralCode: '',
+                subscription: { plan: 'free_trial' as const, status: 'active' as const, trialEndsAt: new Date() },
+            };
         return { organizationId: invite.organizationId, role, access, organization };
     }
 }

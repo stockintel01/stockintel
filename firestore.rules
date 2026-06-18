@@ -121,7 +121,7 @@ service cloud.firestore {
         (
           isValidInvitationProfileWrite(userId)
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['displayName', 'photoURL', 'organizationId', 'organizationName', 'role', 'access', 'acceptedInviteId', 'updatedAt'])
+            .hasOnly(['displayName', 'photoURL', 'organizationId', 'organizationName', 'industry', 'role', 'access', 'acceptedInviteId', 'updatedAt'])
         ) ||
         (
           isSameOrg(resource.data.organizationId)
