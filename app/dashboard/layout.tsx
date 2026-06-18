@@ -294,6 +294,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         router.push(nextOrg.industry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard');
     };
 
+    const mobileNavItems = ([
+        { name: 'Home', href: activeIndustry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard', icon: Home },
+        { name: activeIndustry === 'agriculture' ? 'Stock' : 'Inventory', href: activeIndustry === 'agriculture' ? '/dashboard/agriculture/stock-management' : '/dashboard/inventory', icon: Box },
+        { name: activeIndustry === 'agriculture' && agricultureProfile.modules.livestock ? 'Animals' : 'Sales', href: activeIndustry === 'agriculture' && agricultureProfile.modules.livestock ? '/dashboard/agriculture/livestock' : '/dashboard/sales', icon: activeIndustry === 'agriculture' ? Leaf : ShoppingCart },
+        { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+    ]).filter(item => userCanAccessHref(user, item.href)).slice(0, 4);
+
     return (
         <div className="min-h-screen bg-muted/20 flex">
             {/* Sidebar */}
@@ -482,18 +489,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </main>
             </div>
 
-            <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-4 border-t bg-background/95 px-1 py-1.5 shadow-lg backdrop-blur lg:hidden">
-                {([
-                    { name: 'Home', href: activeIndustry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard', icon: Home },
-                    { name: activeIndustry === 'agriculture' ? 'Stock' : 'Inventory', href: activeIndustry === 'agriculture' ? '/dashboard/agriculture/stock-management' : '/dashboard/inventory', icon: Box },
-                    { name: activeIndustry === 'agriculture' && agricultureProfile.modules.livestock ? 'Animals' : 'Sales', href: activeIndustry === 'agriculture' && agricultureProfile.modules.livestock ? '/dashboard/agriculture/livestock' : '/dashboard/sales', icon: activeIndustry === 'agriculture' ? Leaf : ShoppingCart },
-                    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                ]).map(item => (
+            {mobileNavItems.length > 0 && (
+            <nav className="fixed bottom-0 left-0 right-0 z-50 grid border-t bg-background/95 px-1 py-1.5 shadow-lg backdrop-blur lg:hidden" style={{ gridTemplateColumns: `repeat(${mobileNavItems.length}, minmax(0, 1fr))` }}>
+                {mobileNavItems.map(item => (
                     <Link key={item.name} href={item.href} className={cn('flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-medium', pathname === item.href ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}>
                         <item.icon className="h-5 w-5" /><span>{item.name}</span>
                     </Link>
                 ))}
             </nav>
+            )}
 
             {/* Mobile overlay */}
             {isSidebarOpen && (

@@ -42,7 +42,7 @@ export interface AccessPreset {
 }
 
 export const ACCESS_DEFINITIONS: Record<AccessKey, AccessDefinition> = {
-    dashboard: { key: 'dashboard', label: 'Dashboard', description: 'Main overview and daily summary.', hrefs: ['/dashboard'] },
+    dashboard: { key: 'dashboard', label: 'Dashboard', description: 'Main overview and daily summary.', hrefs: ['/dashboard', '/dashboard/agriculture'] },
     inventory: { key: 'inventory', label: 'Inventory', description: 'View and manage stock records.', hrefs: ['/dashboard/inventory', '/dashboard/inventory/add'] },
     inventoryImport: { key: 'inventoryImport', label: 'Bulk Import', description: 'Upload CSV/XLSX stock files.', hrefs: ['/dashboard/inventory/import'] },
     sales: { key: 'sales', label: 'Sales POS', description: 'Process sales and checkout transactions.', hrefs: ['/dashboard/sales'] },
@@ -102,7 +102,10 @@ export function normalizeAccess(access: unknown, industry: IndustryType): Access
 
 export function accessForHrefs(hrefs: string[]): AccessKey[] {
     return Object.values(ACCESS_DEFINITIONS)
-        .filter(definition => definition.hrefs.some(href => hrefs.some(item => item === href || item.startsWith(`${href}/`))))
+        .filter(definition => definition.hrefs.some(href => hrefs.some(item => {
+            if (definition.key === 'dashboard') return item === href;
+            return item === href || item.startsWith(`${href}/`);
+        })))
         .map(definition => definition.key);
 }
 
