@@ -42,12 +42,15 @@ function JoinInner() {
                 setInvite(data as Record<string, string>);
                 setStage('preview');
             })
-            .catch(() => { setErrorMsg('Could not load invitation. Check your connection.'); setStage('error'); });
+            .catch(() => {
+                setInvite(null);
+                setStage('preview');
+            });
     }, [inviteId]);
 
     // ── 2. If user is already signed in, skip straight to acceptance ──────────
     useEffect(() => {
-        if (stage === 'preview' && isAuthenticated && user && invite && inviteId) {
+        if (stage === 'preview' && isAuthenticated && user && inviteId) {
             handleAccept();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -135,7 +138,7 @@ function JoinInner() {
                     )}
 
                     {/* ── Preview ──────────────────────────────── */}
-                    {stage === 'preview' && invite && (
+                    {stage === 'preview' && (
                         <>
                             <div style={{ textAlign: 'center', marginBottom: 32 }}>
                                 <div style={{ width: 64, height: 64, borderRadius: 16, background: '#f0f4ff', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
@@ -158,7 +161,7 @@ function JoinInner() {
                                         </div>
                                         <div>
                                             <p style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Organisation</p>
-                                            <p style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>{invite.orgName ?? 'Your new team'}</p>
+                                            <p style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>{invite?.orgName ?? 'Secure workspace invitation'}</p>
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -167,7 +170,7 @@ function JoinInner() {
                                         </div>
                                         <div>
                                             <p style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Your role</p>
-                                            <p style={{ fontSize: 15, fontWeight: 600, color: roleColor, textTransform: 'capitalize' }}>{invite.role}</p>
+                                            <p style={{ fontSize: 15, fontWeight: 600, color: roleColor, textTransform: 'capitalize' }}>{invite?.role ?? 'Team member'}</p>
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -176,7 +179,7 @@ function JoinInner() {
                                         </div>
                                         <div>
                                             <p style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Invited email</p>
-                                            <p style={{ fontSize: 14, fontWeight: 500, color: '#374151' }}>{invite.email}</p>
+                                            <p style={{ fontSize: 14, fontWeight: 500, color: '#374151' }}>{invite?.email ?? 'Use the Google account that received this link'}</p>
                                         </div>
                                     </div>
                                 </div>
