@@ -1,4 +1,4 @@
-import { applicationDefault, cert, getApps, initializeApp, type App } from 'firebase-admin/app';
+import { cert, getApps, initializeApp, type App } from 'firebase-admin/app';
 import type { Auth } from 'firebase-admin/auth';
 import { getAuth } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
@@ -22,20 +22,34 @@ function normalizePrivateKey(value?: string) {
 function decodeBase64Json(value?: string) {
     if (!value) return null;
     try {
-        return Buffer.from(value.trim(), 'base64').toString('utf8');
+        const cleaned = value
+            .trim()
+            .replace(/^data:application\/json;base64,/, '')
+            .replace(/\s/g, '')
+            .replace(/-/g, '+')
+            .replace(/_/g, '/');
+        const padded = cleaned.padEnd(Math.ceil(cleaned.length / 4) * 4, '=');
+        return Buffer.from(padded, 'base64').toString('utf8');
     } catch {
         return null;
     }
 }
 
+function explicitServiceAccountError() {
+    return new Error(
+        'Firebase Admin service account is not valid. Set FIREBASE_SERVICE_ACCOUNT_BASE64 to the base64 encoded Firebase service account JSON, or set FIREBASE_SERVICE_ACCOUNT_JSON to the raw JSON.',
+    );
+}
+
 function serviceAccountJson() {
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
-        ?? decodeBase64Json(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64)
-        ?? undefined;
+    const jsonValue = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const base64Value = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+    const raw = jsonValue ?? decodeBase64Json(base64Value) ?? undefined;
     if (!raw) return null;
     try {
         return JSON.parse(raw.trim().replace(/^["']|["']$/g, '')) as ServiceAccountShape;
     } catch {
+        if (jsonValue || base64Value) throw explicitServiceAccountError();
         return null;
     }
 }
@@ -44,14 +58,14 @@ function serviceAccountFromJson() {
     const parsed = serviceAccountJson();
     if (!parsed) return null;
     try {
-        if (!parsed.project_id || !parsed.client_email || !parsed.private_key) return null;
+        if (!parsed.project_id || !parsed.client_email || !parsed.private_key) throw explicitServiceAccountError();
         return cert({
             projectId: parsed.project_id,
             clientEmail: parsed.client_email,
             privateKey: normalizePrivateKey(parsed.private_key),
         });
     } catch {
-        return null;
+        throw explicitServiceAccountError();
     }
 }
 
@@ -74,7 +88,9 @@ function getCredential() {
         return cert({ projectId, clientEmail, privateKey });
     }
 
-    return applicationDefault();
+    throw new Error(
+        'Firebase Admin credentials are not configured. Add FIREBASE_SERVICE_ACCOUNT_BASE64, FIREBASE_SERVICE_ACCOUNT_JSON, or FIREBASE_ADMIN_PROJECT_ID/FIREBASE_ADMIN_CLIENT_EMAIL/FIREBASE_ADMIN_PRIVATE_KEY.',
+    );
 }
 
 let adminApp: App | null = null;

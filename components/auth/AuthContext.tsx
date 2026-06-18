@@ -10,14 +10,14 @@ import {
     signOut
 } from "firebase/auth";
 import { auth, googleProvider, db } from "@/lib/firebase";
-import { useAppStore, User as StoreUser, Organization } from "@/lib/store";
+import { useAppStore, User as StoreUser, Organization, TenantMembership } from "@/lib/store";
 import { isSuperAdminEmail } from "@/lib/access-control";
 import {
     getUserProfile,
     createUserProfile,
     createOrganization
 } from "@/lib/firebase-utils";
-import { doc, getDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 
 interface AuthContextType {
     user: User | null;
@@ -49,6 +49,36 @@ function getSuperAdminOrganization(): Organization {
             currentPeriodEnd: new Date('2099-12-31'),
         },
     };
+}
+
+async function getTenantMemberships(
+    uid: string,
+    profile?: { organizationId?: string; role?: StoreUser['role']; access?: StoreUser['access'] },
+) {
+    const memberships: TenantMembership[] = [];
+    try {
+        const membershipSnap = await getDocs(collection(db, 'users', uid, 'memberships'));
+        membershipSnap.forEach(item => {
+            const data = item.data();
+            memberships.push({
+                organizationId: String(data.organizationId ?? item.id),
+                organizationName: data.organizationName,
+                industry: data.industry,
+                role: data.role,
+                access: Array.isArray(data.access) ? data.access : [],
+            } as TenantMembership);
+        });
+    } catch {
+        // Older accounts may only have the legacy top-level organization fields.
+    }
+    if (profile?.organizationId && !memberships.some(item => item.organizationId === profile.organizationId)) {
+        memberships.push({
+            organizationId: profile.organizationId,
+            role: profile.role ?? 'worker',
+            access: profile.access ?? [],
+        });
+    }
+    return memberships;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -109,13 +139,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         setAuthenticated(true);
                     } else {
                         const role = isSuperAdminEmail(currentUser.email) ? 'super_admin' : profile.role;
+                        const memberships = await getTenantMemberships(currentUser.uid, profile);
+                        const activeMembership = memberships.find(item => item.organizationId === profile.organizationId) ?? memberships[0];
+                        const activeOrganizationId = profile.organizationId || activeMembership?.organizationId || '';
 
                         // Fetch the org document
                         let orgData: Organization | null = null;
-                        if (profile.organizationId) {
+                        if (activeOrganizationId) {
                             try {
-                                const orgSnap = await getDoc(doc(db, 'organizations', profile.organizationId));
-                                orgData = orgSnap.exists() ? (orgSnap.data() as Organization) : null;
+                                const orgSnap = await getDoc(doc(db, 'organizations', activeOrganizationId));
+                                orgData = orgSnap.exists() ? ({ ...(orgSnap.data() as Organization), id: orgSnap.id }) : null;
                             } catch {
                                 // Org read failed (rules / offline) — continue without it
                             }
@@ -125,10 +158,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             id:             profile.uid,
                             name:           profile.displayName,
                             email:          profile.email,
-                            role,
-                            organizationId: profile.organizationId,
+                            role:           isSuperAdminEmail(currentUser.email) ? role : activeMembership?.role ?? role,
+                            organizationId: activeOrganizationId,
                             photoURL:       profile.photoURL,
-                            access:         profile.access,
+                            access:         activeMembership?.access ?? profile.access,
+                            memberships,
                         };
 
                         setStoreUser(storeUser, orgData ?? (isSuperAdminEmail(currentUser.email) ? getSuperAdminOrganization() : null));

@@ -1,6 +1,7 @@
 
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import {
+    addDoc,
     doc,
     getDoc,
     setDoc,
@@ -10,9 +11,10 @@ import {
     getDocs,
     runTransaction,
     serverTimestamp,
-    increment
+    increment,
+    writeBatch,
 } from "firebase/firestore";
-import { UserRole, IndustryType } from "@/lib/store";
+import { UserRole, IndustryType, type Organization } from "@/lib/store";
 import { authenticatedFetch } from "@/lib/api-client";
 import type { AccessKey } from "@/lib/access-permissions";
 
@@ -55,6 +57,8 @@ export interface Credit {
 export interface PendingInvitation {
     email: string;
     organizationId: string;
+    orgName?: string;
+    industry?: IndustryType;
     role: 'manager' | 'worker';
     access?: AccessKey[];
     status: 'pending' | 'accepted' | 'expired';
@@ -95,14 +99,49 @@ export async function createOrganization(
 
 // --- Invitations ---
 
+function shouldUseClientInviteFallback(error: unknown) {
+    const message = error instanceof Error ? error.message.toLowerCase() : '';
+    return [
+        'firebase admin',
+        'default credentials',
+        'unable to load your user profile',
+        'service account',
+        'authentication token',
+        'credentials are not configured',
+    ].some(fragment => message.includes(fragment));
+}
+
 export async function inviteMember(email: string, role: string, orgId: string, orgName?: string, invitedByName?: string, access?: AccessKey[]) {
-    const response = await authenticatedFetch('/api/invitations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, role, organizationId: orgId, orgName, invitedBy: invitedByName, access }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error ?? 'Unable to create invitation');
+    let data: { inviteId: string; error?: string };
+    try {
+        const response = await authenticatedFetch('/api/invitations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, role, organizationId: orgId, orgName, invitedBy: invitedByName, access }),
+        });
+        data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? 'Unable to create invitation');
+    } catch (error) {
+        if (!shouldUseClientInviteFallback(error)) throw error;
+        const currentUser = auth.currentUser;
+        if (!currentUser) throw new Error('Sign in again before inviting a team member.');
+        const orgSnap = await getDoc(doc(db, 'organizations', orgId));
+        const orgData = orgSnap.exists() ? (orgSnap.data() as FirestoreOrg) : null;
+        const inviteRef = await addDoc(collection(db, 'invitations'), {
+            email: email.trim().toLowerCase(),
+            role,
+            access: access ?? [],
+            organizationId: orgId,
+            orgName: orgName ?? orgData?.name ?? 'Your workspace',
+            industry: orgData?.industry ?? 'pharmacy',
+            status: 'pending',
+            invitedBy: invitedByName ?? currentUser.displayName ?? currentUser.email ?? 'Team admin',
+            createdBy: currentUser.uid,
+            createdByEmail: currentUser.email ?? '',
+            createdAt: serverTimestamp(),
+        });
+        data = { inviteId: inviteRef.id };
+    }
     // Return the invite link so the caller can send it via email / copy it
     const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/join?invite=${data.inviteId}`;
     return { inviteId: data.inviteId, inviteLink };
@@ -222,19 +261,82 @@ export async function acceptInvitation(
     email: string,
     photoURL: string,
 ): Promise<{ organizationId: string; role: string; access?: AccessKey[]; organization?: import('@/lib/store').Organization }> {
-    void uid; void displayName; void email; void photoURL;
-    const response = await authenticatedFetch(`/api/invitations/${encodeURIComponent(inviteId)}`, { method: 'POST' });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error ?? 'Unable to accept invitation');
-    return data;
+    try {
+        const response = await authenticatedFetch(`/api/invitations/${encodeURIComponent(inviteId)}`, { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? 'Unable to accept invitation');
+        return data;
+    } catch (error) {
+        if (!shouldUseClientInviteFallback(error)) throw error;
+        const inviteRef = doc(db, 'invitations', inviteId);
+        const inviteSnap = await getDoc(inviteRef);
+        if (!inviteSnap.exists()) throw new Error('This invitation link is invalid or has expired.');
+        const invite = inviteSnap.data() as PendingInvitation;
+        if (invite.status !== 'pending') throw new Error('This invitation has already been used or was cancelled.');
+        if (invite.email.toLowerCase() !== email.toLowerCase()) {
+            throw new Error(`This invitation was sent to ${invite.email}. Sign in with that Google account to accept it.`);
+        }
+
+        const orgRef = doc(db, 'organizations', invite.organizationId);
+        const orgSnap = await getDoc(orgRef);
+        if (!orgSnap.exists()) throw new Error('The invited workspace no longer exists.');
+        const organization = { ...(orgSnap.data() as Organization), id: orgSnap.id };
+        const access = invite.access ?? [];
+        const role = invite.role;
+        const userRef = doc(db, 'users', uid);
+        const memberPayload = {
+            uid,
+            email,
+            displayName: displayName || email.split('@')[0] || 'Team member',
+            photoURL: photoURL || '',
+            organizationId: invite.organizationId,
+            organizationName: organization.name,
+            role,
+            access,
+            acceptedInviteId: inviteId,
+            updatedAt: serverTimestamp(),
+        };
+
+        const batch = writeBatch(db);
+        batch.set(userRef, {
+            ...memberPayload,
+            createdAt: serverTimestamp(),
+        }, { merge: true });
+        batch.set(doc(db, `users/${uid}/memberships/${invite.organizationId}`), {
+            ...memberPayload,
+            status: 'active',
+            joinedAt: serverTimestamp(),
+        }, { merge: true });
+        batch.set(doc(db, `organizations/${invite.organizationId}/members/${uid}`), {
+            ...memberPayload,
+            status: 'active',
+            joinedAt: serverTimestamp(),
+        }, { merge: true });
+        batch.update(inviteRef, {
+            status: 'accepted',
+            acceptedAt: serverTimestamp(),
+            acceptedByUid: uid,
+        });
+        await batch.commit();
+        return { organizationId: invite.organizationId, role, access, organization };
+    }
 }
 
 /**
  * Find a pending invitation by invite ID (for the /join?invite=xxx flow).
  */
 export async function getInvitationById(inviteId: string) {
-    const response = await fetch(`/api/invitations/${encodeURIComponent(inviteId)}`);
-    if (response.status === 404) return null;
-    if (!response.ok) throw new Error('Unable to load invitation');
-    return response.json();
+    try {
+        const response = await fetch(`/api/invitations/${encodeURIComponent(inviteId)}`);
+        if (response.status === 404) return null;
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error ?? 'Unable to load invitation');
+        }
+        return response.json();
+    } catch (error) {
+        if (!shouldUseClientInviteFallback(error)) throw error;
+        const snap = await getDoc(doc(db, 'invitations', inviteId));
+        return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+    }
 }

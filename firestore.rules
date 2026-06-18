@@ -56,6 +56,21 @@ service cloud.firestore {
       return orgId() == resourceOrgId;
     }
 
+    function invitationDoc(inviteId) {
+      return get(/databases/$(database)/documents/invitations/$(inviteId)).data;
+    }
+
+    function isValidInvitationProfileWrite(userId) {
+      let invite = invitationDoc(request.resource.data.acceptedInviteId);
+      return request.auth.uid == userId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.organizationId == invite.organizationId
+        && request.resource.data.role in ['manager', 'worker']
+        && invite.email == request.auth.token.email
+        && invite.status == 'pending';
+    }
+
     function hasActiveSubscription(resourceOrgId) {
       let subscription = get(/databases/$(database)/documents/organizations/$(resourceOrgId)).data.subscription;
       return isSuperAdmin() || (
@@ -90,17 +105,47 @@ service cloud.firestore {
         (isSameOrg(resource.data.organizationId) && isOwnerOrManager())
       );
       allow create: if isSignedIn()
-        && request.auth.uid == userId
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.email == request.auth.token.email
-        && request.resource.data.role == 'owner'
-        && get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data.ownerId == request.auth.uid;
+        && (
+          (
+            request.auth.uid == userId
+            && request.resource.data.uid == request.auth.uid
+            && request.resource.data.email == request.auth.token.email
+            && request.resource.data.role == 'owner'
+            && get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data.ownerId == request.auth.uid
+          ) ||
+          isValidInvitationProfileWrite(userId)
+        );
       allow update: if isSignedIn() && (
         (request.auth.uid == userId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt'])) ||
+        (
+          isValidInvitationProfileWrite(userId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['displayName', 'photoURL', 'organizationId', 'organizationName', 'role', 'access', 'acceptedInviteId', 'updatedAt'])
+        ) ||
+        (
+          isSameOrg(resource.data.organizationId)
+          && isOwnerOrManager()
+          && request.resource.data.organizationId == resource.data.organizationId
+          && request.resource.data.role in ['manager', 'worker']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'access', 'updatedAt'])
+        ) ||
         isSuperAdmin()
       );
       allow delete: if isSuperAdmin();
+
+      match /memberships/{membershipOrgId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow create, update: if isSignedIn()
+          && request.auth.uid == userId
+          && request.resource.data.organizationId == membershipOrgId
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.role in ['manager', 'worker']
+          && invitationDoc(request.resource.data.acceptedInviteId).email == request.auth.token.email
+          && invitationDoc(request.resource.data.acceptedInviteId).organizationId == membershipOrgId
+          && invitationDoc(request.resource.data.acceptedInviteId).status == 'pending';
+        allow delete: if isSuperAdmin();
+      }
     }
 
     // ── Organisations ────────────────────────────────────────────
@@ -197,6 +242,25 @@ service cloud.firestore {
         allow create: if isSuperAdmin();
         allow update: if false;
         allow delete: if isSuperAdmin();
+      }
+
+      match /members/{memberId} {
+        allow read: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow create, update: if isSignedIn()
+          && request.resource.data.organizationId == orgId
+          && request.resource.data.uid == memberId
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.role in ['manager', 'worker']
+          && invitationDoc(request.resource.data.acceptedInviteId).email == request.auth.token.email
+          && invitationDoc(request.resource.data.acceptedInviteId).organizationId == orgId
+          && invitationDoc(request.resource.data.acceptedInviteId).status == 'pending';
+        allow update: if isSignedIn()
+          && isSameOrg(orgId)
+          && isOwnerOrManager()
+          && resource.data.role in ['manager', 'worker']
+          && request.resource.data.role in ['manager', 'worker']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'access', 'updatedAt']);
+        allow delete: if isSuperAdmin() || (isSignedIn() && isSameOrg(orgId) && isOwner());
       }
 
       // ── Agric collections ──────────────────────────────────────
@@ -304,9 +368,26 @@ service cloud.firestore {
 
     // ── Invitations ──────────────────────────────────────────────
     match /invitations/{inviteId} {
-      allow create: if false;
-      allow read: if isSignedIn() && isSameOrg(resource.data.organizationId);
-      allow update: if false;
+      allow create: if isSignedIn()
+        && isSameOrg(request.resource.data.organizationId)
+        && isOwnerOrManager()
+        && request.resource.data.email is string
+        && request.resource.data.role in ['manager', 'worker']
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdBy == request.auth.uid;
+      allow get: if resource.data.status == 'pending' ||
+        (isSignedIn() && (
+          isSameOrg(resource.data.organizationId) ||
+          resource.data.email == request.auth.token.email
+        ));
+      allow list: if isSignedIn() && isSameOrg(resource.data.organizationId);
+      allow update: if isSignedIn()
+        && resource.data.status == 'pending'
+        && resource.data.email == request.auth.token.email
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.acceptedByUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'acceptedAt', 'acceptedByUid']);
       allow delete: if isSuperAdmin();
     }
 

@@ -18,6 +18,8 @@ import { useInventory } from '@/lib/hooks/useInventory';
 import { canUseFeature, isSubscriptionActive, type PlanFeature } from '@/lib/plans';
 import { getAgricultureProfile } from '@/lib/agric/config';
 import { userCanAccessHref } from '@/lib/access-permissions';
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface NavItem {
     name: string;
@@ -34,7 +36,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     useInventory();
     const router = useRouter();
     const pathname = usePathname();
-    const { user, organization, activeIndustry, setIndustry, isAuthenticated, inventory } = useAppStore();
+    const { user, organization, activeIndustry, setIndustry, isAuthenticated, inventory, setStoreUser } = useAppStore();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [expiringCount, setExpiringCount] = useState(0);
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
@@ -275,6 +277,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         router.push(industry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard');
     };
 
+    const switchTenant = async (organizationId: string) => {
+        if (!user || organizationId === user.organizationId) return;
+        const membership = user.memberships?.find(item => item.organizationId === organizationId);
+        if (!membership) return;
+        const orgSnap = await getDoc(doc(db, 'organizations', organizationId));
+        if (!orgSnap.exists()) return;
+        const nextOrg = { ...(orgSnap.data() as NonNullable<typeof organization>), id: orgSnap.id };
+        setStoreUser({
+            ...user,
+            organizationId,
+            role: membership.role,
+            access: membership.access,
+        }, nextOrg);
+        setIndustry(nextOrg.industry);
+        router.push(nextOrg.industry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard');
+    };
+
     return (
         <div className="min-h-screen bg-muted/20 flex">
             {/* Sidebar */}
@@ -367,6 +386,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                 {/* User card */}
                 <div className="shrink-0 p-3 border-t">
+                    {(user.memberships?.length ?? 0) > 1 && (
+                        <select
+                            value={user.organizationId}
+                            onChange={event => void switchTenant(event.target.value)}
+                            className="mb-2 w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
+                            aria-label="Switch organisation workspace"
+                        >
+                            {user.memberships?.map(membership => (
+                                <option key={membership.organizationId} value={membership.organizationId}>
+                                    {membership.organizationName || membership.organizationId}
+                                </option>
+                            ))}
+                        </select>
+                    )}
                     <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg mb-2">
                         <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold shrink-0">
                             {user?.name?.[0]?.toUpperCase() || 'U'}
@@ -413,6 +446,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                     </button>
                                 ))}
                             </div>
+                        )}
+                        {(user.memberships?.length ?? 0) > 1 && (
+                            <select
+                                value={user.organizationId}
+                                onChange={event => void switchTenant(event.target.value)}
+                                className="hidden max-w-56 rounded-lg border bg-background px-3 py-2 text-xs font-medium sm:block"
+                                aria-label="Switch organisation workspace"
+                            >
+                                {user.memberships?.map(membership => (
+                                    <option key={membership.organizationId} value={membership.organizationId}>
+                                        {membership.organizationName || membership.organizationId}
+                                    </option>
+                                ))}
+                            </select>
                         )}
                         {expiringCount > 0 && (
                             <Link href="/dashboard/inventory">

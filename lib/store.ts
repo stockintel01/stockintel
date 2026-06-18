@@ -69,6 +69,15 @@ export interface User {
     organizationId: string;
     photoURL?: string;
     access?: AccessKey[];
+    memberships?: TenantMembership[];
+}
+
+export interface TenantMembership {
+    organizationId: string;
+    organizationName?: string;
+    industry?: IndustryType;
+    role: UserRole;
+    access?: AccessKey[];
 }
 
 interface AppState {
