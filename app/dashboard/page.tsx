@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { db } from '@/lib/firebase';
 import { useAppStore } from '@/lib/store';
+import { userCanAccessHref } from '@/lib/access-permissions';
 
 interface Sale {
     id: string;
@@ -28,15 +29,18 @@ function asDate(value: Sale['createdAt']): Date | null {
 }
 
 export default function DashboardHome() {
-    const { organization, inventory, currency, activeIndustry } = useAppStore();
+    const { user, organization, inventory, currency, activeIndustry } = useAppStore();
     const [sales, setSales] = useState<Sale[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const canReadSales = userCanAccessHref(user, '/dashboard/sales') || userCanAccessHref(user, '/dashboard/reports');
+    const canOpenReports = userCanAccessHref(user, '/dashboard/reports');
 
     useEffect(() => {
-        if (!organization?.id) {
+        if (!organization?.id || !canReadSales) {
             setSales([]);
             setLoading(false);
+            setError('');
             return;
         }
 
@@ -54,7 +58,7 @@ export default function DashboardHome() {
             setLoading(false);
             setError(navigator.onLine ? 'Sales data could not be loaded. Check Firebase rules and connectivity.' : 'Offline mode: showing the latest cached sales data.');
         });
-    }, [organization?.id]);
+    }, [canReadSales, organization?.id]);
 
     const totalRevenue = sales.reduce((sum, sale) => sum + Number(sale.grandTotal || 0), 0);
     const lowStock = inventory.filter(item => item.quantity <= (item.reorderLevel ?? 10)).length;
@@ -78,13 +82,17 @@ export default function DashboardHome() {
     }, [sales]);
 
     const standardMetrics = [
+        ...(canReadSales ? [
         { label: 'Total Revenue', value: `${currency}${totalRevenue.toLocaleString()}`, icon: DollarSign },
         { label: 'Transactions', value: sales.length.toLocaleString(), icon: ReceiptText },
+        ] : []),
         { label: 'Low Stock Items', value: lowStock.toLocaleString(), icon: AlertTriangle },
         { label: 'Units In Stock', value: stockUnits.toLocaleString(), icon: Package },
     ];
     const retailMetrics = [
+        ...(canReadSales ? [
         { label: 'Sales Revenue', value: `${currency}${totalRevenue.toLocaleString()}`, icon: DollarSign },
+        ] : []),
         { label: 'Stock at Cost', value: `${currency}${stockCostValue.toLocaleString()}`, icon: Package },
         { label: 'Potential Gross Margin', value: `${currency}${potentialMargin.toLocaleString()}`, icon: ArrowUpRight },
         { label: 'Reorder Required', value: lowStock.toLocaleString(), icon: AlertTriangle },
@@ -98,7 +106,7 @@ export default function DashboardHome() {
                     <h2 className="text-3xl font-bold tracking-tight">{activeIndustry === 'retail' ? 'Retail Stock Intelligence' : 'Dashboard'}</h2>
                     <p className="text-sm text-muted-foreground mt-1">{organization?.name ?? 'Your organization'} live overview</p>
                 </div>
-                <Link href="/dashboard/reports"><Button variant="outline">Open reports <ArrowUpRight className="w-4 h-4 ml-2" /></Button></Link>
+                {canOpenReports && <Link href="/dashboard/reports"><Button variant="outline">Open reports <ArrowUpRight className="w-4 h-4 ml-2" /></Button></Link>}
             </div>
 
             {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
@@ -115,7 +123,7 @@ export default function DashboardHome() {
                 ))}
             </div>
 
-            <Card>
+            {canReadSales && <Card>
                 <CardHeader><CardTitle>Revenue Overview</CardTitle></CardHeader>
                 <CardContent>
                     {chartData.length === 0 && !loading ? (
@@ -132,9 +140,9 @@ export default function DashboardHome() {
                         </ResponsiveContainer>
                     )}
                 </CardContent>
-            </Card>
+            </Card>}
 
-            <Card>
+            {canReadSales && <Card>
                 <CardHeader><CardTitle>Recent Transactions</CardTitle></CardHeader>
                 <CardContent>
                     {sales.length === 0 && !loading ? <p className="py-8 text-center text-sm text-muted-foreground">No transactions yet.</p> : (
@@ -148,7 +156,7 @@ export default function DashboardHome() {
                         </div>
                     )}
                 </CardContent>
-            </Card>
+            </Card>}
         </div>
     );
 }

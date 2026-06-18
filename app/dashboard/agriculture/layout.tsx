@@ -12,6 +12,7 @@ import {
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
 import { agricultureProfileLabel, getAgricultureProfile, type FarmLocation } from '@/lib/agric/config';
+import { userCanAccessHref } from '@/lib/access-permissions';
 
 // Nav sections
 const CROP_NAV: Array<{ href: string; label: string; icon: any; badgeKey?: string }> = [
@@ -114,7 +115,7 @@ function SidebarWeatherWidget({ collapsed, location }: { collapsed: boolean; loc
 export default function AgricultureLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const { organization } = useAppStore();
+  const { organization, user } = useAppStore();
   const { requests, checkouts, alerts } = useAgric();
   const profile = getAgricultureProfile(organization?.settings);
 
@@ -133,7 +134,7 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
       : []),
     ...(profile.modules.weather ? [{ href: '/dashboard/agriculture/weather', label: 'Live Weather', icon: Cloud, badgeKey: 'weather' }] : []),
     ...(profile.modules.reports ? [{ href: '/dashboard/agriculture/reports', label: 'Reports', icon: BarChart3 }] : []),
-  ];
+  ].filter(item => userCanAccessHref(user, item.href));
 
   const getBadge = (key?: string): number => {
     if (key === 'requests') return pendingRequests;
@@ -168,7 +169,7 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
         </div>
 
         {/* Live Weather Widget */}
-        {profile.modules.weather && <SidebarWeatherWidget collapsed={collapsed} location={profile.location} />}
+        {profile.modules.weather && userCanAccessHref(user, '/dashboard/agriculture/weather') && <SidebarWeatherWidget collapsed={collapsed} location={profile.location} />}
 
         {/* Alerts Badge */}
         {!collapsed && unreadAlerts > 0 && (
@@ -222,7 +223,7 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
       <div className="sticky top-16 z-30 border-b bg-background/95 px-3 py-2 backdrop-blur md:hidden">
         <div className="mb-2 flex items-center justify-between">
           <div><p className="text-sm font-semibold">{organization?.name || 'Agriculture Workspace'}</p><p className="text-[11px] text-muted-foreground">{agricultureProfileLabel(profile)}</p></div>
-          <Link href="/dashboard/settings" className="text-xs font-medium text-green-700">Customize</Link>
+          {userCanAccessHref(user, '/dashboard/settings') && <Link href="/dashboard/settings" className="text-xs font-medium text-green-700">Customize</Link>}
         </div>
         <nav className="flex gap-2 overflow-x-auto pb-1">
           {navItems.map(({ href, label, icon: Icon }) => (

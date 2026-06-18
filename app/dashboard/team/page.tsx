@@ -43,6 +43,8 @@ export default function TeamPage() {
     const defaultPreset = ACCESS_PRESETS[industry][0];
     const [inviteAccess, setInviteAccess] = useState<AccessKey[]>(defaultPreset.access);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [savingMemberId, setSavingMemberId] = useState('');
+    const [savedMemberId, setSavedMemberId] = useState('');
     const [shiftUserId, setShiftUserId] = useState('');
     const [shiftDate, setShiftDate] = useState('');
     const [shiftStart, setShiftStart] = useState('08:00');
@@ -112,6 +114,8 @@ export default function TeamPage() {
     const updateMemberAccess = async (member: TeamMember, updates: { role?: 'manager' | 'worker'; access?: AccessKey[] }) => {
         if (member.role === 'owner' || member.role === 'super_admin') return;
         setError('');
+        setSavedMemberId('');
+        setSavingMemberId(member.id);
         const role = updates.role ?? (member.role === 'manager' ? 'manager' : 'worker');
         const access = updates.access ?? member.access ?? [];
         try {
@@ -122,6 +126,7 @@ export default function TeamPage() {
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error ?? 'Unable to update member access');
+            setSavedMemberId(member.id);
         } catch (err) {
             const message = err instanceof Error ? err.message.toLowerCase() : '';
             const canFallback = message.includes('firebase admin') ||
@@ -144,9 +149,13 @@ export default function TeamPage() {
                     access,
                     updatedAt: serverTimestamp(),
                 }, { merge: true }).catch(() => undefined);
+                setSavedMemberId(member.id);
             } catch (fallbackErr) {
                 setError(fallbackErr instanceof Error ? fallbackErr.message : 'Unable to update member access');
             }
+        } finally {
+            setSavingMemberId('');
+            setTimeout(() => setSavedMemberId(current => current === member.id ? '' : current), 2500);
         }
     };
 
@@ -204,7 +213,7 @@ export default function TeamPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Team Management</h1>
-                    <p className="text-muted-foreground">Manage access and roles for your organization.</p>
+                    <p className="text-muted-foreground">Manage access and roles for your organization. Changes save automatically.</p>
                 </div>
                 <Button onClick={() => setIsInviteOpen(!isInviteOpen)} disabled={!user || !['owner', 'manager', 'super_admin'].includes(user.role)}>
                     <UserPlus className="w-4 h-4 mr-2" /> Invite Member
@@ -374,6 +383,8 @@ export default function TeamPage() {
                                                 <div className={`text-xs px-2 py-1 rounded-full ${member.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                                                     {member.status}
                                                 </div>
+                                                {savingMemberId === member.id && <div className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">Saving...</div>}
+                                                {savedMemberId === member.id && <div className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Saved</div>}
                                                 <Button variant="ghost" size="icon">
                                                     <MoreHorizontal className="w-4 h-4" />
                                                 </Button>
