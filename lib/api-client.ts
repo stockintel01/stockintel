@@ -7,7 +7,7 @@ export async function authenticatedFetch(input: RequestInfo | URL, init: Request
     if (!user) throw new Error('Authentication required');
 
     const headers = new Headers(init.headers);
-    headers.set('Authorization', `Bearer ${await user.getIdToken()}`);
+    headers.set('Authorization', `Bearer ${await user.getIdToken(true)}`);
 
     return fetch(input, { ...init, headers });
 }

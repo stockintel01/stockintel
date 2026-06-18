@@ -56,6 +56,22 @@ GEMINI_API_KEY             (optional — Google Gemini AI features)
 ANTHROPIC_API_KEY          (optional — Anthropic AI features)
 ```
 
+## Firebase Admin Server Credentials
+
+Team invitations, organization creation, invitation acceptance, billing checkout,
+and super-admin operations require Firebase Admin credentials on the server.
+Add these to `.env.local` and to your hosting environment:
+
+```env
+FIREBASE_ADMIN_PROJECT_ID=stock-intel-3e0dc
+FIREBASE_ADMIN_CLIENT_EMAIL=firebase-adminsdk-...@stock-intel-3e0dc.iam.gserviceaccount.com
+FIREBASE_ADMIN_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+```
+
+Download the service account from Firebase Console > Project Settings >
+Service accounts. Keep the private key server-only; never expose it as a
+`NEXT_PUBLIC_` variable.
+
 ## Auth Flow Explained
 1. User clicks "Continue with Google" → popup opens
 2. On success → `onAuthStateChanged` fires → profile loaded from Firestore → store hydrated

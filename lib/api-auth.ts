@@ -17,6 +17,14 @@ export class ApiError extends Error {
     }
 }
 
+function hasServerCredentialConfig() {
+    return !!(
+        (process.env.FIREBASE_ADMIN_PROJECT_ID && process.env.FIREBASE_ADMIN_CLIENT_EMAIL && process.env.FIREBASE_ADMIN_PRIVATE_KEY) ||
+        process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+        process.env.FIREBASE_CONFIG
+    );
+}
+
 export async function requireFirebaseUser(request: NextRequest): Promise<{ uid: string; email: string }> {
     const authorization = request.headers.get('authorization');
     if (!authorization?.startsWith('Bearer ')) {
@@ -26,7 +34,14 @@ export async function requireFirebaseUser(request: NextRequest): Promise<{ uid: 
     try {
         const decoded = await adminAuth.verifyIdToken(authorization.slice(7));
         return { uid: decoded.uid, email: decoded.email ?? '' };
-    } catch {
+    } catch (error) {
+        console.error('[api-auth] Firebase token verification failed:', error);
+        if (!hasServerCredentialConfig()) {
+            throw new ApiError(
+                'Firebase Admin credentials are not configured on the server. Add FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, and FIREBASE_ADMIN_PRIVATE_KEY to .env.local or your hosting environment.',
+                503,
+            );
+        }
         throw new ApiError('Invalid or expired authentication token', 401);
     }
 }
