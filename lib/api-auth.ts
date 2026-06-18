@@ -19,6 +19,8 @@ export class ApiError extends Error {
 
 function hasServerCredentialConfig() {
     return !!(
+        process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 ||
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
         (process.env.FIREBASE_ADMIN_PROJECT_ID && process.env.FIREBASE_ADMIN_CLIENT_EMAIL && process.env.FIREBASE_ADMIN_PRIVATE_KEY) ||
         process.env.GOOGLE_APPLICATION_CREDENTIALS ||
         process.env.FIREBASE_CONFIG
@@ -49,6 +51,12 @@ function firebaseErrorMessage(error: unknown) {
     return error instanceof Error ? error.message : '';
 }
 
+function adminCredentialErrorMessage() {
+    return process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 || process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+        ? 'Firebase Admin service account is invalid on the server. Check FIREBASE_SERVICE_ACCOUNT_BASE64 or FIREBASE_SERVICE_ACCOUNT_JSON in Vercel.'
+        : 'Firebase Admin credentials are invalid on the server. Check FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, and FIREBASE_ADMIN_PRIVATE_KEY in Vercel.';
+}
+
 export async function requireFirebaseUser(request: NextRequest): Promise<{ uid: string; email: string }> {
     const authorization = request.headers.get('authorization');
     if (!authorization?.startsWith('Bearer ')) {
@@ -75,7 +83,7 @@ export async function requireFirebaseUser(request: NextRequest): Promise<{ uid: 
 
         if (code.startsWith('app/') || message.includes('Failed to parse private key') || message.includes('DECODER routines')) {
             throw new ApiError(
-                'Firebase Admin credentials are invalid on the server. Check FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, and FIREBASE_ADMIN_PRIVATE_KEY in Vercel.',
+                adminCredentialErrorMessage(),
                 503,
             );
         }
@@ -100,18 +108,18 @@ export async function requireFirebaseUser(request: NextRequest): Promise<{ uid: 
 }
 
 export async function requireUser(request: NextRequest): Promise<AuthenticatedUser> {
-    try {
-        const decoded = await requireFirebaseUser(request);
-        if (isSuperAdminEmail(decoded.email)) {
-            return {
-                uid: decoded.uid,
-                email: decoded.email ?? '',
-                organizationId: 'system',
-                role: 'super_admin',
-                subscription: { plan: 'enterprise', status: 'active' },
-            };
-        }
+    const decoded = await requireFirebaseUser(request);
+    if (isSuperAdminEmail(decoded.email)) {
+        return {
+            uid: decoded.uid,
+            email: decoded.email ?? '',
+            organizationId: 'system',
+            role: 'super_admin',
+            subscription: { plan: 'enterprise', status: 'active' },
+        };
+    }
 
+    try {
         const profile = await adminDb.collection('users').doc(decoded.uid).get();
         if (!profile.exists) throw new ApiError('User profile not found', 403);
 
@@ -129,7 +137,13 @@ export async function requireUser(request: NextRequest): Promise<AuthenticatedUs
         };
     } catch (error) {
         if (error instanceof ApiError) throw error;
-        throw new ApiError('Invalid or expired authentication token', 401);
+        console.error('[api-auth] User profile load failed:', error);
+        const code = firebaseErrorCode(error);
+        const message = firebaseErrorMessage(error);
+        if (code.startsWith('app/') || message.includes('Failed to parse private key') || message.includes('DECODER routines')) {
+            throw new ApiError(adminCredentialErrorMessage(), 503);
+        }
+        throw new ApiError('Unable to load your user profile from Firebase. Check Firebase Admin credentials and Firestore access in Vercel.', 503);
     }
 }
 
