@@ -33,6 +33,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ u
             updatedAt: FieldValue.serverTimestamp(),
             accessUpdatedBy: user.uid,
         });
+        await Promise.all([
+            adminDb.collection('users').doc(uid).collection('memberships').doc(user.organizationId).set({
+                role,
+                access: normalizedAccess,
+                updatedAt: FieldValue.serverTimestamp(),
+                accessUpdatedBy: user.uid,
+            }, { merge: true }),
+            adminDb.collection('organizations').doc(user.organizationId).collection('members').doc(uid).set({
+                role,
+                access: normalizedAccess,
+                updatedAt: FieldValue.serverTimestamp(),
+                accessUpdatedBy: user.uid,
+            }, { merge: true }),
+        ]);
 
         return NextResponse.json({ uid, role, access: normalizedAccess });
     } catch (error) {

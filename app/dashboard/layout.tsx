@@ -19,7 +19,7 @@ import { canUseFeature, isSubscriptionActive, type PlanFeature } from '@/lib/pla
 import { getAgricultureProfile } from '@/lib/agric/config';
 import { userCanAccessHref } from '@/lib/access-permissions';
 import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 interface NavItem {
     name: string;
@@ -67,6 +67,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             setIndustry(organization.industry);
         }
     }, [activeIndustry, organization?.industry, setIndustry, superAdmin]);
+
+    useEffect(() => {
+        if (!user?.id || !user.organizationId || user.role === 'owner' || user.role === 'super_admin') return;
+        return onSnapshot(doc(db, `users/${user.id}/memberships/${user.organizationId}`), snapshot => {
+            if (!snapshot.exists()) return;
+            const data = snapshot.data();
+            const nextRole = data.role;
+            const nextAccess = Array.isArray(data.access) ? data.access : [];
+            if (nextRole !== user.role || JSON.stringify(nextAccess) !== JSON.stringify(user.access ?? [])) {
+                setStoreUser({ ...user, role: nextRole, access: nextAccess }, organization);
+            }
+        });
+    }, [organization, setStoreUser, user]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect

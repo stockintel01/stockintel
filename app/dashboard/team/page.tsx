@@ -144,6 +144,11 @@ export default function TeamPage() {
                     access,
                     updatedAt: serverTimestamp(),
                 }, { merge: true });
+                await setDoc(doc(db, `users/${member.id}/memberships/${organization.id}`), {
+                    role,
+                    access,
+                    updatedAt: serverTimestamp(),
+                }, { merge: true });
                 await setDoc(doc(db, `organizations/${organization.id}/members/${member.id}`), {
                     role,
                     access,

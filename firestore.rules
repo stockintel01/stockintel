@@ -144,6 +144,11 @@ service cloud.firestore {
           && invitationDoc(request.resource.data.acceptedInviteId).email == request.auth.token.email
           && invitationDoc(request.resource.data.acceptedInviteId).organizationId == membershipOrgId
           && invitationDoc(request.resource.data.acceptedInviteId).status == 'pending';
+        allow update: if isSignedIn()
+          && isSameOrg(membershipOrgId)
+          && isOwnerOrManager()
+          && request.resource.data.role in ['manager', 'worker']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'access', 'updatedAt']);
         allow delete: if isSuperAdmin();
       }
     }
@@ -335,6 +340,10 @@ service cloud.firestore {
         allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricPacking') || hasAccess('agricReports'));
         allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking');
         allow update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking');
+      }
+      match /agric_packing_stations/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricPacking');
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
       }
       match /agric_shipping/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricPacking') || hasAccess('agricReports'));

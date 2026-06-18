@@ -189,6 +189,17 @@ export interface PackingRecord {
   notes?: string;
 }
 
+export interface PackingStation {
+  id: string;
+  name: string;
+  storageName?: string;
+  assignedUserIds: string[];
+  assignedUserNames?: string[];
+  isActive: boolean;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
 // ── Shipping / Dispatch Record ────────────────────────────────
 export interface ShippingRecord {
   id: string;
@@ -196,6 +207,9 @@ export interface ShippingRecord {
   destinationId?: string;
   destinationName: string;
   supervisorId: string;
+  stationId?: string;
+  stationName?: string;
+  storageName?: string;
   produce: string;
   boxesShipped: number;        // auto-reduces packed stock
   weightShipped?: number;
