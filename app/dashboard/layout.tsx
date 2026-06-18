@@ -16,7 +16,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { useInventory } from '@/lib/hooks/useInventory';
 import { canUseFeature, isSubscriptionActive, type PlanFeature } from '@/lib/plans';
-import { agricultureProfileLabel, getAgricultureProfile } from '@/lib/agric/config';
+import { getAgricultureProfile } from '@/lib/agric/config';
+import { userCanAccessHref } from '@/lib/access-permissions';
 
 interface NavItem {
     name: string;
@@ -66,6 +67,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }, [activeIndustry, organization?.industry, setIndustry, superAdmin]);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsSidebarOpen(false);
     }, [pathname]);
 
@@ -94,10 +96,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             return;
         }
         const managerOnlyRoutes = ['/dashboard/team', '/dashboard/inventory/add', '/dashboard/inventory/import'];
-        if (!authLoading && managerOnlyRoutes.some(path => pathname.startsWith(path)) && !['super_admin', 'owner', 'manager'].includes(user?.role ?? '')) {
+        if (!authLoading && managerOnlyRoutes.some(path => pathname.startsWith(path)) && !['super_admin', 'owner', 'manager'].includes(user?.role ?? '') && !userCanAccessHref(user, pathname)) {
             router.replace('/dashboard');
+            return;
         }
-    }, [authLoading, user, isAuthenticated, organization?.subscription, pathname, router, superAdmin]);
+        if (!authLoading && user && !userCanAccessHref(user, pathname)) {
+            router.replace(activeIndustry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard');
+        }
+    }, [activeIndustry, authLoading, user, isAuthenticated, organization?.subscription, pathname, router, superAdmin]);
 
     if (authLoading || !user || !isAuthenticated) {
         return (
@@ -252,6 +258,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           }] : []),
         ],
     } : baseConfig;
+    const visibleGroups = config.groups
+        .map(group => ({
+            ...group,
+            items: group.items.filter(item => userCanAccessHref(user, item.href)),
+        }))
+        .filter(group => group.items.length > 0);
     const ActiveIcon = config.icon;
 
     const toggleGroup = (label: string) => {
@@ -307,7 +319,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             </div>
                         </div>
                     )}
-                    {config.groups.map(group => {
+                    {visibleGroups.map(group => {
                         const isOpen = openGroups[group.label] !== false; // default open
                         return (
                             <div key={group.label}>

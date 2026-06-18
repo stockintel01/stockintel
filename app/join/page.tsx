@@ -78,7 +78,7 @@ function JoinInner() {
             );
             // Update Zustand store with org assignment
             setStoreUser(
-                user ? { ...user, role: result.role as 'owner' | 'manager' | 'worker' } : null,
+                user ? { ...user, role: result.role as 'owner' | 'manager' | 'worker', access: result.access } : null,
                 result.organization ?? { id: result.organizationId, name: invite?.orgName ?? 'Your Team', industry: 'pharmacy' as const, ownerId: '', referralCode: '', subscription: { plan: 'free_trial' as const, status: 'active' as const, trialEndsAt: new Date() } }
             );
             setStage('done');

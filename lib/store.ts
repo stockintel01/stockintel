@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { InventoryItem } from './mock-data';
+import type { AccessKey } from './access-permissions';
 
 export type UserRole = 'super_admin' | 'owner' | 'manager' | 'worker';
 export type IndustryType = 'pharmacy' | 'agriculture' | 'retail';
@@ -67,6 +68,7 @@ export interface User {
     role: UserRole;
     organizationId: string;
     photoURL?: string;
+    access?: AccessKey[];
 }
 
 interface AppState {

@@ -128,6 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             role,
                             organizationId: profile.organizationId,
                             photoURL:       profile.photoURL,
+                            access:         profile.access,
                         };
 
                         setStoreUser(storeUser, orgData ?? (isSuperAdminEmail(currentUser.email) ? getSuperAdminOrganization() : null));
@@ -210,6 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 photoURL: fbUser.photoURL || '',
                 organizationId,
                 role: isSuperAdminEmail(fbUser.email) ? 'super_admin' : role,
+                access: [],
             }, orgSnap.exists() ? (orgSnap.data() as Organization) : null);
             setAuthenticated(true);
             return { isNewUser: true };

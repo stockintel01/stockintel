@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { UserRole, IndustryType } from "@/lib/store";
 import { authenticatedFetch } from "@/lib/api-client";
+import type { AccessKey } from "@/lib/access-permissions";
 
 export interface FirestoreUser {
     uid: string;
@@ -22,6 +23,7 @@ export interface FirestoreUser {
     photoURL?: string;
     organizationId: string;
     role: UserRole;
+    access?: AccessKey[];
     createdAt: unknown;
 }
 
@@ -54,6 +56,7 @@ export interface PendingInvitation {
     email: string;
     organizationId: string;
     role: 'manager' | 'worker';
+    access?: AccessKey[];
     status: 'pending' | 'accepted' | 'expired';
 }
 
@@ -68,6 +71,7 @@ export async function getUserProfile(uid: string): Promise<FirestoreUser | null>
 export async function createUserProfile(user: FirestoreUser) {
     await setDoc(doc(db, "users", user.uid), {
         ...user,
+        access: user.access ?? [],
         createdAt: serverTimestamp()
     });
 }
@@ -91,11 +95,11 @@ export async function createOrganization(
 
 // --- Invitations ---
 
-export async function inviteMember(email: string, role: string, orgId: string, orgName?: string, invitedByName?: string) {
+export async function inviteMember(email: string, role: string, orgId: string, orgName?: string, invitedByName?: string, access?: AccessKey[]) {
     const response = await authenticatedFetch('/api/invitations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, role, organizationId: orgId, orgName, invitedBy: invitedByName }),
+        body: JSON.stringify({ email, role, organizationId: orgId, orgName, invitedBy: invitedByName, access }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? 'Unable to create invitation');
@@ -217,7 +221,7 @@ export async function acceptInvitation(
     displayName: string,
     email: string,
     photoURL: string,
-): Promise<{ organizationId: string; role: string; organization?: import('@/lib/store').Organization }> {
+): Promise<{ organizationId: string; role: string; access?: AccessKey[]; organization?: import('@/lib/store').Organization }> {
     void uid; void displayName; void email; void photoURL;
     const response = await authenticatedFetch(`/api/invitations/${encodeURIComponent(inviteId)}`, { method: 'POST' });
     const data = await response.json();

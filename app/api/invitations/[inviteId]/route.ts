@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { ApiError, requireFirebaseUser } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
+import { normalizeAccess } from '@/lib/access-permissions';
+import type { IndustryType } from '@/lib/store';
 
 export async function GET(_request: NextRequest, context: { params: Promise<{ inviteId: string }> }) {
     const { inviteId } = await context.params;
@@ -15,6 +17,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ in
         id: snapshot.id,
         email: invite.email,
         role: invite.role,
+        access: invite.access ?? [],
         orgName: invite.orgName,
         status: invite.status,
     }, { headers: { 'Cache-Control': 'private, no-store' } });
@@ -40,6 +43,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ in
             const orgSnapshot = await transaction.get(adminDb.collection('organizations').doc(String(invite.organizationId)));
             if (!orgSnapshot.exists) throw new ApiError('Inviting organization not found', 404);
             const org = orgSnapshot.data() ?? {};
+            const industry = (org.industry ?? 'pharmacy') as IndustryType;
+            const access = normalizeAccess(invite.access ?? [], industry);
 
             transaction.set(userRef, {
                 uid: user.uid,
@@ -47,6 +52,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ in
                 displayName: user.email.split('@')[0],
                 organizationId: invite.organizationId,
                 role: invite.role,
+                access,
                 updatedAt: FieldValue.serverTimestamp(),
             }, { merge: true });
             transaction.update(inviteRef, {
@@ -58,6 +64,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ in
             return {
                 organizationId: invite.organizationId,
                 role: invite.role,
+                access,
                 organization: {
                     id: invite.organizationId,
                     name: org.name ?? invite.orgName ?? 'Your Team',
