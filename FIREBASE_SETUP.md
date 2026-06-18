@@ -72,6 +72,17 @@ Download the service account from Firebase Console > Project Settings >
 Service accounts. Keep the private key server-only; never expose it as a
 `NEXT_PUBLIC_` variable.
 
+Safest Vercel option: base64 encode the entire downloaded service account JSON
+and store it as one server-only variable:
+
+```env
+FIREBASE_SERVICE_ACCOUNT_BASE64=base64_encoded_service_account_json
+```
+
+If you use this option, you do not need to split out
+`FIREBASE_ADMIN_PROJECT_ID`, `FIREBASE_ADMIN_CLIENT_EMAIL`, and
+`FIREBASE_ADMIN_PRIVATE_KEY`.
+
 ## Auth Flow Explained
 1. User clicks "Continue with Google" → popup opens
 2. On success → `onAuthStateChanged` fires → profile loaded from Firestore → store hydrated

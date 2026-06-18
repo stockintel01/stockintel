@@ -13,8 +13,19 @@ function normalizePrivateKey(value?: string) {
         .replace(/\r\n/g, '\n');
 }
 
+function decodeBase64Json(value?: string) {
+    if (!value) return null;
+    try {
+        return Buffer.from(value.trim(), 'base64').toString('utf8');
+    } catch {
+        return null;
+    }
+}
+
 function serviceAccountFromJson() {
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+        ?? decodeBase64Json(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64)
+        ?? undefined;
     if (!raw) return null;
     try {
         const parsed = JSON.parse(raw.trim().replace(/^["']|["']$/g, '')) as {
