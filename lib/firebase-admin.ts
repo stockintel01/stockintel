@@ -4,6 +4,12 @@ import { getAuth } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getFirestore } from 'firebase-admin/firestore';
 
+interface ServiceAccountShape {
+    project_id?: string;
+    client_email?: string;
+    private_key?: string;
+}
+
 function normalizePrivateKey(value?: string) {
     if (!value) return undefined;
     return value
@@ -22,17 +28,22 @@ function decodeBase64Json(value?: string) {
     }
 }
 
-function serviceAccountFromJson() {
+function serviceAccountJson() {
     const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
         ?? decodeBase64Json(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64)
         ?? undefined;
     if (!raw) return null;
     try {
-        const parsed = JSON.parse(raw.trim().replace(/^["']|["']$/g, '')) as {
-            project_id?: string;
-            client_email?: string;
-            private_key?: string;
-        };
+        return JSON.parse(raw.trim().replace(/^["']|["']$/g, '')) as ServiceAccountShape;
+    } catch {
+        return null;
+    }
+}
+
+function serviceAccountFromJson() {
+    const parsed = serviceAccountJson();
+    if (!parsed) return null;
+    try {
         if (!parsed.project_id || !parsed.client_email || !parsed.private_key) return null;
         return cert({
             projectId: parsed.project_id,
@@ -42,6 +53,13 @@ function serviceAccountFromJson() {
     } catch {
         return null;
     }
+}
+
+export function adminProjectId() {
+    return serviceAccountJson()?.project_id
+        ?? process.env.FIREBASE_ADMIN_PROJECT_ID
+        ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
+        ?? '';
 }
 
 function getCredential() {
@@ -67,7 +85,7 @@ function getAdminApp() {
     if (adminApp) return adminApp;
     adminApp = getApps()[0] ?? initializeApp({
         credential: getCredential(),
-        projectId: process.env.FIREBASE_ADMIN_PROJECT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+        projectId: adminProjectId(),
     });
     return adminApp;
 }

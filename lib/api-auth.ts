@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { adminAuth, adminDb, adminProjectId } from '@/lib/firebase-admin';
 import { isSuperAdminEmail } from '@/lib/access-control';
 import { canUseFeature, isSubscriptionActive, type PlanFeature, type SubscriptionLike } from '@/lib/plans';
 
@@ -28,7 +28,7 @@ function hasServerCredentialConfig() {
 }
 
 function configuredProjectId() {
-    return process.env.FIREBASE_ADMIN_PROJECT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? '';
+    return adminProjectId();
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -143,7 +143,13 @@ export async function requireUser(request: NextRequest): Promise<AuthenticatedUs
         if (code.startsWith('app/') || message.includes('Failed to parse private key') || message.includes('DECODER routines')) {
             throw new ApiError(adminCredentialErrorMessage(), 503);
         }
-        throw new ApiError('Unable to load your user profile from Firebase. Check Firebase Admin credentials and Firestore access in Vercel.', 503);
+        if (code === 'permission-denied' || code === '7') {
+            throw new ApiError(`Firebase Admin can verify login tokens, but Firestore denied reading user profiles in project "${configuredProjectId()}". Check that Firestore is enabled and the service account belongs to this Firebase project.`, 503);
+        }
+        if (code === 'not-found' || code === '5' || message.toLowerCase().includes('database') || message.toLowerCase().includes('not found')) {
+            throw new ApiError(`Firebase Admin can verify login tokens, but Firestore could not find the default database in project "${configuredProjectId()}". Enable Firestore in Firebase Console or confirm the service account project is correct.`, 503);
+        }
+        throw new ApiError(`Unable to load your user profile from Firebase project "${configuredProjectId()}": ${message || code || 'unknown Firestore error'}`, 503);
     }
 }
 
