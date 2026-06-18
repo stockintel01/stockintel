@@ -1,20 +1,20 @@
 'use client';
 
 import { useState } from 'react';
+import type { ElementType } from 'react';
 import {
   Plus, Search, CheckCircle2, Clock, XCircle, Truck,
-  Package, ChevronDown, X, AlertTriangle, ArrowRight, Bell
+  Package, X
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
-import { StockRequest, StockRequestItem, RequestStatus, FarmZone, AgricCategory } from '@/lib/agric/types';
+import { StockRequest, StockRequestItem, RequestStatus, FarmZone, AgricCategory, UserRole } from '@/lib/agric/types';
 import { getAgricultureProfile } from '@/lib/agric/config';
 
-const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon: any }> = {
+const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon: ElementType }> = {
   pending: { label: 'Pending', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Clock },
   approved: { label: 'Approved', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: CheckCircle2 },
   dispatched: { label: 'Dispatched', color: 'bg-purple-100 text-purple-700 border-purple-200', icon: Truck },
@@ -22,20 +22,17 @@ const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon:
   rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700 border-red-200', icon: XCircle },
 };
 
-// Role perspective — in production this comes from auth context
-const CURRENT_ROLE: 'farm_manager' | 'stockkeeper' = 'stockkeeper';
-
 export default function RequestsPage() {
   const { requests, inventory, approveRequest, rejectRequest, dispatchReq, confirmReceived, createRequest } = useAgric();
   const { user, organization } = useAppStore();
   const farmZones = getAgricultureProfile(organization?.settings).farmZones.length ? getAgricultureProfile(organization?.settings).farmZones : ['Main Farm'];
   const currentUserName = user?.name ?? 'Farm Manager';
   const currentUserId = user?.id ?? 'user';
+  const canReviewRequests = !!user && ['super_admin', 'owner', 'manager'].includes(user.role);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequestStatus | 'all'>('all');
   const [selectedRequest, setSelectedRequest] = useState<StockRequest | null>(null);
   const [showNewRequest, setShowNewRequest] = useState(false);
-  const [dispatchModal, setDispatchModal] = useState<StockRequest | null>(null);
 
   // New request state
   const [newReq, setNewReq] = useState<Partial<StockRequest>>({
@@ -64,7 +61,7 @@ export default function RequestsPage() {
 
   async function handleDispatch(req: StockRequest) {
     await dispatchReq(req.id, req.items.map(i => ({ itemId: i.itemId, qty: i.requestedQty })));
-    setDispatchModal(null); setSelectedRequest(null);
+    setSelectedRequest(null);
   }
 
   async function handleMarkReceived(reqId: string) { await confirmReceived(reqId); setSelectedRequest(null); }
@@ -75,7 +72,7 @@ export default function RequestsPage() {
     if (!invItem) return;
     const item: StockRequestItem = {
       itemId: invItem.id, itemName: invItem.name, category: invItem.category as AgricCategory,
-      requestedQty: newReqItem.requestedQty!, uom: invItem.uom as any, note: newReqItem.note
+      requestedQty: newReqItem.requestedQty, uom: invItem.uom, note: newReqItem.note
     };
     setNewReq(prev => ({ ...prev, items: [...(prev.items || []), item] }));
     setNewReqItem({});
@@ -83,10 +80,12 @@ export default function RequestsPage() {
 
   async function submitNewRequest() {
     if (!newReq.farmZone || !newReq.items?.length) return;
+    const requestedByRole: UserRole = user?.role === 'worker' ? 'worker' : user?.role === 'manager' ? 'farm_manager' : 'admin';
     await createRequest({
       requestNumber: '', requestedBy: currentUserId, requestedByName: currentUserName,
-      requestedByRole: 'farm_manager', requestDate: new Date().toISOString(),
-      farmZone: newReq.farmZone as FarmZone, priority: (newReq.priority as any) || 'normal',
+      requestedByRole,
+      requestDate: new Date().toISOString(),
+      farmZone: newReq.farmZone as FarmZone, priority: newReq.priority ?? 'normal',
       items: newReq.items!, status: 'pending', note: newReq.note,
       requiredByDate: newReq.requiredByDate,
     });
@@ -100,7 +99,7 @@ export default function RequestsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Stock Requests</h1>
-          <p className="text-muted-foreground text-sm">Farm managers request items · Storekeepers dispatch and track fulfillment</p>
+          <p className="text-muted-foreground text-sm">Request farm supplies, approve fulfillment, and track dispatch to receipt.</p>
         </div>
         <Button className="bg-green-600 hover:bg-green-700" onClick={() => setShowNewRequest(true)}>
           <Plus className="w-4 h-4 mr-1" /> New Request
@@ -130,7 +129,7 @@ export default function RequestsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search by request number, requester, or zone..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select className="border rounded-md px-3 py-2 text-sm bg-background" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
+        <select className="border rounded-md px-3 py-2 text-sm bg-background" value={statusFilter} onChange={e => setStatusFilter(e.target.value as RequestStatus | 'all')}>
           <option value="all">All Status</option>
           {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
@@ -165,7 +164,7 @@ export default function RequestsPage() {
                       ))}
                       {req.items.length > 3 && <span className="text-xs text-muted-foreground">+{req.items.length - 3} more</span>}
                     </div>
-                    {req.note && <p className="text-xs text-muted-foreground mt-1 italic">"{req.note}"</p>}
+                    {req.note && <p className="text-xs text-muted-foreground mt-1 italic">{req.note}</p>}
                   </div>
                   <div className="text-right text-xs text-muted-foreground flex-shrink-0">
                     <p>{new Date(req.requestDate).toLocaleDateString()}</p>
@@ -285,7 +284,7 @@ export default function RequestsPage() {
 
               {/* Actions */}
               <div className="flex flex-wrap gap-2 pt-2 border-t">
-                {selectedRequest.status === 'pending' && (
+                {selectedRequest.status === 'pending' && canReviewRequests && (
                   <>
                     <Button className="bg-green-600 hover:bg-green-700" onClick={() => handleApprove(selectedRequest.id)}>
                       <CheckCircle2 className="w-4 h-4 mr-1" /> Approve & Schedule Dispatch
@@ -295,12 +294,12 @@ export default function RequestsPage() {
                     </Button>
                   </>
                 )}
-                {selectedRequest.status === 'approved' && (
-                  <Button className="bg-purple-600 hover:bg-purple-700" onClick={() => { setDispatchModal(selectedRequest); setSelectedRequest(null); }}>
+                {selectedRequest.status === 'approved' && canReviewRequests && (
+                  <Button className="bg-purple-600 hover:bg-purple-700" onClick={() => void handleDispatch(selectedRequest)}>
                     <Truck className="w-4 h-4 mr-1" /> Mark as Dispatched
                   </Button>
                 )}
-                {selectedRequest.status === 'dispatched' && (
+                {selectedRequest.status === 'dispatched' && (canReviewRequests || selectedRequest.requestedBy === currentUserId) && (
                   <Button className="bg-green-600 hover:bg-green-700" onClick={() => handleMarkReceived(selectedRequest.id)}>
                     <CheckCircle2 className="w-4 h-4 mr-1" /> Confirm Receipt
                   </Button>
@@ -331,7 +330,7 @@ export default function RequestsPage() {
                 </div>
                 <div>
                   <label className="text-sm font-medium">Priority</label>
-                  <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newReq.priority} onChange={e => setNewReq(p => ({ ...p, priority: e.target.value as any }))}>
+                  <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newReq.priority} onChange={e => setNewReq(p => ({ ...p, priority: e.target.value as StockRequest['priority'] }))}>
                     <option value="normal">Normal</option>
                     <option value="urgent">Urgent</option>
                   </select>

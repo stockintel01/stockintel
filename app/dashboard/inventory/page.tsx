@@ -269,14 +269,16 @@ export default function InventoryPage() {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 text-right">
-                                                    <button
-                                                        onClick={() => handleDelete(item.id)}
-                                                        disabled={deletingId === item.id}
-                                                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 transition-all disabled:opacity-50"
-                                                        title="Delete item"
-                                                    >
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
+                                                    {canManageInventory && (
+                                                        <button
+                                                            onClick={() => handleDelete(item.id)}
+                                                            disabled={deletingId === item.id}
+                                                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 transition-all disabled:opacity-50"
+                                                            title="Delete item"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/components/auth/AuthContext';
 import { useAppStore } from '@/lib/store';
 import { getInvitationById, acceptInvitation } from '@/lib/firebase-utils';
@@ -56,7 +57,7 @@ function JoinInner() {
     const handleSignInAndAccept = async () => {
         setStage('signing-in');
         try {
-            await signInWithGoogle();
+            await signInWithGoogle(undefined, { deferProvisioning: true });
             // After Google resolves, user is in Zustand — handleAccept will be triggered via useEffect
         } catch {
             setErrorMsg('Google sign-in was cancelled or failed. Please try again.');
@@ -78,7 +79,7 @@ function JoinInner() {
             // Update Zustand store with org assignment
             setStoreUser(
                 user ? { ...user, role: result.role as 'owner' | 'manager' | 'worker' } : null,
-                { id: result.organizationId, name: invite?.orgName ?? 'Your Team', industry: 'pharmacy' as const, ownerId: '', referralCode: '', subscription: { plan: 'free_trial' as const, status: 'active' as const, trialEndsAt: new Date() } }
+                result.organization ?? { id: result.organizationId, name: invite?.orgName ?? 'Your Team', industry: 'pharmacy' as const, ownerId: '', referralCode: '', subscription: { plan: 'free_trial' as const, status: 'active' as const, trialEndsAt: new Date() } }
             );
             setStage('done');
             setTimeout(() => router.push('/dashboard'), 2000);
@@ -126,10 +127,10 @@ function JoinInner() {
                                     <Users size={28} color="#6366f1" />
                                 </div>
                                 <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 8 }}>
-                                    You're invited!
+                                    You are invited!
                                 </h1>
                                 <p style={{ color: '#6b7280', fontSize: 15, lineHeight: 1.6 }}>
-                                    You've been invited to join a workspace on <strong>StockIntel</strong>.
+                                    You have been invited to join a workspace on <strong>StockIntel</strong>.
                                 </p>
                             </div>
 
@@ -178,7 +179,7 @@ function JoinInner() {
                             </button>
 
                             <p style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', marginTop: 16, lineHeight: 1.5 }}>
-                                By accepting, you agree to StockIntel's Terms. Sign in with the same Google account as your invited email.
+                                By accepting, you agree to StockIntel Terms. Sign in with the same Google account as your invited email.
                             </p>
                         </>
                     )}
@@ -209,7 +210,7 @@ function JoinInner() {
                             </div>
                             <h2 style={{ fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 10 }}>Welcome aboard! 🎉</h2>
                             <p style={{ color: '#6b7280', fontSize: 15, lineHeight: 1.6 }}>
-                                You've joined the workspace. Redirecting to your dashboard…
+                                You have joined the workspace. Redirecting to your dashboard...
                             </p>
                         </div>
                     )}
@@ -222,9 +223,9 @@ function JoinInner() {
                             </div>
                             <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111827', marginBottom: 10 }}>Something went wrong</h2>
                             <p style={{ color: '#6b7280', fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>{errorMsg}</p>
-                            <a href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f3f4f6', color: '#374151', padding: '10px 20px', borderRadius: 9, fontSize: 14, fontWeight: 500, textDecoration: 'none' }}>
+                            <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f3f4f6', color: '#374151', padding: '10px 20px', borderRadius: 9, fontSize: 14, fontWeight: 500, textDecoration: 'none' }}>
                                 Go to homepage
-                            </a>
+                            </Link>
                         </div>
                     )}
 

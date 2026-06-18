@@ -46,9 +46,9 @@ export async function POST(request: NextRequest) {
         existingConditions?.join(', '),
     ].filter(Boolean).join(', ') || 'Not specified';
 
-    const system = `You are a clinical pharmacist AI for an Indian pharmacy. 
+    const system = `You are a clinical pharmacist AI for a licensed pharmacy.
 Recommend drugs ONLY from the provided inventory (by exact itemId). 
-Respond with valid JSON only — no markdown, no prose outside JSON.
+Respond with valid JSON only. No markdown, no prose outside JSON.
 
 Schema: { "assessment": string, "recommendations": [{ "itemId": string, "name": string, "dosage": string, "duration": string, "instructions": string, "urgency": "urgent"|"standard"|"optional", "warnings": string[] }], "interactions": string[], "redFlags": string[], "disclaimer": string }`;
 

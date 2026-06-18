@@ -17,7 +17,7 @@ export class ApiError extends Error {
     }
 }
 
-export async function requireUser(request: NextRequest): Promise<AuthenticatedUser> {
+export async function requireFirebaseUser(request: NextRequest): Promise<{ uid: string; email: string }> {
     const authorization = request.headers.get('authorization');
     if (!authorization?.startsWith('Bearer ')) {
         throw new ApiError('Authentication required', 401);
@@ -25,6 +25,15 @@ export async function requireUser(request: NextRequest): Promise<AuthenticatedUs
 
     try {
         const decoded = await adminAuth.verifyIdToken(authorization.slice(7));
+        return { uid: decoded.uid, email: decoded.email ?? '' };
+    } catch {
+        throw new ApiError('Invalid or expired authentication token', 401);
+    }
+}
+
+export async function requireUser(request: NextRequest): Promise<AuthenticatedUser> {
+    try {
+        const decoded = await requireFirebaseUser(request);
         if (isSuperAdminEmail(decoded.email)) {
             return {
                 uid: decoded.uid,

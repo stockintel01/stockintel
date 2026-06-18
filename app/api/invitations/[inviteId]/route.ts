@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { ApiError, requireUser } from '@/lib/api-auth';
+import { ApiError, requireFirebaseUser } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 
 export async function GET(_request: NextRequest, context: { params: Promise<{ inviteId: string }> }) {
@@ -22,7 +22,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ in
 
 export async function POST(request: NextRequest, context: { params: Promise<{ inviteId: string }> }) {
     try {
-        const user = await requireUser(request);
+        const user = await requireFirebaseUser(request);
         const { inviteId } = await context.params;
         const inviteRef = adminDb.collection('invitations').doc(inviteId);
         const userRef = adminDb.collection('users').doc(user.uid);
@@ -37,6 +37,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ in
                 throw new ApiError('Sign in with the invited email address', 403);
             }
             if (!['manager', 'worker'].includes(invite.role)) throw new ApiError('Invalid invitation role', 400);
+            const orgSnapshot = await transaction.get(adminDb.collection('organizations').doc(String(invite.organizationId)));
+            if (!orgSnapshot.exists) throw new ApiError('Inviting organization not found', 404);
+            const org = orgSnapshot.data() ?? {};
 
             transaction.set(userRef, {
                 uid: user.uid,
@@ -52,7 +55,18 @@ export async function POST(request: NextRequest, context: { params: Promise<{ in
                 acceptedByUid: user.uid,
             });
 
-            return { organizationId: invite.organizationId, role: invite.role };
+            return {
+                organizationId: invite.organizationId,
+                role: invite.role,
+                organization: {
+                    id: invite.organizationId,
+                    name: org.name ?? invite.orgName ?? 'Your Team',
+                    industry: org.industry ?? 'pharmacy',
+                    ownerId: org.ownerId ?? '',
+                    referralCode: org.referralCode ?? '',
+                    subscription: org.subscription ?? { plan: 'free_trial', status: 'active' },
+                },
+            };
         });
 
         return NextResponse.json(result);

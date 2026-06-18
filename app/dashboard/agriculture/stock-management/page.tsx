@@ -2,16 +2,15 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import {
-  Search, Plus, Filter, Download, AlertTriangle, CheckCircle2,
-  Package, Edit2, Trash2, ArrowUpDown, ChevronDown, Eye,
-  Bell, Clock, X, Save, RotateCcw
+  Search, Plus, Download,
+  Package, Edit2, Trash2, Eye,
+  Clock, X, Save
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { useAgric } from '@/lib/agric/useAgric';
-import { AgricInventoryItem, AgricCategory } from '@/lib/agric/types';
+import { AgricInventoryItem, AgricCategory, UOM } from '@/lib/agric/types';
 import { useAppStore } from '@/lib/store';
 
 const CATEGORY_LABELS: Record<AgricCategory, string> = {
@@ -44,10 +43,11 @@ interface AdjustmentModal {
 }
 
 export default function StockManagementPage() {
-  const { inventory: rawInventory, addItem, updateItem, deleteItem, submitAdjustment, loading, isLive } = useAgric();
+  const { inventory: rawInventory, addItem, deleteItem, submitAdjustment } = useAgric();
   const { user } = useAppStore();
   const currentUser = user?.name ?? 'Storekeeper';
   const currentUserId = user?.id ?? 'user';
+  const canManageStock = !!user && ['super_admin', 'owner', 'manager'].includes(user.role);
   const [inventory, setLocalInventory] = useState<AgricInventoryItem[]>([]);
   useEffect(() => { setLocalInventory(rawInventory); }, [rawInventory]);
   const [search, setSearch] = useState('');
@@ -111,7 +111,7 @@ export default function StockManagementPage() {
     if (!newItem.name || !newItem.category) return;
     await addItem({
       name: newItem.name!, chemicalComponent: newItem.chemicalComponent,
-      category: newItem.category as AgricCategory, uom: (newItem.uom as any) || 'lt',
+      category: newItem.category as AgricCategory, uom: newItem.uom || 'lt',
       packSize: newItem.packSize, currentStock: newItem.currentStock || 0,
       minimumStock: newItem.minimumStock || 5, reorderAlertDays: newItem.reorderAlertDays || 7,
       location: newItem.location, unitCost: newItem.unitCost,
@@ -147,9 +147,11 @@ export default function StockManagementPage() {
           <Button variant="outline" size="sm" onClick={exportCSV}>
             <Download className="w-4 h-4 mr-1" /> Export CSV
           </Button>
-          <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => setShowAddModal(true)}>
-            <Plus className="w-4 h-4 mr-1" /> Add Item
-          </Button>
+          {canManageStock && (
+            <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => setShowAddModal(true)}>
+              <Plus className="w-4 h-4 mr-1" /> Add Item
+            </Button>
+          )}
         </div>
       </div>
 
@@ -178,17 +180,17 @@ export default function StockManagementPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input placeholder="Search items or chemical components..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <select className="border rounded-md px-3 py-2 text-sm bg-background" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as any)}>
+            <select className="border rounded-md px-3 py-2 text-sm bg-background" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as AgricCategory | 'all')}>
               <option value="all">All Categories</option>
               {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
-            <select className="border rounded-md px-3 py-2 text-sm bg-background" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
+            <select className="border rounded-md px-3 py-2 text-sm bg-background" value={statusFilter} onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}>
               <option value="all">All Status</option>
               <option value="critical">Critical / Out of Stock</option>
               <option value="low">Low Stock</option>
               <option value="ok">In Stock</option>
             </select>
-            <select className="border rounded-md px-3 py-2 text-sm bg-background" value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
+            <select className="border rounded-md px-3 py-2 text-sm bg-background" value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}>
               <option value="category">Sort: Category</option>
               <option value="name">Sort: Name</option>
               <option value="stock">Sort: Stock Level</option>
@@ -256,9 +258,11 @@ export default function StockManagementPage() {
                           <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setAdjustModal({ item, newQty: item.currentStock, note: '' })}>
                             <Edit2 className="w-3.5 h-3.5" />
                           </Button>
-                          <Button variant="ghost" size="sm" className="h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => setSelectedItem(item)}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
+                          {canManageStock && (
+                            <Button variant="ghost" size="sm" className="h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => setSelectedItem(item)}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -344,11 +348,11 @@ export default function StockManagementPage() {
                   </div>
                 ))}
               </div>
-              <div className="border-t pt-4">
+              {canManageStock && <div className="border-t pt-4">
                 <p className="text-sm font-medium text-red-600 mb-2">Delete Item</p>
                 <p className="text-xs text-muted-foreground mb-3">Item will be soft-deleted. The manager will receive a full deletion log with your note.</p>
                 <DeleteWithNote onConfirm={(note) => handleSoftDelete(selectedItem, note)} onCancel={() => setSelectedItem(null)} />
-              </div>
+              </div>}
             </CardContent>
           </Card>
         </div>
@@ -381,7 +385,7 @@ export default function StockManagementPage() {
                 </div>
                 <div>
                   <label className="text-sm font-medium">Unit of Measure</label>
-                  <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newItem.uom} onChange={e => setNewItem(p => ({ ...p, uom: e.target.value as any }))}>
+                  <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newItem.uom} onChange={e => setNewItem(p => ({ ...p, uom: e.target.value as UOM }))}>
                     {['lt', 'kg', 'ml', 'g', 'units', 'bags', 'L', 'boxes'].map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>

@@ -14,7 +14,6 @@ import { useAppStore, User as StoreUser, Organization } from "@/lib/store";
 import { isSuperAdminEmail } from "@/lib/access-control";
 import {
     getUserProfile,
-    checkPendingInvitation,
     createUserProfile,
     createOrganization
 } from "@/lib/firebase-utils";
@@ -23,7 +22,7 @@ import { doc, getDoc } from "firebase/firestore";
 interface AuthContextType {
     user: User | null;
     loading: boolean;
-    signInWithGoogle: (referrerCode?: string) => Promise<{ isNewUser: boolean }>;
+    signInWithGoogle: (referrerCode?: string, options?: { deferProvisioning?: boolean }) => Promise<{ isNewUser: boolean }>;
     logout: () => Promise<void>;
 }
 
@@ -155,7 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, [setStoreUser, setAuthenticated]);
 
     // ── Google Sign In ────────────────────────────────────────────
-    const signInWithGoogle = async (referrerCode?: string) => {
+    const signInWithGoogle = async (referrerCode?: string, options?: { deferProvisioning?: boolean }) => {
         let fbUser: User;
         try {
             // Try popup first (works in most desktop browsers)
@@ -178,18 +177,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const existingProfile = await getUserProfile(fbUser.uid);
 
         if (!existingProfile) {
+            if (options?.deferProvisioning) return { isNewUser: true };
             // New user — create org + profile, then redirect to onboarding
-            let role: 'owner' | 'manager' | 'worker' = 'owner';
+            const role = 'owner' as const;
             let organizationId = '';
-
-            // Check for pending invitation first
-            if (fbUser.email) {
-                const invitation = await checkPendingInvitation(fbUser.email);
-                if (invitation) {
-                    role           = invitation.role;
-                    organizationId = invitation.organizationId;
-                }
-            }
 
             // No invitation — create a new org shell
             if (!organizationId) {

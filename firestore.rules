@@ -222,18 +222,76 @@ service cloud.firestore {
         allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
       }
 
-      match /agric_inventory/{id}   { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
-      match /agric_usage/{id}       { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
-      match /agric_requests/{id}    { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
-      match /agric_equipment/{id}   { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
-      match /agric_plans/{id}       { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
-      match /agric_packing/{id}     { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
-      match /agric_shipping/{id}    { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
-      match /agric_adjustments/{id} { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
-      match /agric_alerts/{id}      { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
-      match /agric_deletion_log/{id}{ allow read: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager(); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
-      match /agric_livestock/{id}   { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
-      match /agric_crop_plans/{id}  { allow read: if isSignedIn() && isSameOrg(orgId); allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId); }
+      match /agric_inventory/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+        allow delete: if isSuperAdmin();
+      }
+      match /agric_usage/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId);
+        allow update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+      match /agric_requests/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId);
+        allow update: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
+          && (
+            isOwnerOrManager() ||
+            (
+              request.auth.uid == resource.data.requestedBy
+              && resource.data.status == 'dispatched'
+              && request.resource.data.status == 'received'
+              && request.resource.data.receivedBy == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'receivedBy', 'receivedAt', 'updatedAt'])
+            )
+          );
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+      match /agric_equipment/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId);
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+      match /agric_plans/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+      match /agric_packing/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId);
+        allow update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+      match /agric_shipping/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+      match /agric_adjustments/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId);
+        allow update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+      match /agric_alerts/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId);
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+      match /agric_deletion_log/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+        allow update, delete: if false;
+      }
+      match /agric_livestock/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId);
+        allow update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
+      match /agric_crop_plans/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId);
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+      }
     }
 
     // ── Invitations ──────────────────────────────────────────────

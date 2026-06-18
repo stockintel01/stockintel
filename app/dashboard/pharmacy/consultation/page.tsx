@@ -11,7 +11,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {
     Brain, Sparkles, AlertTriangle, Stethoscope,
-    ShieldAlert, Clock, CheckCircle2, Loader2,
+    ShieldAlert, CheckCircle2, Loader2,
     Pill, ChevronRight, Info, Download, Save
 } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
@@ -133,7 +133,7 @@ export default function ConsultationPage() {
                         </div>
                     )}
                     <p className="text-muted-foreground mt-1 text-sm">
-                        Powered by Claude — grounded in your live inventory ({inventory.filter(i => i.quantity > 0).length} items in stock).
+                        Powered by your configured AI provider and grounded in live inventory ({inventory.filter(i => i.quantity > 0).length} items in stock).
                     </p>
                 </div>
 
@@ -190,7 +190,7 @@ export default function ConsultationPage() {
                             onClick={handleAnalyze}
                             disabled={isAnalyzing || !symptoms.trim()}>
                             {isAnalyzing ? (
-                                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyzing with Claude…</>
+                                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyzing with AI...</>
                             ) : (
                                 <><Sparkles className="w-4 h-4 mr-2" />Generate Recommendations</>
                             )}
@@ -211,7 +211,7 @@ export default function ConsultationPage() {
                         <Stethoscope className="w-16 h-16 mb-4 opacity-15" />
                         <h3 className="text-lg font-semibold mb-2">Ready to Assist</h3>
                         <p className="text-muted-foreground text-sm max-w-xs">
-                            Enter patient details and symptoms, then click Generate. Claude will match drugs to your live inventory.
+                            Enter patient details and symptoms, then click Generate. The assistant will match drugs to your live inventory.
                         </p>
                     </div>
                 )}
@@ -222,7 +222,7 @@ export default function ConsultationPage() {
                             <Brain className="w-8 h-8 text-primary animate-pulse" />
                         </div>
                         <p className="font-semibold text-lg mb-2">Analyzing symptoms…</p>
-                        <p className="text-muted-foreground text-sm">Claude is reviewing your inventory and patient details.</p>
+                        <p className="text-muted-foreground text-sm">Your AI provider is reviewing inventory and patient details.</p>
                     </div>
                 )}
 

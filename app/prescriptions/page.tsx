@@ -124,7 +124,7 @@ export default function PrescriptionsPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Prescriptions</h1>
-                    <p className="text-muted-foreground">AI-powered digitization using Claude Vision</p>
+                    <p className="text-muted-foreground">AI-powered prescription digitization</p>
                 </div>
                 <Button onClick={() => setShowUpload(true)}>
                     <Upload className="w-4 h-4 mr-2" /> Digitize Prescription
@@ -139,7 +139,7 @@ export default function PrescriptionsPage() {
                             <Loader2 className="w-20 h-20 text-primary animate-spin" />
                             <Brain className="absolute inset-0 m-auto w-8 h-8 text-primary" />
                         </div>
-                        <h2 className="text-xl font-bold">Claude is reading your prescription…</h2>
+                        <h2 className="text-xl font-bold">AI is reading your prescription...</h2>
                         <p className="text-sm text-muted-foreground">Extracting patient name, drugs, dosages and instructions.</p>
                         <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                             <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '70%' }} />
@@ -188,7 +188,7 @@ export default function PrescriptionsPage() {
                                 </p>
                             )}
                             <p className="text-xs text-muted-foreground text-center">
-                                Powered by Claude Vision. Works with handwritten and printed prescriptions.
+                                Powered by your configured AI provider. Works with handwritten and printed prescriptions.
                             </p>
                         </CardContent>
                     </Card>

@@ -9,9 +9,7 @@ import {
     where,
     getDocs,
     runTransaction,
-    writeBatch,
     serverTimestamp,
-    Timestamp,
     increment
 } from "firebase/firestore";
 import { UserRole, IndustryType } from "@/lib/store";
@@ -37,8 +35,8 @@ export interface FirestoreOrg {
     subscription: {
         plan: 'free_trial' | 'pro' | 'enterprise';
         status: 'active' | 'expired' | 'cancelled';
-        trialEndsAt: Timestamp;
-        currentPeriodEnd?: Timestamp;
+        trialEndsAt: unknown;
+        currentPeriodEnd?: unknown;
     };
     createdAt: unknown;
 }
@@ -80,53 +78,15 @@ export async function createOrganization(
     orgName: string,
     referrerCode?: string
 ): Promise<string> {
-    const orgRef = doc(collection(db, "organizations"));
-    const referralCode = generateReferralCode(orgName);
-
-    // Default 14-day trial
-    const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + 14);
-
-    const orgData: FirestoreOrg = {
-        id: orgRef.id,
-        name: orgName,
-        industry,
-        ownerId,
-        referralCode,
-        subscription: {
-            plan: 'free_trial',
-            status: 'active',
-            trialEndsAt: Timestamp.fromDate(trialEndsAt)
-        },
-        createdAt: serverTimestamp()
-    };
-
-    if (!referrerCode) {
-        await setDoc(orgRef, orgData);
-        return orgRef.id;
-    }
-
-    const referralSnap = await getDocs(
-        query(collection(db, "organizations"), where("referralCode", "==", referrerCode))
-    );
-
-    if (referralSnap.empty) {
-        await setDoc(orgRef, orgData);
-        return orgRef.id;
-    }
-
-    const referrerOrgId = referralSnap.docs[0].id;
-    const batch = writeBatch(db);
-    batch.set(orgRef, { ...orgData, invitedByOrgId: referrerOrgId });
-    batch.set(doc(collection(db, `organizations/${referrerOrgId}/credits`)), {
-        amountMonths: 1,
-        reason: 'signup_referral',
-        status: 'available',
-        fromOrgId: orgRef.id,
-        createdAt: serverTimestamp()
+    void ownerId;
+    const response = await authenticatedFetch('/api/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ industry, orgName, referrerCode }),
     });
-    await batch.commit();
-    return orgRef.id;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? 'Unable to create organization');
+    return data.organizationId;
 }
 
 // --- Invitations ---
@@ -155,12 +115,6 @@ export async function checkPendingInvitation(email: string): Promise<PendingInvi
 }
 
 // --- Utils ---
-
-function generateReferralCode(name: string): string {
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const prefix = name.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, 'X');
-    return `${prefix}-${random}`;
-}
 
 export async function activateCredit(orgId: string, creditId: string, months: number) {
     void orgId;
@@ -197,6 +151,7 @@ export interface SaleRecord {
     taxAmount: number;
     grandTotal: number;
     paymentMethod: 'cash' | 'card' | 'upi' | 'credit';
+    customerName?: string;
     createdAt: unknown;
 }
 
@@ -262,7 +217,7 @@ export async function acceptInvitation(
     displayName: string,
     email: string,
     photoURL: string,
-): Promise<{ organizationId: string; role: string }> {
+): Promise<{ organizationId: string; role: string; organization?: import('@/lib/store').Organization }> {
     void uid; void displayName; void email; void photoURL;
     const response = await authenticatedFetch(`/api/invitations/${encodeURIComponent(inviteId)}`, { method: 'POST' });
     const data = await response.json();
