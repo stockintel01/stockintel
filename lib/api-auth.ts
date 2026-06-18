@@ -25,14 +25,39 @@ function hasServerCredentialConfig() {
     );
 }
 
+function configuredProjectId() {
+    return process.env.FIREBASE_ADMIN_PROJECT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? '';
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+    try {
+        const payload = token.split('.')[1];
+        if (!payload) return null;
+        const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+        return JSON.parse(Buffer.from(padded, 'base64').toString('utf8')) as Record<string, unknown>;
+    } catch {
+        return null;
+    }
+}
+
+function firebaseErrorCode(error: unknown) {
+    return typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
+}
+
+function firebaseErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : '';
+}
+
 export async function requireFirebaseUser(request: NextRequest): Promise<{ uid: string; email: string }> {
     const authorization = request.headers.get('authorization');
     if (!authorization?.startsWith('Bearer ')) {
         throw new ApiError('Authentication required', 401);
     }
 
+    const token = authorization.slice(7);
     try {
-        const decoded = await adminAuth.verifyIdToken(authorization.slice(7));
+        const decoded = await adminAuth.verifyIdToken(token);
         return { uid: decoded.uid, email: decoded.email ?? '' };
     } catch (error) {
         console.error('[api-auth] Firebase token verification failed:', error);
@@ -42,6 +67,34 @@ export async function requireFirebaseUser(request: NextRequest): Promise<{ uid: 
                 503,
             );
         }
+        const code = firebaseErrorCode(error);
+        const message = firebaseErrorMessage(error);
+        const payload = decodeJwtPayload(token);
+        const tokenProject = typeof payload?.aud === 'string' ? payload.aud : '';
+        const projectId = configuredProjectId();
+
+        if (code.startsWith('app/') || message.includes('Failed to parse private key') || message.includes('DECODER routines')) {
+            throw new ApiError(
+                'Firebase Admin credentials are invalid on the server. Check FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, and FIREBASE_ADMIN_PRIVATE_KEY in Vercel.',
+                503,
+            );
+        }
+
+        if (tokenProject && projectId && tokenProject !== projectId) {
+            throw new ApiError(
+                `Firebase project mismatch. The browser signed in to "${tokenProject}", but the server is configured for "${projectId}". Update the Vercel Firebase public/Admin environment variables so they use the same project.`,
+                503,
+            );
+        }
+
+        if (code === 'auth/id-token-expired') {
+            throw new ApiError('Your login session expired. Sign out and sign in again.', 401);
+        }
+
+        if (code === 'auth/argument-error' || code === 'auth/invalid-id-token') {
+            throw new ApiError('The browser sent an invalid Firebase login token. Sign out, clear the site session if needed, and sign in again.', 401);
+        }
+
         throw new ApiError('Invalid or expired authentication token', 401);
     }
 }

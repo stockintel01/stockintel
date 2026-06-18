@@ -13,7 +13,30 @@ function normalizePrivateKey(value?: string) {
         .replace(/\r\n/g, '\n');
 }
 
+function serviceAccountFromJson() {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw.trim().replace(/^["']|["']$/g, '')) as {
+            project_id?: string;
+            client_email?: string;
+            private_key?: string;
+        };
+        if (!parsed.project_id || !parsed.client_email || !parsed.private_key) return null;
+        return cert({
+            projectId: parsed.project_id,
+            clientEmail: parsed.client_email,
+            privateKey: normalizePrivateKey(parsed.private_key),
+        });
+    } catch {
+        return null;
+    }
+}
+
 function getCredential() {
+    const jsonCredential = serviceAccountFromJson();
+    if (jsonCredential) return jsonCredential;
+
     const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
     const privateKey = normalizePrivateKey(process.env.FIREBASE_ADMIN_PRIVATE_KEY);
