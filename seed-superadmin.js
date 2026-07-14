@@ -34,7 +34,7 @@ async function seed() {
       maxWorkersEnterprise: 999,
       maxInventoryFreeTrial: 100,
       maxInventoryPro: 5000,
-      aiConsultationEnabled: true,
+      aiInsightsEnabled: true,
     },
     maintenance: {
       isMaintenanceMode: false,

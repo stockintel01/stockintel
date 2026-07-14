@@ -136,6 +136,14 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
     ...(profile.modules.reports ? [{ href: '/dashboard/agriculture/reports', label: 'Reports', icon: BarChart3 }] : []),
   ].filter(item => userCanAccessHref(user, item.href));
 
+  const quickActions = [
+    { href: '/dashboard/agriculture/stock-management', label: 'Stock', icon: Package },
+    { href: '/dashboard/agriculture/requests', label: 'Request', icon: ShoppingCart },
+    { href: '/dashboard/agriculture/planner', label: 'Plan', icon: CalendarDays },
+    { href: '/dashboard/agriculture/usage-tracker', label: 'Usage', icon: FlaskConical },
+    { href: '/dashboard/agriculture/packing-station', label: 'Packhouse', icon: Boxes },
+  ].filter(item => userCanAccessHref(user, item.href));
+
   const getBadge = (key?: string): number => {
     if (key === 'requests') return pendingRequests;
     if (key === 'equipment') return overdueEquipment;
@@ -232,10 +240,28 @@ export default function AgricultureLayout({ children }: { children: React.ReactN
             </Link>
           ))}
         </nav>
+        {quickActions.length > 0 && (
+          <div className="mt-2 grid grid-cols-5 gap-1">
+            {quickActions.slice(0, 5).map(({ href, label, icon: Icon }) => (
+              <Link key={href} href={href} className="flex min-h-12 flex-col items-center justify-center rounded-xl border bg-card text-[10px] font-semibold text-foreground shadow-sm">
+                <Icon className="mb-0.5 h-4 w-4 text-green-600" />{label}
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
       <main className="flex-1 overflow-auto">
         <div className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-6">
+          {quickActions.length > 0 && (
+            <div className="mb-4 hidden gap-2 overflow-x-auto rounded-2xl border bg-card p-2 shadow-sm md:flex">
+              {quickActions.map(({ href, label, icon: Icon }) => (
+                <Link key={href} href={href} className={`flex min-w-max items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${pathname.startsWith(href) ? 'bg-green-600 text-white' : 'text-muted-foreground hover:bg-green-50 hover:text-green-700'}`}>
+                  <Icon className="h-4 w-4" /> {label}
+                </Link>
+              ))}
+            </div>
+          )}
           {children}
         </div>
       </main>

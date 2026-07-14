@@ -43,7 +43,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ in
             const orgSnapshot = await transaction.get(adminDb.collection('organizations').doc(String(invite.organizationId)));
             if (!orgSnapshot.exists) throw new ApiError('Inviting organization not found', 404);
             const org = orgSnapshot.data() ?? {};
-            const industry = (org.industry ?? 'pharmacy') as IndustryType;
+            const industry = 'agriculture' as IndustryType;
             const access = normalizeAccess(invite.access ?? [], industry);
 
             transaction.set(userRef, {
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ in
                 organization: {
                     id: invite.organizationId,
                     name: org.name ?? invite.orgName ?? 'Your Team',
-                    industry: org.industry ?? 'pharmacy',
+                    industry: 'agriculture',
                     ownerId: org.ownerId ?? '',
                     referralCode: org.referralCode ?? '',
                     subscription: org.subscription ?? { plan: 'free_trial', status: 'active' },

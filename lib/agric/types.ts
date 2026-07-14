@@ -113,6 +113,8 @@ export interface StockRequestItem {
   itemName: string;
   category: AgricCategory;
   requestedQty: number;
+  requestedUom?: UOM;
+  requestedQtyInStockUom?: number;
   dispatchedQty?: number;
   receivedQty?: number;
   uom: UOM;
@@ -162,9 +164,13 @@ export interface SprayPlanItem {
   itemName: string;
   category: AgricCategory;
   uom: UOM;
+  requestedUom?: UOM;
   quantityPerApplication: number;
+  quantityPerApplicationInStockUom?: number;
   totalPlannedQty: number;
+  totalPlannedQtyInStockUom?: number;
   currentStockAtPlanTime: number;
+  shortfallQty?: number;
   projectedShortfallDate?: string;  // when stock will run out
   restockAlertDate?: string;        // days before shortfall
   isStockSufficient: boolean;

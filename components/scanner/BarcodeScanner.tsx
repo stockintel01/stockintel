@@ -13,8 +13,8 @@
  * Props:
  *   onDetected(code)  — called once per unique code (debounced 1.5s)
  *   onClose()         — called when the user dismisses the scanner
- *   hint?             — text shown under the viewfinder, e.g. "Scan a drug barcode"
- *   formats?          — BarcodeDetector format array, defaults to common retail formats
+ *   hint?             — text shown under the viewfinder, e.g. "Scan a stock label"
+ *   formats?          — BarcodeDetector format array, defaults to common stock-label formats
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';

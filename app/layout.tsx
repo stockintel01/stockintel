@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "StockIntel - Intelligent Multi-Industry Management",
-  description: "Advanced AI-powered inventory and management system for Pharmacy, Agriculture, and Retail.",
+  description: "Premium agriculture stock, packhouse, livestock, weather, expense, and team management platform with offline-ready workflows.",
   manifest: "/manifest.json",
   icons: { icon: "/logo.svg", apple: "/logo.svg" },
 };

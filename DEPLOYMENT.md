@@ -165,7 +165,7 @@ After getting your Vercel URL:
 - [ ] Test Google Sign-in works
 - [ ] Test inventory loads from Firestore
 - [ ] Add a test item and verify real-time sync
-- [ ] Complete a test sale in POS
+- [ ] Complete a test agriculture stock import and packhouse shipping record
 - [ ] Trigger a test Stripe webhook: `stripe trigger checkout.session.completed`
 - [ ] Test the barcode scanner on a mobile device
 - [ ] Verify offline mode: turn off WiFi, navigate the app, reconnect
@@ -236,7 +236,7 @@ npm run lint
 | Google sign-in fails | Add Vercel domain to Firebase Auth authorized domains |
 | Firestore permission denied | Deploy `firestore.rules` with `firebase deploy --only firestore:rules` |
 | Stripe webhook 400 | Check `STRIPE_WEBHOOK_SECRET` matches the signing secret in Stripe Dashboard |
-| AI consultation returns 503 | Set `AI_PROVIDER` and its matching API key in Vercel |
+| AI report generation returns 503 | Set `AI_PROVIDER` and its matching API key in Vercel |
 | Barcode scanner not working | Camera requires HTTPS — works automatically on Vercel, use `https://` locally via ngrok |
 | PWA install prompt not showing | Must be served over HTTPS with a valid manifest |
 | Build fails: `output: standalone` | Remove `output: 'standalone'` if using Vercel (Vercel handles this automatically) |

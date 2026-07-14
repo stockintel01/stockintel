@@ -11,8 +11,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
-import { StockRequest, StockRequestItem, RequestStatus, FarmZone, AgricCategory, UserRole } from '@/lib/agric/types';
+import { StockRequest, StockRequestItem, RequestStatus, FarmZone, AgricCategory, UserRole, UOM } from '@/lib/agric/types';
 import { getAgricultureProfile } from '@/lib/agric/config';
+import { compatibleUnits, convertQuantity, formatQuantity } from '@/lib/agric/units';
 
 const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon: ElementType }> = {
   pending: { label: 'Pending', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Clock },
@@ -60,7 +61,7 @@ export default function RequestsPage() {
   async function handleReject(reqId: string, reason: string) { await rejectRequest(reqId, reason); setSelectedRequest(null); }
 
   async function handleDispatch(req: StockRequest) {
-    await dispatchReq(req.id, req.items.map(i => ({ itemId: i.itemId, qty: i.requestedQty })));
+    await dispatchReq(req.id, req.items.map(i => ({ itemId: i.itemId, qty: i.requestedQtyInStockUom ?? i.requestedQty })));
     setSelectedRequest(null);
   }
 
@@ -70,9 +71,15 @@ export default function RequestsPage() {
     if (!newReqItem.itemId || !newReqItem.requestedQty) return;
     const invItem = inventory.find(i => i.id === newReqItem.itemId);
     if (!invItem) return;
+    const requestedUom = newReqItem.requestedUom ?? invItem.uom;
+    const requestedQtyInStockUom = convertQuantity(newReqItem.requestedQty, requestedUom, invItem.uom);
     const item: StockRequestItem = {
       itemId: invItem.id, itemName: invItem.name, category: invItem.category as AgricCategory,
-      requestedQty: newReqItem.requestedQty, uom: invItem.uom, note: newReqItem.note
+      requestedQty: newReqItem.requestedQty,
+      requestedUom,
+      requestedQtyInStockUom,
+      uom: invItem.uom,
+      note: newReqItem.note
     };
     setNewReq(prev => ({ ...prev, items: [...(prev.items || []), item] }));
     setNewReqItem({});
@@ -159,7 +166,7 @@ export default function RequestsPage() {
                     <div className="flex flex-wrap gap-1 mt-2">
                       {req.items.slice(0, 3).map(item => (
                         <span key={item.itemId} className="text-xs bg-muted rounded px-2 py-0.5">
-                          {item.itemName} × {item.requestedQty} {item.uom}
+                          {item.itemName} x {formatQuantity(item.requestedQty, item.requestedUom ?? item.uom)}
                         </span>
                       ))}
                       {req.items.length > 3 && <span className="text-xs text-muted-foreground">+{req.items.length - 3} more</span>}
@@ -249,9 +256,12 @@ export default function RequestsPage() {
                             <p>{item.itemName}</p>
                             <p className="text-xs text-muted-foreground capitalize">{item.category}</p>
                           </td>
-                          <td className="px-3 py-2 font-mono">{item.requestedQty} {item.uom}</td>
-                          <td className="px-3 py-2 font-mono text-blue-600">{item.dispatchedQty !== undefined ? `${item.dispatchedQty} ${item.uom}` : '—'}</td>
-                          <td className="px-3 py-2 font-mono text-green-600">{item.receivedQty !== undefined ? `${item.receivedQty} ${item.uom}` : '—'}</td>
+                          <td className="px-3 py-2 font-mono">
+                            {formatQuantity(item.requestedQty, item.requestedUom ?? item.uom)}
+                            {(item.requestedUom ?? item.uom) !== item.uom && <p className="text-[10px] text-muted-foreground">= {formatQuantity(item.requestedQtyInStockUom ?? item.requestedQty, item.uom)} stock</p>}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-blue-600">{item.dispatchedQty !== undefined ? formatQuantity(item.dispatchedQty, item.uom) : '—'}</td>
+                          <td className="px-3 py-2 font-mono text-green-600">{item.receivedQty !== undefined ? formatQuantity(item.receivedQty, item.uom) : '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -347,7 +357,7 @@ export default function RequestsPage() {
 
               <div>
                 <p className="text-sm font-semibold mb-2">Add Items</p>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <select className="flex-1 border rounded-md px-3 py-2 text-sm bg-background" value={newReqItem.itemId || ''} onChange={e => setNewReqItem(p => ({ ...p, itemId: e.target.value }))}>
                     <option value="">Select item...</option>
                     {inventory.filter(i => i.isActive).map(i => (
@@ -355,10 +365,29 @@ export default function RequestsPage() {
                     ))}
                   </select>
                   <Input type="number" className="w-24" placeholder="Qty" value={newReqItem.requestedQty || ''} onChange={e => setNewReqItem(p => ({ ...p, requestedQty: parseFloat(e.target.value) || 0 }))} />
+                  <select
+                    className="w-24 border rounded-md px-2 py-2 text-sm bg-background"
+                    value={newReqItem.requestedUom ?? inventory.find(i => i.id === newReqItem.itemId)?.uom ?? 'lt'}
+                    onChange={e => setNewReqItem(p => ({ ...p, requestedUom: e.target.value as UOM }))}
+                  >
+                    {(inventory.find(i => i.id === newReqItem.itemId) ? compatibleUnits(inventory.find(i => i.id === newReqItem.itemId)!.uom) : ['lt', 'ml', 'kg', 'g', 'units'] as UOM[]).map(uom => <option key={uom} value={uom}>{uom}</option>)}
+                  </select>
                   <Button variant="outline" onClick={addNewReqItem} disabled={!newReqItem.itemId || !newReqItem.requestedQty}>
                     <Plus className="w-4 h-4" />
                   </Button>
                 </div>
+                {newReqItem.itemId && Number(newReqItem.requestedQty) > 0 && (() => {
+                  const item = inventory.find(i => i.id === newReqItem.itemId);
+                  if (!item) return null;
+                  const requestedUom = newReqItem.requestedUom ?? item.uom;
+                  const stockQty = convertQuantity(Number(newReqItem.requestedQty), requestedUom, item.uom);
+                  const enough = item.currentStock >= stockQty;
+                  return (
+                    <div className={`mt-2 rounded-lg border p-2 text-xs ${enough ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                      Request converts to {formatQuantity(stockQty, item.uom)} from stock. {enough ? `${formatQuantity(item.currentStock - stockQty, item.uom)} will remain.` : `Short by ${formatQuantity(stockQty - item.currentStock, item.uom)}.`}
+                    </div>
+                  );
+                })()}
               </div>
 
               {(newReq.items || []).length > 0 && (
@@ -367,7 +396,7 @@ export default function RequestsPage() {
                     <div key={i} className="flex items-center justify-between px-3 py-2 text-sm">
                       <span>{item.itemName}</span>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono">{item.requestedQty} {item.uom}</span>
+                        <span className="font-mono">{formatQuantity(item.requestedQty, item.requestedUom ?? item.uom)}</span>
                         <button onClick={() => setNewReq(p => ({ ...p, items: (p.items || []).filter((_, j) => j !== i) }))} className="text-red-500 hover:text-red-700">
                           <X className="w-3.5 h-3.5" />
                         </button>

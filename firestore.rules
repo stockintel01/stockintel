@@ -93,11 +93,6 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // ── Global patients collection (cross-pharmacy) ──────────────
-    match /patients/{patientId} {
-      allow read, write: if isSuperAdmin();
-    }
-
     // ── Users ────────────────────────────────────────────────────
     match /users/{userId} {
       allow read: if isSignedIn() && (
@@ -171,47 +166,6 @@ service cloud.firestore {
       );
       allow delete: if isSuperAdmin();
 
-      // ── Inventory ─────────────────────────────────────────────
-      match /inventory/{itemId} {
-        allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('inventory') || hasAccess('sales') || hasAccess('reports'));
-        allow create: if isSignedIn()
-          && isSameOrg(orgId)
-          && hasActiveSubscription(orgId)
-          && hasAccess('inventory')
-          && request.resource.data.keys().hasAll(['name', 'sku', 'quantity', 'mrp', 'costPrice'])
-          && request.resource.data.quantity >= 0
-          && request.resource.data.mrp >= 0;
-        allow update: if isSignedIn()
-          && isSameOrg(orgId)
-          && hasActiveSubscription(orgId)
-          && (
-            hasAccess('inventory') ||
-            (isWorker() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'updatedAt']))
-          )
-          && (!request.resource.data.keys().hasAll(['quantity']) || request.resource.data.quantity >= 0);
-        allow delete: if isSuperAdmin();
-      }
-
-      // ── Prescriptions ─────────────────────────────────────────
-      match /prescriptions/{rxId} {
-        allow read, write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('prescriptions');
-      }
-
-      // ── Customers ─────────────────────────────────────────────
-      match /customers/{custId} {
-        allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('customers');
-        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('customers');
-        allow delete: if isSignedIn() && isSameOrg(orgId) && isOwner();
-      }
-
-      // ── Sales ─────────────────────────────────────────────────
-      match /sales/{saleId} {
-        allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('sales') || hasAccess('reports'));
-        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('sales');
-        allow update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('sales');
-        allow delete: if isSignedIn() && isSameOrg(orgId) && isOwner();
-      }
-
       match /locations/{locationId} {
         allow read: if isSignedIn() && isSameOrg(orgId);
         allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
@@ -227,18 +181,6 @@ service cloud.firestore {
       match /shifts/{shiftId} {
         allow read: if isSignedIn() && isSameOrg(orgId);
         allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
-      }
-
-      // ── Consultations ─────────────────────────────────────────
-      match /consultations/{cId} {
-        allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('consultation');
-        allow write: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('consultation');
-      }
-
-      match /patients/{patientId} {
-        allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('patients');
-        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('patients');
-        allow delete: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
       }
 
       // ── Credits / Rewards ──────────────────────────────────────

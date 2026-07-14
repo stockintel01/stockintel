@@ -71,7 +71,7 @@ export interface SystemConfig {
     maxWorkersEnterprise: number;
     maxInventoryFreeTrial: number;
     maxInventoryPro: number;
-    aiConsultationEnabled: boolean;
+    aiInsightsEnabled: boolean;
   };
   maintenance: {
     isMaintenanceMode: boolean;
@@ -117,7 +117,7 @@ export function getDefaultConfig(): SystemConfig {
       maxWorkersEnterprise: 999,
       maxInventoryFreeTrial: 100,
       maxInventoryPro: 5000,
-      aiConsultationEnabled: true,
+      aiInsightsEnabled: true,
     },
     maintenance: {
       isMaintenanceMode: false,

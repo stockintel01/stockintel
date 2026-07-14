@@ -1,22 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAppStore, type IndustryType } from '@/lib/store';
+import { useAppStore } from '@/lib/store';
 import { isSuperAdminEmail } from '@/lib/access-control';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthContext';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import {
-    BarChart3, Box, Calculator, Home, Leaf, LogOut,
-    Menu, Package, Pill, Settings, ShoppingCart, Store,
-    Users, X, UserCog, Shield, FileText, Gift, Wallet,
+    BarChart3, Box, Home, Leaf, LogOut,
+    Menu, Package, Settings, ShoppingCart,
+    X, UserCog, Shield, Gift, Wallet,
     ChevronDown, FlaskConical, CalendarDays, Tractor, PackageCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useInventory } from '@/lib/hooks/useInventory';
 import { canUseFeature, isSubscriptionActive, type PlanFeature } from '@/lib/plans';
 import { getAgricultureProfile } from '@/lib/agric/config';
+import { useAgric } from '@/lib/agric/useAgric';
 import { userCanAccessHref } from '@/lib/access-permissions';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
@@ -33,26 +33,22 @@ interface NavGroup {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-    useInventory();
     const router = useRouter();
     const pathname = usePathname();
-    const { user, organization, activeIndustry, setIndustry, isAuthenticated, inventory, setStoreUser } = useAppStore();
+    const { user, organization, activeIndustry, setIndustry, isAuthenticated, setStoreUser } = useAppStore();
+    const { inventory } = useAgric();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [expiringCount, setExpiringCount] = useState(0);
+    const [attentionCount, setAttentionCount] = useState(0);
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
         'Clinical': true, 'Operations': true, 'Business': false,
         'Field': true, 'Store': true,
     });
 
-    // Live expiry badge count
+    // Live stock attention badge count
     useEffect(() => {
         const check = () => {
-            const today = new Date();
-            const count = inventory.filter(item => {
-                const diff = Math.ceil((new Date(item.expiryDate).getTime() - today.getTime()) / 86400000);
-                return diff <= 30;
-            }).length;
-            setExpiringCount(count);
+            const count = inventory.filter(item => item.isActive && item.currentStock <= item.minimumStock).length;
+            setAttentionCount(count);
         };
         check();
         const interval = setInterval(check, 60000);
@@ -99,26 +95,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             return;
         }
         const featureRoutes: Array<[string, PlanFeature]> = [
-            ['/dashboard/inventory/import', 'bulkImport'],
-            ['/dashboard/reports', 'advancedReports'],
-            ['/dashboard/pharmacy/analytics', 'advancedReports'],
-            ['/dashboard/pharmacy/consultation', 'ai'],
-            ['/dashboard/prescriptions', 'ai'],
+            ['/dashboard/agriculture/reports', 'advancedReports'],
         ];
         const required = featureRoutes.find(([path]) => pathname.startsWith(path))?.[1];
         if (!authLoading && required && !canUseFeature(organization?.subscription, required, superAdmin)) {
             router.replace('/dashboard/billing');
             return;
         }
-        const managerOnlyRoutes = ['/dashboard/team', '/dashboard/inventory/add', '/dashboard/inventory/import'];
+        const managerOnlyRoutes = ['/dashboard/team'];
         if (!authLoading && managerOnlyRoutes.some(path => pathname.startsWith(path)) && !['super_admin', 'owner', 'manager'].includes(user?.role ?? '') && !userCanAccessHref(user, pathname)) {
             router.replace('/dashboard');
             return;
         }
         if (!authLoading && user && !userCanAccessHref(user, pathname)) {
-            router.replace(activeIndustry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard');
+            router.replace('/dashboard/agriculture');
         }
-    }, [activeIndustry, authLoading, user, isAuthenticated, organization?.subscription, pathname, router, superAdmin]);
+    }, [authLoading, user, isAuthenticated, organization?.subscription, pathname, router, superAdmin]);
 
     if (authLoading || !user || !isAuthenticated) {
         return (
@@ -128,45 +120,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         );
     }
 
-    // Grouped nav configs per industry
-    const industryConfig: Record<string, { name: string; icon: React.ElementType; color: string; groups: NavGroup[] }> = {
-        pharmacy: {
-            name: 'StockIntel Pharmacy',
-            icon: Pill,
-            color: 'text-blue-600',
-            groups: [
-                {
-                    label: 'Clinical',
-                    items: [
-                        { name: 'Overview', href: '/dashboard', icon: Home },
-                        { name: 'Patients', href: '/dashboard/patients', icon: FileText },
-                        { name: 'Prescriptions', href: '/dashboard/prescriptions', icon: Calculator },
-                        { name: 'Consultation AI', href: '/dashboard/pharmacy/consultation', icon: Users },
-                        { name: 'Drug Analytics', href: '/dashboard/pharmacy/analytics', icon: BarChart3 },
-                    ],
-                },
-                {
-                    label: 'Operations',
-                    items: [
-                        { name: 'Inventory', href: '/dashboard/inventory', icon: Box },
-                        { name: 'Sales (POS)', href: '/dashboard/sales', icon: ShoppingCart },
-                        { name: 'Reports', href: '/dashboard/reports', icon: BarChart3 },
-                    ],
-                },
-                {
-                    label: 'Business',
-                    items: [
-                        { name: 'Expenses', href: '/dashboard/expenses', icon: Wallet },
-                        { name: 'Team', href: '/dashboard/team', icon: UserCog },
-                        { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
-                        { name: 'Billing', href: '/dashboard/billing', icon: Wallet },
-                        { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                        ...(superAdmin ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
-                    ],
-                },
-            ],
-        },
-        agriculture: {
+    const agricultureProfile = getAgricultureProfile(organization?.settings);
+    const baseConfig: { name: string; icon: React.ElementType; color: string; groups: NavGroup[] } = {
             name: 'StockIntel Agri',
             icon: Leaf,
             color: 'text-green-600',
@@ -210,46 +165,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     ],
                 },
             ],
-        },
-        retail: {
-            name: 'StockIntel Retail',
-            icon: Store,
-            color: 'text-violet-600',
-            groups: [
-                {
-                    label: 'Store',
-                    items: [
-                        { name: 'Overview', href: '/dashboard', icon: Home },
-                        { name: 'Inventory', href: '/dashboard/inventory', icon: Box },
-                        { name: 'Bulk Import', href: '/dashboard/inventory/import', icon: PackageCheck },
-                        { name: 'Orders & Sales', href: '/dashboard/sales', icon: Package },
-                        { name: 'Customers', href: '/dashboard/customers', icon: Users },
-                    ],
-                },
-                {
-                    label: 'Operations',
-                    items: [
-                        { name: 'Sales (POS)', href: '/dashboard/sales', icon: ShoppingCart },
-                        { name: 'Analytics', href: '/dashboard/reports', icon: BarChart3 },
-                    ],
-                },
-                {
-                    label: 'Business',
-                    items: [
-                        { name: 'Expenses', href: '/dashboard/expenses', icon: Wallet },
-                        { name: 'Team', href: '/dashboard/team', icon: UserCog },
-                        { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
-                        { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-                        ...(superAdmin ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
-                    ],
-                },
-            ],
-        },
     };
-
-    const agricultureProfile = getAgricultureProfile(organization?.settings);
-    const baseConfig = industryConfig[activeIndustry || 'pharmacy'];
-    const config = activeIndustry === 'agriculture' ? {
+    const config = {
         ...baseConfig,
         name: organization?.name || 'Agriculture Workspace',
         groups: [
@@ -272,7 +189,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             ],
           }] : []),
         ],
-    } : baseConfig;
+    };
     const visibleGroups = config.groups
         .map(group => ({
             ...group,
@@ -283,11 +200,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     const toggleGroup = (label: string) => {
         setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
-    };
-
-    const switchIndustry = (industry: IndustryType) => {
-        setIndustry(industry);
-        router.push(industry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard');
     };
 
     const switchTenant = async (organizationId: string) => {
@@ -304,13 +216,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             access: membership.access,
         }, nextOrg);
         setIndustry(nextOrg.industry);
-        router.push(nextOrg.industry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard');
+        router.push('/dashboard/agriculture');
     };
 
     const mobileNavItems = ([
-        { name: 'Home', href: activeIndustry === 'agriculture' ? '/dashboard/agriculture' : '/dashboard', icon: Home },
-        { name: activeIndustry === 'agriculture' ? 'Stock' : 'Inventory', href: activeIndustry === 'agriculture' ? '/dashboard/agriculture/stock-management' : '/dashboard/inventory', icon: Box },
-        { name: activeIndustry === 'agriculture' && agricultureProfile.modules.livestock ? 'Animals' : 'Sales', href: activeIndustry === 'agriculture' && agricultureProfile.modules.livestock ? '/dashboard/agriculture/livestock' : '/dashboard/sales', icon: activeIndustry === 'agriculture' ? Leaf : ShoppingCart },
+        { name: 'Home', href: '/dashboard/agriculture', icon: Home },
+        { name: 'Stock', href: '/dashboard/agriculture/stock-management', icon: Box },
+        { name: agricultureProfile.modules.livestock ? 'Animals' : 'Requests', href: agricultureProfile.modules.livestock ? '/dashboard/agriculture/livestock' : '/dashboard/agriculture/requests', icon: agricultureProfile.modules.livestock ? Leaf : ShoppingCart },
         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
     ]).filter(item => userCanAccessHref(user, item.href)).slice(0, 4);
 
@@ -332,32 +244,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                 {/* Nav groups — scrollable */}
                 <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
-                    {superAdmin && (
-                        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-2">
-                            <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Super Admin Preview</p>
-                            <div className="grid grid-cols-3 gap-1">
-                                {([
-                                    { id: 'pharmacy' as const, label: 'Pharmacy', icon: Pill },
-                                    { id: 'agriculture' as const, label: 'Agri', icon: Leaf },
-                                    { id: 'retail' as const, label: 'Retail', icon: Store },
-                                ]).map(industry => (
-                                    <button
-                                        key={industry.id}
-                                        type="button"
-                                        title={`Preview ${industry.label}`}
-                                        onClick={() => switchIndustry(industry.id)}
-                                        className={cn(
-                                            'flex flex-col items-center gap-1 rounded-md px-1 py-2 text-[10px] font-medium transition-colors',
-                                            activeIndustry === industry.id ? 'bg-emerald-600 text-white' : 'text-emerald-800 hover:bg-emerald-100',
-                                        )}
-                                    >
-                                        <industry.icon className="w-4 h-4" />
-                                        {industry.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
                     {visibleGroups.map(group => {
                         const isOpen = openGroups[group.label] !== false; // default open
                         return (
@@ -389,9 +275,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                                 >
                                                     <item.icon className="w-4 h-4 shrink-0" />
                                                     <span className="flex-1 truncate">{item.name}</span>
-                                                    {item.name === 'Inventory' && expiringCount > 0 && (
+                                                    {item.name === 'Stock Management' && attentionCount > 0 && (
                                                         <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
-                                                            {expiringCount}
+                                                            {attentionCount}
                                                         </span>
                                                     )}
                                                 </Link>
@@ -443,30 +329,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <Menu className="w-5 h-5" />
                     </button>
                     <div className="ml-auto flex items-center gap-2">
-                        {superAdmin && (
-                            <div className="hidden sm:flex items-center gap-1 rounded-lg border bg-background p-1" aria-label="Super admin industry preview">
-                                {([
-                                    { id: 'pharmacy' as const, label: 'Pharmacy', icon: Pill },
-                                    { id: 'agriculture' as const, label: 'Agriculture', icon: Leaf },
-                                    { id: 'retail' as const, label: 'Retail', icon: Store },
-                                ]).map(industry => (
-                                    <button
-                                        key={industry.id}
-                                        type="button"
-                                        onClick={() => switchIndustry(industry.id)}
-                                        className={cn(
-                                            'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
-                                            activeIndustry === industry.id
-                                                ? 'bg-primary text-primary-foreground'
-                                                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                                        )}
-                                    >
-                                        <industry.icon className="w-3.5 h-3.5" />
-                                        {industry.label}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
                         {(user.memberships?.length ?? 0) > 1 && (
                             <select
                                 value={user.organizationId}
@@ -481,11 +343,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                 ))}
                             </select>
                         )}
-                        {expiringCount > 0 && (
-                            <Link href="/dashboard/inventory">
+                        {attentionCount > 0 && (
+                            <Link href="/dashboard/agriculture/stock-management">
                                 <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-1.5 rounded-full font-medium">
                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                                    {expiringCount} expiring soon
+                                    {attentionCount} stock alerts
                                 </div>
                             </Link>
                         )}

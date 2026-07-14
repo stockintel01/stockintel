@@ -21,14 +21,14 @@ export async function POST(req: NextRequest) {
     const prompt = payload.prompt ?? payload.messages?.[0]?.content;
     const context = payload.context ?? '';
     const orgName = payload.orgName ?? 'IntelliStock';
-    const industry = payload.industry ?? 'inventory';
+    const industry = payload.industry ?? 'agriculture';
     if (!prompt) return NextResponse.json({ error: 'Prompt required' }, { status: 400 });
     if (String(prompt).length > 5000 || String(context ?? '').length > 30000) {
         return NextResponse.json({ error: 'Request is too large' }, { status: 413 });
     }
 
     const report = await generateAiText({
-        system: `You are a business intelligence analyst for an ${industry} business called "${orgName}". Generate clear, professional, markdown-formatted reports. Use headings, bullets, tables. Be specific with numbers. Under 600 words.`,
+        system: `You are a business intelligence analyst for an ${industry} organization called "${orgName}". Generate clear, professional, markdown-formatted agriculture reports. Use headings, bullets, tables. Be specific with numbers. Under 600 words.`,
         prompt: `${prompt}\n\n${context}`,
         maxTokens: 1500,
     });

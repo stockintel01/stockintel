@@ -353,7 +353,7 @@ export default function SettingsPage() {
                         <div className="flex items-center justify-between p-4 border rounded-lg">
                             <div>
                                 <Label className="text-base font-medium">Enable Tax</Label>
-                                <p className="text-sm text-muted-foreground">Apply tax to all sales transactions</p>
+                                <p className="text-sm text-muted-foreground">Apply tax to taxable farm income, services, and commercial records</p>
                             </div>
                             <input
                                 type="checkbox"

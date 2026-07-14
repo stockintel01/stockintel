@@ -364,7 +364,7 @@ export default function EggProductionPage() {
             <CardContent className="space-y-4">
               {[
                 { label: 'Grade A', value: stockGradeA, color: 'text-green-700', desc: 'Premium — ready for premium buyers' },
-                { label: 'Grade B', value: stockGradeB, color: 'text-blue-700',  desc: 'Table eggs — retail / local market' },
+                { label: 'Grade B', value: stockGradeB, color: 'text-blue-700',  desc: 'Table eggs for local market' },
                 { label: 'Grade C', value: Math.max(0, records.reduce((s,r)=>s+r.gradeC,0) - sales.reduce((s,r)=>s+r.gradeC,0)), color: 'text-amber-700', desc: 'Cracked — bakeries / processing' },
               ].map(g => (
                 <div key={g.label} className="flex items-center justify-between border rounded-xl p-3">

@@ -8,7 +8,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { buildAgricultureProfile, type AgricultureOperation } from '@/lib/agric/config';
 import {
-    Pill, Leaf, Store, Building2, Globe, Receipt,
+    Leaf, Building2, Globe, Receipt,
     CheckCircle, ArrowRight, ArrowLeft,
     Loader2, Plus, X, Sparkles, MapPin, Phone, Mail
 } from 'lucide-react';
@@ -40,9 +40,7 @@ const STEPS = [
 ];
 
 const INDUSTRIES: { id: IndustryType; label: string; desc: string; icon: React.ElementType; color: string; bg: string }[] = [
-    { id: 'pharmacy',    label: 'Pharmacy',    desc: 'Drugs, prescriptions & patient records', icon: Pill,  color: '#2563eb', bg: '#dbeafe' },
-    { id: 'agriculture', label: 'Agriculture', desc: 'Seeds, fertilizers & equipment',         icon: Leaf,  color: '#16a34a', bg: '#dcfce7' },
-    { id: 'retail',      label: 'Retail',      desc: 'General merchandise & POS billing',      icon: Store, color: '#7c3aed', bg: '#ede9fe' },
+    { id: 'agriculture', label: 'Agriculture', desc: 'Farm stock, packing, livestock, weather, and field operations', icon: Leaf, color: '#16a34a', bg: '#dcfce7' },
 ];
 
 const CURRENCIES = [
@@ -70,7 +68,7 @@ export default function OnboardingPage() {
 
     const [business, setBusiness] = useState<BusinessSetup>({
         businessName: organization?.name === 'New Business' || organization?.name?.endsWith("'s Business") ? '' : organization?.name ?? '',
-        industry: (organization?.industry ?? 'pharmacy') as IndustryType,
+        industry: 'agriculture',
         address: '',
         phone: '',
         email: user?.email ?? '',
@@ -106,7 +104,7 @@ export default function OnboardingPage() {
         setInvites(prev => prev.map((inv, idx) => idx === i ? { ...inv, ...fields } : inv));
 
     const canProceed = () => {
-        if (step === 1) return !!business.industry && (business.industry !== 'agriculture' || business.agricultureOperations.length > 0);
+        if (step === 1) return business.agricultureOperations.length > 0;
         if (step === 2) return business.businessName.trim().length >= 2;
         return true;
     };
@@ -131,12 +129,10 @@ export default function OnboardingPage() {
 
                 // Persist to Firestore org document if user is logged in
                 if (organization?.id) {
-                    const agricultureSettings = business.industry === 'agriculture'
-                        ? {
-                            ...(organization.settings ?? {}),
-                            agriculture: buildAgricultureProfile(business.agricultureOperations),
-                        }
-                        : organization.settings ?? {};
+                    const agricultureSettings = {
+                        ...(organization.settings ?? {}),
+                        agriculture: buildAgricultureProfile(business.agricultureOperations),
+                    };
                     await updateDoc(doc(db, 'organizations', organization.id), {
                         name: business.businessName,
                         industry: business.industry,
@@ -294,7 +290,7 @@ export default function OnboardingPage() {
                             </p>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, textAlign: 'left', background: '#fafafa', borderRadius: 12, padding: '20px 24px', marginBottom: 8 }}>
                                 {[
-                                    ['🏭', 'Choose your industry', 'Pharmacy, Agriculture, or Retail'],
+                                    ['🌱', 'Configure your farm', 'Crop, livestock, poultry, packing, stock and weather'],
                                     ['🏢', 'Set up your business', 'Name, address, currency & tax ID'],
                                     ['👥', 'Invite your team', 'Get colleagues onboard right away'],
                                 ].map(([emoji, title, desc]) => (
@@ -313,7 +309,7 @@ export default function OnboardingPage() {
                     {/* ── Step 1: Industry ────────────────────────── */}
                     {step === 1 && (
                         <div>
-                            <h2 style={{ fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 6 }}>Choose your industry</h2>
+                            <h2 style={{ fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 6 }}>Configure your agriculture workspace</h2>
                             <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 24 }}>
                                 This configures your dashboard, reports, and terminology.
                             </p>
@@ -386,7 +382,7 @@ export default function OnboardingPage() {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                                 <div className="field">
                                     <label className="label"><Building2 size={13} style={{ display: 'inline', marginRight: 4 }} />Business Name *</label>
-                                    <input className="input" placeholder="e.g. City Pharmacy, Green Agro Supplies" value={business.businessName}
+                                    <input className="input" placeholder="e.g. Green Valley Farms, Agro Packhouse" value={business.businessName}
                                         onChange={e => updateBusiness({ businessName: e.target.value })} />
                                 </div>
 
@@ -484,7 +480,7 @@ export default function OnboardingPage() {
                             </div>
 
                             <div style={{ marginTop: 20, padding: '14px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, fontSize: 13, color: '#15803d' }}>
-                                <strong>Roles explained:</strong> Managers can add/edit inventory & view reports. Workers can process sales and adjust stock quantities only.
+                                <strong>Roles explained:</strong> Managers can configure farm operations and reports. Workers only see the modules you grant, such as stock, packhouse, field usage, or livestock.
                             </div>
                         </div>
                     )}

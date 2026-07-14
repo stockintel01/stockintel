@@ -1,7 +1,7 @@
 {
   "name": "StockIntel",
   "short_name": "StockIntel",
-  "description": "Live inventory and operations management for pharmacy, agriculture, and retail.",
+  "description": "Live agriculture inventory, packhouse, livestock, expenses, weather, and team operations management.",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#ffffff",

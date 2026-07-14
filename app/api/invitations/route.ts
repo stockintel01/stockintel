@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
         if (!email || !['manager', 'worker'].includes(role)) throw new ApiError('Valid email and role are required', 400);
         const orgSnapshot = await adminDb.collection('organizations').doc(user.organizationId).get();
         if (!orgSnapshot.exists) throw new ApiError('Organization not found', 404);
-        const industry = (orgSnapshot.data()?.industry ?? 'pharmacy') as IndustryType;
+        const industry = 'agriculture' as IndustryType;
         const defaultAccess = ACCESS_PRESETS[industry].find(preset => preset.role === role)?.access ?? [];
         const normalizedAccess = normalizeAccess(Array.isArray(access) ? access : defaultAccess, industry);
 

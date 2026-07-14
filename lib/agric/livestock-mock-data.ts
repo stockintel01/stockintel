@@ -127,7 +127,7 @@ export const MOCK_EGG_RECORDS: EggProductionRecord[] = [
 // ── Egg Sales ─────────────────────────────────────────────────
 export const MOCK_EGG_SALES: EggSaleRecord[] = [
   { id: 'es01', date: today(), buyerName: 'Accra Egg Distributors Ltd', buyerContact: '+233 20 111 2233', gradeA: 1800, gradeB: 0, gradeC: 0, totalEggs: 1800, trays: 60, pricePerTray: 38, currency: 'GHS', totalRevenue: 2280, paymentStatus: 'mobile_money', invoiceNumber: 'INV-EGG-2441', soldBy: 'Farm Manager' },
-  { id: 'es02', date: daysAgo(1), buyerName: 'Kumasi Retail Market', buyerContact: '+233 24 555 6677', gradeA: 900, gradeB: 120, gradeC: 0, totalEggs: 1020, trays: 34, pricePerTray: 35, currency: 'GHS', totalRevenue: 1190, paymentStatus: 'cash', soldBy: 'Farm Manager' },
+  { id: 'es02', date: daysAgo(1), buyerName: 'Kumasi Local Market', buyerContact: '+233 24 555 6677', gradeA: 900, gradeB: 120, gradeC: 0, totalEggs: 1020, trays: 34, pricePerTray: 35, currency: 'GHS', totalRevenue: 1190, paymentStatus: 'cash', soldBy: 'Farm Manager' },
   { id: 'es03', date: daysAgo(2), buyerName: 'FreshMart Supermarket', buyerContact: '+233 30 233 4455', gradeA: 2100, gradeB: 0, gradeC: 0, totalEggs: 2100, trays: 70, pricePerTray: 40, currency: 'GHS', totalRevenue: 2800, paymentStatus: 'bank_transfer', invoiceNumber: 'INV-EGG-2440', soldBy: 'Farm Manager' },
 ];
 

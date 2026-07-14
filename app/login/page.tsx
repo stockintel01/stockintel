@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/components/auth/AuthContext';
-import { useAppStore, IndustryType } from '@/lib/store';
-import { Leaf, Pill, Store, Loader2, Eye, EyeOff, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { IndustryType } from '@/lib/store';
+import { Leaf, Loader2, Eye, EyeOff, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -36,7 +36,7 @@ function LoginInner() {
   const [password, setPassword]     = useState('');
   const [name, setName]             = useState('');
   const [showPass, setShowPass]     = useState(false);
-  const [industry, setIndustry]     = useState<IndustryType>('pharmacy');
+  const industry: IndustryType      = 'agriculture';
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState('');
   const [resetSent, setResetSent]   = useState(false);
@@ -138,9 +138,7 @@ function LoginInner() {
   }
 
   const INDUSTRIES: { id: IndustryType; label: string; icon: React.ReactNode }[] = [
-    { id: 'pharmacy',    label: 'Pharmacy',    icon: <Pill    className="w-5 h-5" /> },
-    { id: 'agriculture', label: 'Agriculture', icon: <Leaf    className="w-5 h-5" /> },
-    { id: 'retail',      label: 'Retail',      icon: <Store   className="w-5 h-5" /> },
+    { id: 'agriculture', label: 'Agriculture', icon: <Leaf className="w-5 h-5" /> },
   ];
 
   return (
@@ -162,7 +160,7 @@ function LoginInner() {
               The intelligent operating system for modern businesses.
             </h1>
             <p className="text-blue-200 text-lg leading-relaxed">
-              Real-time inventory, AI insights, patient records, farm management — all in one platform.
+              Real-time farm stock, packhouse operations, weather-aware planning, expenses, and team access in one agriculture workspace.
             </p>
           </div>
           <div className="grid grid-cols-3 gap-3">
@@ -319,11 +317,10 @@ function LoginInner() {
                       </div>
                     </div>
                     <div>
-                      <label className="text-sm font-medium">What best describes your business?</label>
-                      <div className="grid grid-cols-3 gap-2 mt-1">
+                      <label className="text-sm font-medium">Workspace type</label>
+                      <div className="grid grid-cols-1 gap-2 mt-1">
                         {INDUSTRIES.map(ind => (
                           <button key={ind.id} type="button"
-                            onClick={() => setIndustry(ind.id)}
                             className={cn(
                               'flex flex-col items-center gap-1.5 p-2.5 rounded-lg border text-xs font-medium transition-all',
                               industry === ind.id

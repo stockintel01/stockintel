@@ -1,7 +1,7 @@
-import type { InventoryItem } from '@/lib/mock-data';
+import type { AgricCategory, AgricInventoryItem, UOM } from '@/lib/agric/types';
 
 export interface InventoryImportResult {
-    items: Omit<InventoryItem, 'id'>[];
+    items: Omit<AgricInventoryItem, 'id'>[];
     errors: string[];
     totalRows: number;
 }
@@ -83,16 +83,27 @@ async function readRows(file: File): Promise<unknown[][]> {
 
 const HEADER_ALIASES: Record<string, string[]> = {
     name: ['itemname', 'name', 'productname', 'product'],
-    sku: ['sku', 'itemcode', 'productcode', 'code'],
-    batchNumber: ['batchnumber', 'batch', 'lotnumber', 'lot'],
-    expiryDate: ['expirydateyyyymmdd', 'expirydate', 'expiry', 'expirationdate'],
-    quantity: ['quantity', 'qty', 'stock', 'currentstock'],
-    unit: ['unit', 'uom', 'unitofmeasure'],
-    mrp: ['mrp', 'sellingprice', 'price', 'retailprice'],
-    costPrice: ['costprice', 'cost', 'purchaseprice', 'unitcost'],
+    chemicalComponent: ['chemicalcomponent', 'component', 'activeingredient', 'ingredient'],
+    currentStock: ['quantity', 'qty', 'stock', 'currentstock'],
+    uom: ['unit', 'uom', 'unitofmeasure'],
+    unitCost: ['costprice', 'cost', 'purchaseprice', 'unitcost', 'price', 'unitprice', 'marketprice'],
+    minimumStock: ['minimumstock', 'minstock', 'reorderpoint', 'reorderlevel'],
     category: ['category', 'type'],
     location: ['location', 'rack', 'warehouse', 'storagelocation'],
 };
+
+const CATEGORY_VALUES: AgricCategory[] = ['fungicide', 'insecticide', 'herbicide', 'fertilizer', 'equipment', 'seed', 'other'];
+const UOM_VALUES: UOM[] = ['lt', 'kg', 'ml', 'g', 'units', 'bags', 'L', 'boxes'];
+
+function parseCategory(value: string): AgricCategory {
+    const normalized = value.toLowerCase().replace(/[^a-z]/g, '');
+    return CATEGORY_VALUES.find(category => normalized === category) ?? 'other';
+}
+
+function parseUom(value: string): UOM {
+    const normalized = value.trim();
+    return UOM_VALUES.find(uom => uom.toLowerCase() === normalized.toLowerCase()) ?? 'units';
+}
 
 function resolveColumns(headers: unknown[]): Record<string, number> {
     const normalized = headers.map(normalizeHeader);
@@ -112,48 +123,50 @@ export async function parseInventoryFile(file: File): Promise<InventoryImportRes
     if (rows.length - 1 > MAX_ROWS) throw new Error(`A maximum of ${MAX_ROWS.toLocaleString()} rows can be imported at once.`);
 
     const columns = resolveColumns(rows[0]);
-    const missing = ['name', 'sku', 'quantity', 'mrp'].filter(field => columns[field] < 0);
+    const missing = ['name', 'currentStock'].filter(field => columns[field] < 0);
     if (missing.length) throw new Error(`Missing required columns: ${missing.join(', ')}.`);
 
-    const items: Omit<InventoryItem, 'id'>[] = [];
+    const items: Omit<AgricInventoryItem, 'id'>[] = [];
     const errors: string[] = [];
-    const seenSkus = new Set<string>();
+    const seenNames = new Set<string>();
 
     rows.slice(1).forEach((row, index) => {
         const rowNumber = index + 2;
         const get = (field: string) => columns[field] >= 0 ? row[columns[field]] : '';
         const name = text(get('name'));
-        const sku = text(get('sku'));
-        const quantity = numberValue(get('quantity'));
-        const mrp = numberValue(get('mrp'));
-        const costPriceRaw = get('costPrice');
-        const costPrice = text(costPriceRaw) ? numberValue(costPriceRaw) : 0;
+        const currentStock = numberValue(get('currentStock'));
+        const minimumStockRaw = get('minimumStock');
+        const minimumStock = text(minimumStockRaw) ? numberValue(minimumStockRaw) : 5;
+        const unitCostRaw = get('unitCost');
+        const unitCost = text(unitCostRaw) ? numberValue(unitCostRaw) : 0;
+        const rowKey = `${name}:${text(get('category'))}`.toLowerCase();
 
         const rowErrors: string[] = [];
         if (!name) rowErrors.push('item name is required');
-        if (!sku) rowErrors.push('SKU is required');
-        if (!Number.isFinite(quantity) || quantity < 0) rowErrors.push('quantity must be zero or greater');
-        if (!Number.isFinite(mrp) || mrp < 0) rowErrors.push('MRP/price must be zero or greater');
-        if (!Number.isFinite(costPrice) || costPrice < 0) rowErrors.push('cost price must be zero or greater');
-        if (sku && seenSkus.has(sku.toLowerCase())) rowErrors.push('duplicate SKU in file');
+        if (!Number.isFinite(currentStock) || currentStock < 0) rowErrors.push('current stock must be zero or greater');
+        if (!Number.isFinite(minimumStock) || minimumStock < 0) rowErrors.push('minimum stock must be zero or greater');
+        if (!Number.isFinite(unitCost) || unitCost < 0) rowErrors.push('unit cost must be zero or greater');
+        if (name && seenNames.has(rowKey)) rowErrors.push('duplicate item/category in file');
 
         if (rowErrors.length) {
             errors.push(`Row ${rowNumber}: ${rowErrors.join('; ')}`);
             return;
         }
 
-        seenSkus.add(sku.toLowerCase());
+        seenNames.add(rowKey);
         items.push({
             name,
-            sku,
-            batchNumber: text(get('batchNumber')),
-            expiryDate: text(get('expiryDate')),
-            quantity,
-            unit: text(get('unit')) || 'Units',
-            mrp,
-            costPrice,
-            category: text(get('category')) || 'General',
+            chemicalComponent: text(get('chemicalComponent')) || undefined,
+            category: parseCategory(text(get('category'))),
+            uom: parseUom(text(get('uom'))),
+            currentStock,
+            minimumStock,
+            reorderAlertDays: 7,
+            unitCost,
             location: text(get('location')) || 'Main Store',
+            lastUpdated: new Date().toISOString().slice(0, 10),
+            createdBy: 'import',
+            isActive: true,
         });
     });
 

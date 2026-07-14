@@ -39,7 +39,7 @@ function getSuperAdminOrganization(): Organization {
     return {
         id: 'system',
         name: 'StockIntel System Preview',
-        industry: 'pharmacy',
+        industry: 'agriculture',
         ownerId: 'system',
         referralCode: 'SYSTEM',
         subscription: {
@@ -98,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const existing = await getUserProfile(result.user.uid);
                 if (!existing) {
                     const orgId = await createOrganization(
-                        result.user.uid, 'pharmacy',
+                        result.user.uid, 'agriculture',
                         'New Business'
                     );
                     await createUserProfile({
@@ -221,7 +221,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (!organizationId) {
                 organizationId = await createOrganization(
                     fbUser.uid,
-                    'pharmacy', // placeholder; onboarding will update industry
+                    'agriculture',
                     'New Business',
                     referrerCode ?? undefined
                 );

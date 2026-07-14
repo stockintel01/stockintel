@@ -38,7 +38,7 @@ export default function TeamPage() {
     const [activeTab, setActiveTab] = useState('members');
     const [inviteEmail, setInviteEmail] = useState('');
     const [inviteRole, setInviteRole] = useState<'manager' | 'worker'>('worker');
-    const industry = organization?.industry ?? 'pharmacy';
+    const industry = organization?.industry ?? 'agriculture';
     const accessOptions = INDUSTRY_ACCESS[industry];
     const defaultPreset = ACCESS_PRESETS[industry][0];
     const [inviteAccess, setInviteAccess] = useState<AccessKey[]>(defaultPreset.access);
@@ -344,7 +344,7 @@ export default function TeamPage() {
                                     </div>
                                     <h3 className="font-semibold text-lg mb-2">No team members yet</h3>
                                     <p className="text-muted-foreground text-sm max-w-xs mb-6">
-                                        Invite your pharmacists, managers and assistants to collaborate on StockIntel.
+                                        Invite farm managers, stock keepers, packhouse supervisors, and field workers to collaborate on StockIntel.
                                     </p>
                                     <Button onClick={() => setIsInviteOpen(true)} className="gap-2">
                                         <UserPlus className="w-4 h-4" /> Invite Your First Member

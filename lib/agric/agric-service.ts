@@ -26,6 +26,7 @@ import type {
   SprayPlan, PackingRecord, ShippingRecord, StockAdjustment,
   AgricAlert, AgricCategory, FarmZone,
 } from './types';
+import { convertQuantity } from './units';
 
 // ─────────────────────────────────────────────────────────────
 // Collection helpers
@@ -183,12 +184,14 @@ export async function addUsageLog(
   // Also decrement inventory stock atomically
   await runTransaction(db, async tx => {
     const invRef = ref(orgId, 'agric_inventory', log.itemId);
-    const invSnap = await tx.get(invRef);
-    if (invSnap.exists()) {
-      const current = (invSnap.data().currentStock as number) ?? 0;
-      if (current - log.quantity < 0) throw new Error(`Insufficient stock: ${current} ${log.uom} available`);
+      const invSnap = await tx.get(invRef);
+      if (invSnap.exists()) {
+        const current = (invSnap.data().currentStock as number) ?? 0;
+      const stockUom = invSnap.data().uom;
+      const quantityInStockUom = convertQuantity(log.quantity, log.uom, stockUom);
+      if (current - quantityInStockUom < 0) throw new Error(`Insufficient stock: ${current} ${stockUom} available`);
       tx.update(invRef, {
-        currentStock: increment(-log.quantity),
+        currentStock: increment(-quantityInStockUom),
         lastUpdated: new Date().toISOString().slice(0, 10),
         updatedAt: serverTimestamp(),
       });

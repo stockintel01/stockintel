@@ -1,212 +1,63 @@
-# StockIntel - Intelligent Business Management Platform
+# StockIntel Agri
 
-![StockIntel](https://img.shields.io/badge/StockIntel-v1.0-blue)
-![Next.js](https://img.shields.io/badge/Next.js-16.1-black)
-![Firebase](https://img.shields.io/badge/Firebase-Latest-orange)
-![Stripe](https://img.shields.io/badge/Stripe-Integrated-purple)
+StockIntel Agri is a production-focused agriculture SaaS platform for farm stock, packhouse operations, livestock records, weather-aware planning, expenses, team permissions, subscriptions, and offline-ready field workflows.
 
-**StockIntel** is a comprehensive SaaS platform for managing inventory, sales, team members, and business operations across multiple industries (Pharmacy, Agriculture, Retail).
+## Features
 
-## ✨ Features
+- Google authentication with tenant-aware onboarding.
+- Role-based team access for owners, managers, stock keepers, packhouse supervisors, and field workers.
+- Agriculture stock management with CSV/XLSX bulk import, stock alerts, soft-delete audit notes, and adjustment approval flow.
+- Field usage tracking, stock requests, spray planning, equipment checkout, packhouse packing/shipping, and agriculture reports.
+- Livestock tools for flock/herd records, eggs, feed, health, mortality, growth, and milk production.
+- Expense categories, budgets, and spending tracking per tenant.
+- Firestore persistence and PWA service worker support for previously loaded data and supported offline writes.
+- Stripe subscriptions, referral rewards, and superadmin controls.
 
-### Core Features
-- 🔐 **Google Sign-In** - Seamless authentication with Google OAuth
-- 👥 **Team Management** - Role-based access control (Owner, Manager, Worker)
-- 📦 **Inventory Management** - Track stock levels, expiry dates, and suppliers
-- 💰 **Point of Sale (POS)** - Complete sales system with receipt generation
-- 📊 **Analytics & Reports** - Comprehensive business insights
-- 🎁 **Referral System** - Earn free months by referring other businesses
-- 💳 **Stripe Payments** - Secure subscription management
-
-### SaaS Features
-- ⏰ **3-Month Free Trial** - No credit card required
-- 🌍 **Multi-Currency Support** - USD, EUR, GBP, INR, and more
-- 📧 **Team Invitations** - Invite members via email
-- 📈 **Usage Analytics** - Track your business metrics
-- 📤 **Export Data** - CSV and PDF export functionality
-- 🎨 **Onboarding Flow** - Guided setup for new users
-- 🛡️ **Secure** - Firestore security rules and Stripe compliance
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Node.js 18+
-- Firebase account
-- Stripe account (for payments)
-
-### Installation
+## Quick Start
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/stockintel.git
-cd stockintel
-
-# Install dependencies
 npm install
-
-# Set up environment variables
 cp .env.example .env.local
-# Edit .env.local with your Firebase and Stripe credentials
-
-# Run development server
 npm run dev
 ```
 
-Visit `http://localhost:3000` to see the app.
+Visit `http://localhost:3000`.
 
-## 📋 Configuration
+## Required Services
 
-### 1. Firebase Setup
-1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Enable Authentication → Google Sign-In
-3. Create Firestore Database
-4. Deploy security rules: `firebase deploy --only firestore:rules`
-5. Copy your Firebase config to `.env.local`
+- Firebase Authentication with Google sign-in enabled.
+- Firestore with `firestore.rules` deployed.
+- Stripe for subscription billing.
+- Optional AI provider for agriculture report generation: OpenAI or Google Gemini via `AI_PROVIDER` and the matching API key.
 
-### 2. Stripe Setup
-1. Create a Stripe account at [stripe.com](https://stripe.com)
-2. Create products for Pro ($5/month) and Enterprise ($15/month)
-3. Set up webhook endpoint: `/api/webhooks/stripe`
-4. Copy API keys and Price IDs to `.env.local`
+## Project Structure
 
-See [STRIPE_SETUP_GUIDE.md](./STRIPE_SETUP_GUIDE.md) for detailed instructions.
-
-## 📁 Project Structure
-
-```
-stockintel/
-├── app/
-│   ├── api/                    # API routes
-│   │   ├── checkout/          # Stripe checkout
-│   │   └── webhooks/          # Stripe webhooks
-│   ├── dashboard/             # Main dashboard
-│   │   ├── inventory/         # Inventory management
-│   │   ├── sales/             # POS system
-│   │   ├── team/              # Team management
-│   │   ├── rewards/           # Referral system
-│   │   ├── billing/           # Subscription management
-│   │   └── admin/             # Superadmin settings
-│   ├── login/                 # Authentication
-│   └── onboarding/            # New user onboarding
-├── components/
-│   ├── auth/                  # Auth context & components
-│   ├── pharmacy/              # Pharmacy-specific components
-│   └── ui/                    # Reusable UI components
-├── lib/
-│   ├── firebase.ts            # Firebase initialization
-│   ├── firebase-utils.ts      # Firestore helpers
-│   ├── stripe.ts              # Stripe client
-│   ├── store.ts               # Zustand state management
-│   ├── pricing.ts             # Currency conversion
-│   └── export.ts              # CSV/PDF export
-└── firestore.rules            # Firestore security rules
+```text
+app/
+  api/                 Server routes for billing, invites, reports, team, alerts
+  dashboard/
+    agriculture/       Agriculture workspace modules
+    billing/           Subscription management
+    expenses/          Expense intelligence
+    rewards/           Referral rewards
+    settings/          Tenant settings
+    team/              Team roles and access
+components/
+  auth/                Authentication context
+  pwa/                 Offline/install banner
+  scanner/             Stock-label scanner
+lib/
+  agric/               Agriculture data services, hooks, and types
+  expenses/            Expense tracking
+  firebase*.ts         Firebase client/admin setup
+  access-*.ts          Superadmin and tenant permission logic
 ```
 
-## 🔑 Environment Variables
+## Production Checklist
 
-```env
-# Firebase
-NEXT_PUBLIC_FIREBASE_API_KEY=
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
-NEXT_PUBLIC_FIREBASE_APP_ID=
-
-# Stripe
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-NEXT_PUBLIC_STRIPE_PRICE_PRO=
-NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE=
-
-# App
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
-
-## 💼 Business Model
-
-### Pricing Plans
-
-| Plan | Price | Workers | Features |
-|------|-------|---------|----------|
-| **Free Trial** | $0 | 3 | 3 months, all features |
-| **Pro** | $5/month | 20 | Advanced analytics, priority support |
-| **Enterprise** | $15/month | Unlimited | Custom integrations, dedicated manager |
-
-### Referral Program
-- **Sign-up Reward**: 1 month free when referred company signs up
-- **Upgrade Reward**: 1 additional month when they upgrade to paid
-
-## 🛠️ Tech Stack
-
-- **Framework**: Next.js 16 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Database**: Firebase Firestore
-- **Authentication**: Firebase Auth (Google OAuth)
-- **Payments**: Stripe
-- **State Management**: Zustand
-- **UI Components**: shadcn/ui
-
-## 📚 Documentation
-
-- [Stripe Setup Guide](./STRIPE_SETUP_GUIDE.md)
-- [Deployment Guide](./DEPLOYMENT_GUIDE.md)
-- [Walkthrough](./walkthrough.md) (in artifacts folder)
-
-## 🔒 Security
-
-- Firestore security rules enforce data access
-- Stripe webhook signature verification
-- HTTPS required in production
-- Environment variables for sensitive data
-- Role-based access control (RBAC)
-
-## 🚢 Deployment
-
-### Vercel (Recommended)
-```bash
-vercel --prod
-```
-
-### Firebase Hosting
-```bash
-npm run build
-firebase deploy --only hosting
-```
-
-See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for complete instructions.
-
-## 🧪 Testing
-
-### Test Stripe Payments
-Use Stripe test cards:
-- Success: `4242 4242 4242 4242`
-- Decline: `4000 0000 0000 0002`
-
-### Test Accounts
-- Use any Google account for sign-in
-- Invite test users via email
-
-## 📧 Support
-
-- **Email**: stockintel01@gmail.com
-- **Documentation**: See `/docs` folder
-- **Issues**: GitHub Issues
-
-## 📄 License
-
-Proprietary - All rights reserved
-
-## 🙏 Acknowledgments
-
-- Built with [Next.js](https://nextjs.org/)
-- UI components from [shadcn/ui](https://ui.shadcn.com/)
-- Icons from [Lucide](https://lucide.dev/)
-- Payments by [Stripe](https://stripe.com/)
-- Database by [Firebase](https://firebase.google.com/)
-
----
-
-**Made with ❤️ for businesses worldwide**
+- Deploy Firestore rules: `firebase deploy --only firestore:rules`.
+- Configure Firebase Admin credentials in Vercel.
+- Configure Stripe keys, price IDs, and webhook secret.
+- Configure `NEXT_PUBLIC_APP_URL`.
+- Configure AI provider variables if report generation is enabled.
+- Run `npm run build` before every deployment.

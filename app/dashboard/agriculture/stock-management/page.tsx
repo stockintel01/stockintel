@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Search, Plus, Download,
   Package, Edit2, Trash2, Eye,
-  Clock, X, Save
+  Clock, X, Save, Upload
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { useAgric } from '@/lib/agric/useAgric';
 import { AgricInventoryItem, AgricCategory, UOM } from '@/lib/agric/types';
 import { useAppStore } from '@/lib/store';
+import { parseInventoryFile } from '@/lib/inventory-import';
 
 const CATEGORY_LABELS: Record<AgricCategory, string> = {
   fungicide: 'Fungicide', insecticide: 'Insecticide', herbicide: 'Herbicide',
@@ -60,6 +61,10 @@ export default function StockManagementPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newItem, setNewItem] = useState<Partial<AgricInventoryItem>>({ category: 'fungicide', uom: 'lt', isActive: true, reorderAlertDays: 7 });
   const [showDeletionLog, setShowDeletionLog] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState('');
+  const [importError, setImportError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const filtered = useMemo(() => {
     return (inventory.length > 0 ? inventory : rawInventory)
@@ -119,6 +124,29 @@ export default function StockManagementPage() {
     });
     setNewItem({ category: 'fungicide', uom: 'lt', isActive: true, reorderAlertDays: 7 });
     setShowAddModal(false);
+  }
+
+  async function handleImportFile(file: File | undefined) {
+    if (!file || !canManageStock) return;
+    setIsImporting(true);
+    setImportMessage('');
+    setImportError('');
+    try {
+      const result = await parseInventoryFile(file);
+      if (result.errors.length) {
+        setImportError(result.errors.slice(0, 8).join('\n'));
+        return;
+      }
+      for (const item of result.items) {
+        await addItem({ ...item, createdBy: currentUser });
+      }
+      setImportMessage(`Imported ${result.items.length.toLocaleString()} stock item${result.items.length === 1 ? '' : 's'} from ${file.name}.`);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed.');
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   }
 
   function exportCSV() {
@@ -198,6 +226,36 @@ export default function StockManagementPage() {
           </div>
         </CardContent>
       </Card>
+
+      {canManageStock && (
+        <Card
+          className="border-dashed"
+          onDragOver={event => event.preventDefault()}
+          onDrop={event => {
+            event.preventDefault();
+            void handleImportFile(event.dataTransfer.files?.[0]);
+          }}
+        >
+          <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">Bulk import agriculture stock</p>
+              <p className="text-sm text-muted-foreground">Drop a CSV/XLSX file here or browse. Required columns: name and current stock. Optional: category, unit, minimum stock, unit cost, location.</p>
+              {importMessage && <p className="mt-2 text-sm text-green-700">{importMessage}</p>}
+              {importError && <pre className="mt-2 whitespace-pre-wrap rounded-md bg-red-50 p-2 text-xs text-red-700">{importError}</pre>}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.xlsx"
+              className="hidden"
+              onChange={event => void handleImportFile(event.target.files?.[0])}
+            />
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isImporting}>
+              <Upload className="mr-2 h-4 w-4" /> {isImporting ? 'Importing...' : 'Browse File'}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Inventory Table */}
       <Card>

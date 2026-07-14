@@ -13,10 +13,8 @@ function generateReferralCode(name: string): string {
 export async function POST(request: NextRequest) {
     try {
         const user = await requireFirebaseUser(request);
-        const { industry, orgName, referrerCode } = await request.json();
-        if (!['pharmacy', 'agriculture', 'retail'].includes(industry)) {
-            throw new ApiError('Valid industry is required', 400);
-        }
+        const { orgName, referrerCode } = await request.json();
+        const industry = 'agriculture';
         const safeName = String(orgName ?? '').trim();
         if (safeName.length < 2) throw new ApiError('Organization name is required', 400);
 

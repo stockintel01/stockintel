@@ -9,9 +9,7 @@ import {
     query,
     where,
     getDocs,
-    runTransaction,
     serverTimestamp,
-    increment,
     writeBatch,
 } from "firebase/firestore";
 import { UserRole, IndustryType, type Organization } from "@/lib/store";
@@ -133,7 +131,7 @@ export async function inviteMember(email: string, role: string, orgId: string, o
             access: access ?? [],
             organizationId: orgId,
             orgName: orgName ?? orgData?.name ?? 'Your workspace',
-            industry: orgData?.industry ?? 'pharmacy',
+            industry: orgData?.industry ?? 'agriculture',
             status: 'pending',
             invitedBy: invitedByName ?? currentUser.displayName ?? currentUser.email ?? 'Team admin',
             createdBy: currentUser.uid,
@@ -172,81 +170,6 @@ export async function activateCredit(orgId: string, creditId: string, months: nu
 }
 
 // ─── Sales ────────────────────────────────────────────────────────────────────
-
-export interface SaleItem {
-    itemId: string;
-    name: string;
-    sku: string;
-    quantity: number;
-    unitPrice: number;
-    total: number;
-}
-
-export interface SaleRecord {
-    id?: string;
-    organizationId: string;
-    billNumber: string;
-    cashierId: string;
-    cashierName: string;
-    items: SaleItem[];
-    subtotal: number;
-    taxRate: number;
-    taxAmount: number;
-    grandTotal: number;
-    paymentMethod: 'cash' | 'card' | 'upi' | 'credit';
-    customerName?: string;
-    createdAt: unknown;
-}
-
-/**
- * Persist a completed sale and atomically decrement inventory quantities.
- * Uses a Firestore transaction so a stock shortage detected mid-sale rolls back everything.
- */
-export async function persistSale(
-    orgId: string,
-    sale: Omit<SaleRecord, 'id' | 'createdAt'>,
-): Promise<string> {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        throw new Error('Sales checkout requires an internet connection so stock can be verified safely. Other supported changes will continue syncing automatically.');
-    }
-    const saleRef = doc(collection(db, `organizations/${orgId}/sales`));
-
-    await runTransaction(db, async (tx) => {
-        // 1. Verify stock for every item in the cart
-        const stockChecks = await Promise.all(
-            sale.items.map(item =>
-                tx.get(doc(db, `organizations/${orgId}/inventory/${item.itemId}`))
-            )
-        );
-
-        for (let i = 0; i < sale.items.length; i++) {
-            const snap = stockChecks[i];
-            const saleItem = sale.items[i];
-            if (!snap.exists()) throw new Error(`Item "${saleItem.name}" no longer exists in inventory.`);
-            const available = snap.data().quantity as number;
-            if (available < saleItem.quantity) {
-                throw new Error(`Insufficient stock for "${saleItem.name}". Available: ${available}, requested: ${saleItem.quantity}.`);
-            }
-        }
-
-        // 2. Decrement inventory quantities atomically
-        for (let i = 0; i < sale.items.length; i++) {
-            tx.update(stockChecks[i].ref, {
-                quantity: increment(-sale.items[i].quantity),
-                updatedAt: serverTimestamp(),
-            });
-        }
-
-        // 3. Write the sale record
-        tx.set(saleRef, {
-            ...sale,
-            organizationId: orgId,
-            createdAt: serverTimestamp(),
-        });
-    });
-
-    return saleRef.id;
-}
 
 // ─── Invite acceptance ────────────────────────────────────────────────────────
 
@@ -288,7 +211,7 @@ export async function acceptInvitation(
             photoURL: photoURL || '',
             organizationId: invite.organizationId,
             organizationName: invite.orgName ?? 'Your workspace',
-            industry: invite.industry ?? 'pharmacy',
+            industry: invite.industry ?? 'agriculture',
             role,
             access,
             acceptedInviteId: inviteId,
@@ -322,7 +245,7 @@ export async function acceptInvitation(
             : {
                 id: invite.organizationId,
                 name: invite.orgName ?? 'Your workspace',
-                industry: invite.industry ?? 'pharmacy',
+                industry: invite.industry ?? 'agriculture',
                 ownerId: '',
                 referralCode: '',
                 subscription: { plan: 'free_trial' as const, status: 'active' as const, trialEndsAt: new Date() },

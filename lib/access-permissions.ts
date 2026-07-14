@@ -2,15 +2,6 @@ import type { IndustryType, User } from '@/lib/store';
 
 export type AccessKey =
     | 'dashboard'
-    | 'inventory'
-    | 'inventoryImport'
-    | 'sales'
-    | 'customers'
-    | 'patients'
-    | 'prescriptions'
-    | 'consultation'
-    | 'pharmacyAnalytics'
-    | 'reports'
     | 'expenses'
     | 'team'
     | 'rewards'
@@ -43,15 +34,6 @@ export interface AccessPreset {
 
 export const ACCESS_DEFINITIONS: Record<AccessKey, AccessDefinition> = {
     dashboard: { key: 'dashboard', label: 'Dashboard', description: 'Main overview and daily summary.', hrefs: ['/dashboard', '/dashboard/agriculture'] },
-    inventory: { key: 'inventory', label: 'Inventory', description: 'View and manage stock records.', hrefs: ['/dashboard/inventory', '/dashboard/inventory/add'] },
-    inventoryImport: { key: 'inventoryImport', label: 'Bulk Import', description: 'Upload CSV/XLSX stock files.', hrefs: ['/dashboard/inventory/import'] },
-    sales: { key: 'sales', label: 'Sales POS', description: 'Process sales and checkout transactions.', hrefs: ['/dashboard/sales'] },
-    customers: { key: 'customers', label: 'Customers', description: 'View and manage customer records.', hrefs: ['/dashboard/customers'] },
-    patients: { key: 'patients', label: 'Patients', description: 'View and manage pharmacy patients.', hrefs: ['/dashboard/patients'] },
-    prescriptions: { key: 'prescriptions', label: 'Prescriptions', description: 'Digitize and manage prescriptions.', hrefs: ['/dashboard/prescriptions'] },
-    consultation: { key: 'consultation', label: 'Consultation AI', description: 'Use AI consultation tools.', hrefs: ['/dashboard/pharmacy/consultation'] },
-    pharmacyAnalytics: { key: 'pharmacyAnalytics', label: 'Drug Analytics', description: 'View pharmacy analytics.', hrefs: ['/dashboard/pharmacy/analytics'] },
-    reports: { key: 'reports', label: 'Reports', description: 'View business analytics and exports.', hrefs: ['/dashboard/reports'] },
     expenses: { key: 'expenses', label: 'Expenses', description: 'Track budgets and spending.', hrefs: ['/dashboard/expenses'] },
     team: { key: 'team', label: 'Team', description: 'Invite staff and manage access.', hrefs: ['/dashboard/team'] },
     rewards: { key: 'rewards', label: 'Rewards', description: 'Referral rewards and credits.', hrefs: ['/dashboard/rewards'] },
@@ -70,22 +52,10 @@ export const ACCESS_DEFINITIONS: Record<AccessKey, AccessDefinition> = {
 };
 
 export const INDUSTRY_ACCESS: Record<IndustryType, AccessKey[]> = {
-    pharmacy: ['dashboard', 'inventory', 'inventoryImport', 'sales', 'patients', 'prescriptions', 'consultation', 'pharmacyAnalytics', 'reports', 'expenses', 'team', 'rewards', 'billing', 'settings'],
-    retail: ['dashboard', 'inventory', 'inventoryImport', 'sales', 'customers', 'reports', 'expenses', 'team', 'rewards', 'billing', 'settings'],
     agriculture: ['dashboard', 'agricStock', 'agricRequests', 'agricUsage', 'agricPlanner', 'agricEquipment', 'agricPacking', 'agricReports', 'agricWeather', 'agricLivestock', 'agricCrops', 'expenses', 'team', 'rewards', 'billing', 'settings'],
 };
 
 export const ACCESS_PRESETS: Record<IndustryType, AccessPreset[]> = {
-    pharmacy: [
-        { id: 'pharmacist', label: 'Pharmacist', role: 'worker', access: ['dashboard', 'inventory', 'sales', 'patients', 'prescriptions', 'consultation'] },
-        { id: 'cashier', label: 'Cashier', role: 'worker', access: ['dashboard', 'sales', 'customers'] },
-        { id: 'manager', label: 'Pharmacy Manager', role: 'manager', access: INDUSTRY_ACCESS.pharmacy },
-    ],
-    retail: [
-        { id: 'cashier', label: 'Cashier', role: 'worker', access: ['dashboard', 'sales', 'customers'] },
-        { id: 'stockkeeper', label: 'Stock Keeper', role: 'worker', access: ['dashboard', 'inventory', 'inventoryImport'] },
-        { id: 'manager', label: 'Store Manager', role: 'manager', access: INDUSTRY_ACCESS.retail },
-    ],
     agriculture: [
         { id: 'packhouse_supervisor', label: 'Packhouse Supervisor', role: 'worker', access: ['dashboard', 'agricPacking', 'agricReports'] },
         { id: 'stockkeeper', label: 'Stock Keeper', role: 'worker', access: ['dashboard', 'agricStock', 'agricRequests', 'agricUsage'] },
@@ -121,5 +91,5 @@ export function userCanAccessHref(user: User | null | undefined, href: string): 
     if (user.role === 'super_admin' || user.role === 'owner') return true;
     if (!user.access) return user.role === 'manager';
     const keys = accessForHrefs([href]);
-    return keys.length === 0 || keys.some(key => user.access?.includes(key));
+    return keys.length > 0 && keys.some(key => user.access?.includes(key));
 }

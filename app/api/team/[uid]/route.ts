@@ -25,7 +25,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ u
         if (target.organizationId !== user.organizationId) throw new ApiError('Team member not found', 404);
         if (target.role === 'owner' || target.role === 'super_admin') throw new ApiError('Owner access cannot be changed here', 403);
 
-        const industry = (orgSnapshot.data()?.industry ?? 'pharmacy') as IndustryType;
+        const industry = 'agriculture' as IndustryType;
         const normalizedAccess = normalizeAccess(access, industry);
         await targetRef.update({
             role,

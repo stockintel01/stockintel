@@ -4,9 +4,6 @@
   "devCommand": "next dev",
   "installCommand": "npm install",
   "functions": {
-    "app/api/consultation/route.ts": {
-      "maxDuration": 30
-    },
     "app/api/alerts/low-stock/route.ts": {
       "maxDuration": 15
     },

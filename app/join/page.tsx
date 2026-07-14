@@ -97,7 +97,7 @@ function JoinInner() {
                         },
                     ],
                 } : null,
-                result.organization ?? { id: result.organizationId, name: invite?.orgName ?? 'Your Team', industry: 'pharmacy' as const, ownerId: '', referralCode: '', subscription: { plan: 'free_trial' as const, status: 'active' as const, trialEndsAt: new Date() } }
+                result.organization ?? { id: result.organizationId, name: invite?.orgName ?? 'Your Team', industry: 'agriculture' as const, ownerId: '', referralCode: '', subscription: { plan: 'free_trial' as const, status: 'active' as const, trialEndsAt: new Date() } }
             );
             setStage('done');
             setTimeout(() => router.push('/dashboard'), 2000);

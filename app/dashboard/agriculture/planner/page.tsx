@@ -10,8 +10,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
-import { SprayPlan, SprayPlanItem, FarmZone } from '@/lib/agric/types';
+import { SprayPlan, SprayPlanItem, FarmZone, UOM } from '@/lib/agric/types';
 import { getAgricultureProfile } from '@/lib/agric/config';
+import { calculateRestockByDate, compatibleUnits, convertQuantity, formatQuantity } from '@/lib/agric/units';
 
 const CYCLE_LABELS = { weekly: 'Weekly', biweekly: 'Bi-weekly', monthly: 'Monthly', custom: 'Custom' };
 const STATUS_COLORS = {
@@ -39,7 +40,7 @@ export default function PlannerPage() {
   const [newPlan, setNewPlan] = useState<Partial<SprayPlan>>({
     farmZone: farmZones[0] as FarmZone, cycle: 'weekly', status: 'draft', items: []
   });
-  const [newPlanItem, setNewPlanItem] = useState<{ itemId: string; qtyPerApp: number }>({ itemId: '', qtyPerApp: 0 });
+  const [newPlanItem, setNewPlanItem] = useState<{ itemId: string; qtyPerApp: number; uom?: UOM }>({ itemId: '', qtyPerApp: 0 });
   const [filter, setFilter] = useState<'all' | 'active' | 'draft' | 'completed'>('all');
 
   const filtered = plans.filter(p => filter === 'all' || p.status === filter);
@@ -50,16 +51,29 @@ export default function PlannerPage() {
     const invItem = inventory.find(i => i.id === newPlanItem.itemId);
     if (!invItem) return;
     const apps = getCycleApplications(newPlan.cycle || 'weekly', newPlan.startDate || '', newPlan.endDate || '');
+    const requestedUom = newPlanItem.uom ?? invItem.uom;
+    const qtyPerAppStockUom = convertQuantity(newPlanItem.qtyPerApp, requestedUom, invItem.uom);
     const totalQty = newPlanItem.qtyPerApp * apps;
-    const sufficient = invItem.currentStock >= totalQty;
+    const totalQtyStockUom = qtyPerAppStockUom * apps;
+    const sufficient = invItem.currentStock >= totalQtyStockUom;
+    const applicationsCovered = qtyPerAppStockUom > 0 ? Math.floor(invItem.currentStock / qtyPerAppStockUom) : 0;
+    const cycleDays = newPlan.cycle === 'monthly' ? 30 : newPlan.cycle === 'biweekly' ? 14 : newPlan.cycle === 'weekly' ? 7 : 1;
+    const projectedShortfallDate = !sufficient
+      ? new Date(new Date(newPlan.startDate || new Date()).getTime() + Math.max(0, applicationsCovered) * 86400000 * cycleDays).toISOString().slice(0, 10)
+      : undefined;
 
     const item: SprayPlanItem = {
       itemId: invItem.id, itemName: invItem.name,
-      category: invItem.category as any, uom: invItem.uom as any,
+      category: invItem.category as any, uom: invItem.uom as any, requestedUom,
       quantityPerApplication: newPlanItem.qtyPerApp,
-      totalPlannedQty: totalQty, currentStockAtPlanTime: invItem.currentStock,
+      quantityPerApplicationInStockUom: qtyPerAppStockUom,
+      totalPlannedQty: totalQty,
+      totalPlannedQtyInStockUom: totalQtyStockUom,
+      currentStockAtPlanTime: invItem.currentStock,
+      shortfallQty: Math.max(0, totalQtyStockUom - invItem.currentStock),
       isStockSufficient: sufficient,
-      projectedShortfallDate: !sufficient ? new Date(new Date(newPlan.startDate || '').getTime() + Math.floor(invItem.currentStock / newPlanItem.qtyPerApp) * 86400000 * (newPlan.cycle === 'weekly' ? 7 : 14)).toISOString().slice(0, 10) : undefined,
+      projectedShortfallDate,
+      restockAlertDate: calculateRestockByDate(projectedShortfallDate),
     };
     setNewPlan(p => ({ ...p, items: [...(p.items || []), item] }));
     setNewPlanItem({ itemId: '', qtyPerApp: 0 });
@@ -108,11 +122,11 @@ export default function PlannerPage() {
                 <div className="flex-1">
                   <p className="font-semibold text-amber-800">{plan.planName}</p>
                   <p className="text-sm text-amber-700">
-                    Stock shortfall detected: {shortItems.map(i => `${i.itemName} (need ${i.totalPlannedQty} ${i.uom}, have ${i.currentStockAtPlanTime})`).join(', ')}
+                    Stock shortfall detected: {shortItems.map(i => `${i.itemName} (need ${formatQuantity(i.totalPlannedQtyInStockUom ?? i.totalPlannedQty, i.uom)}, have ${formatQuantity(i.currentStockAtPlanTime, i.uom)})`).join(', ')}
                   </p>
                   {shortItems[0]?.projectedShortfallDate && (
                     <p className="text-xs text-amber-600 mt-1">
-                      ⚠ Stock will run out around {new Date(shortItems[0].projectedShortfallDate).toLocaleDateString()}. Request restock by {new Date(new Date(shortItems[0].projectedShortfallDate).getTime() - 7 * 86400000).toLocaleDateString()}.
+                      ⚠ Stock will run out around {new Date(shortItems[0].projectedShortfallDate).toLocaleDateString()}. Request restock by {shortItems[0].restockAlertDate ? new Date(shortItems[0].restockAlertDate).toLocaleDateString() : 'as soon as possible'}.
                     </p>
                   )}
                 </div>
@@ -176,7 +190,7 @@ export default function PlannerPage() {
                     <div key={item.itemId} className="flex items-center justify-between text-xs">
                       <span className="text-muted-foreground">{item.itemName}</span>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono">{item.totalPlannedQty} {item.uom} needed</span>
+                        <span className="font-mono">{formatQuantity(item.totalPlannedQtyInStockUom ?? item.totalPlannedQty, item.uom)} needed</span>
                         {item.isStockSufficient
                           ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
                           : <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />}
@@ -256,9 +270,12 @@ export default function PlannerPage() {
                             <p>{item.itemName}</p>
                             <p className="text-xs text-muted-foreground capitalize">{item.category}</p>
                           </td>
-                          <td className="px-3 py-2 text-right font-mono">{item.quantityPerApplication} {item.uom}</td>
-                          <td className="px-3 py-2 text-right font-mono font-semibold">{item.totalPlannedQty} {item.uom}</td>
-                          <td className={`px-3 py-2 text-right font-mono ${item.isStockSufficient ? 'text-green-600' : 'text-red-600'}`}>{item.currentStockAtPlanTime} {item.uom}</td>
+                          <td className="px-3 py-2 text-right font-mono">
+                            {formatQuantity(item.quantityPerApplication, item.requestedUom ?? item.uom)}
+                            {(item.requestedUom ?? item.uom) !== item.uom && <p className="text-[10px] text-muted-foreground">= {formatQuantity(item.quantityPerApplicationInStockUom ?? item.quantityPerApplication, item.uom)}</p>}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-semibold">{formatQuantity(item.totalPlannedQtyInStockUom ?? item.totalPlannedQty, item.uom)}</td>
+                          <td className={`px-3 py-2 text-right font-mono ${item.isStockSufficient ? 'text-green-600' : 'text-red-600'}`}>{formatQuantity(item.currentStockAtPlanTime, item.uom)}</td>
                           <td className="px-3 py-2 text-center">
                             {item.isStockSufficient
                               ? <CheckCircle2 className="w-4 h-4 text-green-500 mx-auto" />
@@ -276,8 +293,8 @@ export default function PlannerPage() {
                   <p className="font-semibold text-amber-800 mb-1">⚠ Restock Alert</p>
                   {selectedPlan.items.filter(i => !i.isStockSufficient).map(item => (
                     <div key={item.itemId} className="text-sm text-amber-700">
-                      <p>{item.itemName}: need {item.totalPlannedQty - item.currentStockAtPlanTime} {item.uom} more</p>
-                      {item.projectedShortfallDate && <p className="text-xs">Stock will run out around <strong>{new Date(item.projectedShortfallDate).toLocaleDateString()}</strong>. Restock by <strong>{new Date(new Date(item.projectedShortfallDate).getTime() - 7 * 86400000).toLocaleDateString()}</strong></p>}
+                      <p>{item.itemName}: need {formatQuantity(item.shortfallQty ?? Math.max(0, (item.totalPlannedQtyInStockUom ?? item.totalPlannedQty) - item.currentStockAtPlanTime), item.uom)} more</p>
+                      {item.projectedShortfallDate && <p className="text-xs">Stock will run out around <strong>{new Date(item.projectedShortfallDate).toLocaleDateString()}</strong>. Restock by <strong>{item.restockAlertDate ? new Date(item.restockAlertDate).toLocaleDateString() : 'as soon as possible'}</strong></p>}
                     </div>
                   ))}
                 </div>
@@ -344,7 +361,7 @@ export default function PlannerPage() {
 
               <div>
                 <p className="text-sm font-semibold mb-2">Add Chemicals</p>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <select className="flex-1 border rounded-md px-3 py-2 text-sm bg-background" value={newPlanItem.itemId} onChange={e => setNewPlanItem(p => ({ ...p, itemId: e.target.value }))}>
                     <option value="">Select chemical...</option>
                     {inventory.filter(i => i.isActive && i.category !== 'equipment').map(i => (
@@ -352,10 +369,31 @@ export default function PlannerPage() {
                     ))}
                   </select>
                   <Input type="number" className="w-28" placeholder="Qty/app" step="0.1" value={newPlanItem.qtyPerApp || ''} onChange={e => setNewPlanItem(p => ({ ...p, qtyPerApp: parseFloat(e.target.value) || 0 }))} />
+                  <select
+                    className="w-24 border rounded-md px-2 py-2 text-sm bg-background"
+                    value={newPlanItem.uom ?? inventory.find(i => i.id === newPlanItem.itemId)?.uom ?? 'lt'}
+                    onChange={e => setNewPlanItem(p => ({ ...p, uom: e.target.value as UOM }))}
+                  >
+                    {(inventory.find(i => i.id === newPlanItem.itemId) ? compatibleUnits(inventory.find(i => i.id === newPlanItem.itemId)!.uom) : ['lt', 'ml', 'kg', 'g', 'units'] as UOM[]).map(uom => <option key={uom} value={uom}>{uom}</option>)}
+                  </select>
                   <Button variant="outline" onClick={addPlanItem} disabled={!newPlanItem.itemId || !newPlanItem.qtyPerApp}>
                     <Plus className="w-4 h-4" />
                   </Button>
                 </div>
+                {newPlanItem.itemId && newPlanItem.qtyPerApp > 0 && (() => {
+                  const item = inventory.find(i => i.id === newPlanItem.itemId);
+                  if (!item) return null;
+                  const requestedUom = newPlanItem.uom ?? item.uom;
+                  const stockQty = convertQuantity(newPlanItem.qtyPerApp, requestedUom, item.uom);
+                  const apps = newPlan.startDate && newPlan.endDate ? getCycleApplications(newPlan.cycle || 'weekly', newPlan.startDate, newPlan.endDate) : 1;
+                  const total = stockQty * apps;
+                  const shortfall = Math.max(0, total - item.currentStock);
+                  return (
+                    <div className={`mt-2 rounded-lg border p-2 text-xs ${shortfall > 0 ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-green-200 bg-green-50 text-green-800'}`}>
+                      {formatQuantity(newPlanItem.qtyPerApp, requestedUom)} per application converts to {formatQuantity(stockQty, item.uom)} from stock. Total needed: {formatQuantity(total, item.uom)}. {shortfall > 0 ? `Short by ${formatQuantity(shortfall, item.uom)}.` : 'Stock is enough for this plan.'}
+                    </div>
+                  );
+                })()}
               </div>
 
               {(newPlan.items || []).length > 0 && (
@@ -375,9 +413,9 @@ export default function PlannerPage() {
                       {(newPlan.items || []).map((item, i) => (
                         <tr key={i} className={`border-t ${!item.isStockSufficient ? 'bg-amber-50' : ''}`}>
                           <td className="px-3 py-2">{item.itemName}</td>
-                          <td className="px-3 py-2 text-right font-mono">{item.quantityPerApplication} {item.uom}</td>
-                          <td className="px-3 py-2 text-right font-mono font-semibold">{item.totalPlannedQty} {item.uom}</td>
-                          <td className={`px-3 py-2 text-right font-mono ${item.isStockSufficient ? 'text-green-600' : 'text-red-600'}`}>{item.currentStockAtPlanTime}</td>
+                          <td className="px-3 py-2 text-right font-mono">{formatQuantity(item.quantityPerApplication, item.requestedUom ?? item.uom)}</td>
+                          <td className="px-3 py-2 text-right font-mono font-semibold">{formatQuantity(item.totalPlannedQtyInStockUom ?? item.totalPlannedQty, item.uom)}</td>
+                          <td className={`px-3 py-2 text-right font-mono ${item.isStockSufficient ? 'text-green-600' : 'text-red-600'}`}>{formatQuantity(item.currentStockAtPlanTime, item.uom)}</td>
                           <td className="px-3 py-2 text-center">{item.isStockSufficient ? '✓' : '⚠'}</td>
                           <td className="px-3 py-2">
                             <button onClick={() => setNewPlan(p => ({ ...p, items: (p.items || []).filter((_, j) => j !== i) }))} className="text-red-400 hover:text-red-600"><X className="w-3.5 h-3.5" /></button>

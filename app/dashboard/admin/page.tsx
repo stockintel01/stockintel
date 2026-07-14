@@ -10,7 +10,7 @@ import {
   RefreshCw, Search, ChevronDown, CheckCircle2, XCircle,
   AlertTriangle, Loader2, Bell, Activity, Globe, X,
   Download, Edit2, Trash2, Gift, Lock, Unlock,
-  TrendingUp, Package, Leaf, Pill, Store
+  TrendingUp, Package, Leaf
 } from 'lucide-react';
 import {
   isSuperAdmin, getAllOrganisations, getAllUsers, getSystemStats,
@@ -39,10 +39,9 @@ function PlanBadge({ plan, status }: { plan: string; status: string }) {
 
 // ── Industry icon ─────────────────────────────────────────────
 function IndustryIcon({ industry }: { industry: string }) {
-  if (industry === 'pharmacy')    return <Pill    className="w-4 h-4 text-blue-500" />;
-  if (industry === 'agriculture') return <Leaf    className="w-4 h-4 text-green-500" />;
-  if (industry === 'retail')      return <Store   className="w-4 h-4 text-amber-500" />;
-  return <Building2 className="w-4 h-4 text-gray-400" />;
+  return industry === 'agriculture'
+    ? <Leaf className="w-4 h-4 text-green-500" />
+    : <Building2 className="w-4 h-4 text-gray-400" />;
 }
 
 // ── Tabs ──────────────────────────────────────────────────────
