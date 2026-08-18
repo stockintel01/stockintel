@@ -28,12 +28,57 @@ export function compatibleUnits(uom: UOM): UOM[] {
   return UOM_OPTIONS.filter(option => getUnitFamily(option) === family);
 }
 
+export function parsePackSize(packSize?: string): { quantity: number; uom: UOM } | null {
+  const match = String(packSize ?? '').trim().match(/(\d+(?:\.\d+)?)\s*(ml|lt|l|kg|g|units?|bags?|boxes?)/i);
+  if (!match) return null;
+  const rawUnit = match[2].toLowerCase();
+  const uom = rawUnit === 'l' ? 'lt'
+    : rawUnit === 'unit' ? 'units'
+    : rawUnit === 'bag' ? 'bags'
+    : rawUnit === 'box' ? 'boxes'
+    : rawUnit as UOM;
+  return { quantity: Number(match[1]), uom };
+}
+
+export function compatibleUnitsForItem(stockUom: UOM, packSize?: string): UOM[] {
+  const direct = compatibleUnits(stockUom);
+  const pack = parsePackSize(packSize);
+  if (!pack) return direct;
+  return Array.from(new Set([...direct, ...compatibleUnits(pack.uom)]));
+}
+
 export function convertQuantity(quantity: number, from: UOM, to: UOM): number {
   if (!Number.isFinite(quantity)) return 0;
   if (from === to) return quantity;
   if (!canConvertUnit(from, to)) return quantity;
   const baseQuantity = quantity * UNIT_FACTORS[from].factor;
   return baseQuantity / UNIT_FACTORS[to].factor;
+}
+
+export function convertItemQuantity(quantity: number, from: UOM, to: UOM, packSize?: string): number {
+  if (canConvertUnit(from, to)) return convertQuantity(quantity, from, to);
+  const pack = parsePackSize(packSize);
+  if (!pack) return quantity;
+
+  if (canConvertUnit(from, pack.uom) && getUnitFamily(to) === 'count') {
+    return convertQuantity(quantity, from, pack.uom) / pack.quantity;
+  }
+
+  if (getUnitFamily(from) === 'count' && canConvertUnit(pack.uom, to)) {
+    return convertQuantity(quantity * pack.quantity, pack.uom, to);
+  }
+
+  return quantity;
+}
+
+/** True when an item's configured unit/pack size can represent the requested unit. */
+export function canConvertItemQuantity(from: UOM, to: UOM, packSize?: string): boolean {
+  if (canConvertUnit(from, to)) return true;
+  const pack = parsePackSize(packSize);
+  if (!pack) return false;
+
+  return (canConvertUnit(from, pack.uom) && getUnitFamily(to) === 'count')
+    || (getUnitFamily(from) === 'count' && canConvertUnit(pack.uom, to));
 }
 
 export function formatQuantity(quantity: number, uom: UOM): string {

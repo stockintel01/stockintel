@@ -11,25 +11,25 @@ type Period = 'daily' | 'weekly' | 'monthly';
 
 export default function LivestockReportsPage() {
   const {
-    flocks: MOCK_FLOCKS, eggRecords: MOCK_EGG_RECORDS, feedLogs: MOCK_FEED_LOGS,
-    mortality: MOCK_MORTALITY, milkRecords: MOCK_MILK_RECORDS,
-    livestockSales: MOCK_LIVESTOCK_SALES, eggSales: MOCK_EGG_SALES,
+    flocks: flocks, eggRecords: eggRecords, feedLogs: feedLogs,
+    mortality: mortality, milkRecords: milkRecords,
+    livestockSales: livestockSales, eggSales: eggSales,
   } = useLivestock();
-  const EGG_PRODUCTION_TREND = [...MOCK_EGG_RECORDS].sort((a, b) => a.date.localeCompare(b.date)).slice(-7).map(record => ({
+  const EGG_PRODUCTION_TREND = [...eggRecords].sort((a, b) => a.date.localeCompare(b.date)).slice(-7).map(record => ({
     day: record.date, layRate: record.layRate ?? 0, eggs: record.totalEggsCollected, gradeA: record.gradeA,
   }));
   const [period, setPeriod] = useState<Period>('weekly');
 
   // Summary stats
-  const totalAnimals = MOCK_FLOCKS.filter(f => f.status === 'active').reduce((s, f) => s + f.currentCount, 0);
+  const totalAnimals = flocks.filter(f => f.status === 'active').reduce((s, f) => s + f.currentCount, 0);
   const totalEggs7d  = EGG_PRODUCTION_TREND.reduce((s, d) => s + d.eggs, 0);
   const avgLayRate   = (EGG_PRODUCTION_TREND.reduce((s, d) => s + d.layRate, 0) / EGG_PRODUCTION_TREND.length).toFixed(1);
-  const totalMilk    = MOCK_MILK_RECORDS.reduce((s, r) => s + r.totalLitres, 0);
-  const totalMilkRev = MOCK_MILK_RECORDS.reduce((s, r) => s + (r.revenue ?? 0), 0);
-  const totalEggRev  = MOCK_EGG_SALES.reduce((s, r) => s + (r.totalRevenue ?? 0), 0);
-  const totalLiveSalesRev = MOCK_LIVESTOCK_SALES.reduce((s, r) => s + (r.totalRevenue ?? 0), 0);
-  const totalFeedCost = MOCK_FEED_LOGS.reduce((s, l) => s + (l.totalCost ?? 0), 0);
-  const totalMortality = MOCK_MORTALITY.reduce((s, r) => s + r.count, 0);
+  const totalMilk    = milkRecords.reduce((s, r) => s + r.totalLitres, 0);
+  const totalMilkRev = milkRecords.reduce((s, r) => s + (r.revenue ?? 0), 0);
+  const totalEggRev  = eggSales.reduce((s, r) => s + (r.totalRevenue ?? 0), 0);
+  const totalLiveSalesRev = livestockSales.reduce((s, r) => s + (r.totalRevenue ?? 0), 0);
+  const totalFeedCost = feedLogs.reduce((s, l) => s + (l.totalCost ?? 0), 0);
+  const totalMortality = mortality.reduce((s, r) => s + r.count, 0);
   const mortalityRate = totalAnimals > 0 ? ((totalMortality / (totalAnimals + totalMortality)) * 100).toFixed(2) : '0';
 
   function exportReport() {
@@ -38,7 +38,7 @@ export default function LivestockReportsPage() {
       `Generated: ${new Date().toLocaleString()}`,
       ``,
       `=== POPULATION ===`,
-      ...MOCK_FLOCKS.filter(f => f.status === 'active').map(f =>
+      ...flocks.filter(f => f.status === 'active').map(f =>
         `${f.name}: ${f.currentCount} animals (initial: ${f.initialCount})`
       ),
       `Total Animals: ${totalAnimals}`,
@@ -51,21 +51,21 @@ export default function LivestockReportsPage() {
       ``,
       `=== MILK PRODUCTION ===`,
       `Total Milk: ${totalMilk}L`,
-      `Rejected: ${MOCK_MILK_RECORDS.reduce((s, r) => s + (r.rejected ?? 0), 0)}L`,
+      `Rejected: ${milkRecords.reduce((s, r) => s + (r.rejected ?? 0), 0)}L`,
       `Revenue: GHS ${totalMilkRev.toLocaleString()}`,
       ``,
       `=== LIVESTOCK SALES ===`,
-      ...MOCK_LIVESTOCK_SALES.map(s => `${s.date} — ${s.count} ${s.species} (${s.type}): GHS ${s.totalRevenue?.toLocaleString()}`),
+      ...livestockSales.map(s => `${s.date} — ${s.count} ${s.species} (${s.type}): GHS ${s.totalRevenue?.toLocaleString()}`),
       `Total Sales Revenue: GHS ${totalLiveSalesRev.toLocaleString()}`,
       ``,
       `=== FEED ===`,
       `Total Feed Cost (period): GHS ${totalFeedCost.toFixed(2)}`,
-      ...MOCK_FEED_LOGS.map(l => `${l.date} — ${l.flockHerdName.split('—')[0].trim()}: ${l.quantityKg}kg ${l.feedItemName} @ GHS ${l.totalCost?.toFixed(2)}`),
+      ...feedLogs.map(l => `${l.date} — ${l.flockHerdName.split('—')[0].trim()}: ${l.quantityKg}kg ${l.feedItemName} @ GHS ${l.totalCost?.toFixed(2)}`),
       ``,
       `=== MORTALITY ===`,
       `Total Deaths: ${totalMortality}`,
       `Mortality Rate: ${mortalityRate}%`,
-      ...MOCK_MORTALITY.map(m => `${m.date} — ${m.flockName.split('—')[0].trim()}: ${m.count} dead (${m.reason.replace(/_/g, ' ')})`),
+      ...mortality.map(m => `${m.date} — ${m.flockName.split('—')[0].trim()}: ${m.count} dead (${m.reason.replace(/_/g, ' ')})`),
       ``,
       `=== TOTAL REVENUE ===`,
       `Eggs:        GHS ${totalEggRev.toLocaleString()}`,
@@ -143,7 +143,7 @@ export default function LivestockReportsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {MOCK_FLOCKS.filter(f => f.status === 'active').map(f => {
+                {flocks.filter(f => f.status === 'active').map(f => {
                   const mort = f.initialCount > 0 ? (((f.initialCount - f.currentCount) / f.initialCount) * 100).toFixed(1) : '0';
                   return (
                     <tr key={f.id} className="hover:bg-muted/30">
@@ -158,7 +158,7 @@ export default function LivestockReportsPage() {
                 <tr className="bg-muted/20 font-semibold">
                   <td colSpan={2} className="px-3 py-2 text-sm">Total</td>
                   <td className="px-3 py-2">{totalAnimals.toLocaleString()}</td>
-                  <td className="px-3 py-2">{MOCK_FLOCKS.filter(f=>f.status==='active').reduce((s,f)=>s+f.initialCount,0).toLocaleString()}</td>
+                  <td className="px-3 py-2">{flocks.filter(f=>f.status==='active').reduce((s,f)=>s+f.initialCount,0).toLocaleString()}</td>
                   <td className="px-3 py-2 text-amber-600">{mortalityRate}%</td>
                 </tr>
               </tbody>
@@ -197,7 +197,7 @@ export default function LivestockReportsPage() {
                 <tr>{['Date','Shift','Cows','Total (L)','Avg/Cow','Rejected','Revenue'].map(h=><th key={h} className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{h}</th>)}</tr>
               </thead>
               <tbody className="divide-y">
-                {MOCK_MILK_RECORDS.map(r=>(
+                {milkRecords.map(r=>(
                   <tr key={r.id} className="hover:bg-muted/30">
                     <td className="px-3 py-2 font-mono text-xs">{r.date}</td>
                     <td className="px-3 py-2 text-xs capitalize">{r.shift}</td>
@@ -213,8 +213,8 @@ export default function LivestockReportsPage() {
                 <tr>
                   <td colSpan={3} className="px-3 py-2">Total</td>
                   <td className="px-3 py-2">{totalMilk}L</td>
-                  <td className="px-3 py-2">{(totalMilk / Math.max(1, MOCK_MILK_RECORDS.length * 38)).toFixed(1)}L avg</td>
-                  <td className="px-3 py-2 text-red-600">{MOCK_MILK_RECORDS.reduce((s,r)=>s+(r.rejected??0),0)}L</td>
+                  <td className="px-3 py-2">{(totalMilk / Math.max(1, milkRecords.length * 38)).toFixed(1)}L avg</td>
+                  <td className="px-3 py-2 text-red-600">{milkRecords.reduce((s,r)=>s+(r.rejected??0),0)}L</td>
                   <td className="px-3 py-2 text-green-700">GHS {totalMilkRev.toLocaleString()}</td>
                 </tr>
               </tfoot>
@@ -241,7 +241,7 @@ export default function LivestockReportsPage() {
             </div>
             <div className="border rounded-lg p-3 space-y-1.5">
               <p className="text-xs font-semibold text-muted-foreground uppercase">Feed Breakdown</p>
-              {MOCK_FEED_LOGS.map(l => (
+              {feedLogs.map(l => (
                 <div key={l.id} className="flex justify-between text-xs">
                   <span className="text-muted-foreground">{l.flockHerdName.split('—')[0].trim()} — {l.feedItemName.split('(')[0].trim()}</span>
                   <span className="font-medium">{l.quantityKg}kg · GHS {l.totalCost?.toFixed(2)}</span>
@@ -258,3 +258,4 @@ export default function LivestockReportsPage() {
     </div>
   );
 }
+

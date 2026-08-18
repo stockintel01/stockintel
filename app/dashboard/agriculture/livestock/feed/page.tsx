@@ -9,6 +9,7 @@ import type { FeedConsumptionLog, LivestockFeedPlan } from '@/lib/agric/livestoc
 import { useAppStore } from '@/lib/store';
 import { useLivestock } from '@/lib/agric/useLivestock';
 import { useAgric } from '@/lib/agric/useAgric';
+import { canConvertItemQuantity, convertItemQuantity, formatQuantity } from '@/lib/agric/units';
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -19,6 +20,7 @@ export default function LivestockFeedPage() {
   const feedInventory = inventory.filter(item => item.category === 'other' && item.isActive);
   const [tab, setTab]     = useState<'daily' | 'plans' | 'inventory'>('daily');
   const [showForm, setShowForm] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [form, setForm] = useState({
     flockHerdId: '',
     feedItemId: '',
@@ -36,11 +38,28 @@ export default function LivestockFeedPage() {
 
   // Feed plans with shortfall
   const shortfallPlans = plans.filter(p => !p.isStockSufficient && p.status === 'active');
+  const selectedFeed = feedInventory.find(item => item.id === form.feedItemId);
+  const requestedStockQuantity = selectedFeed && form.quantityKg > 0 && canConvertItemQuantity('kg', selectedFeed.uom, selectedFeed.packSize)
+    ? convertItemQuantity(form.quantityKg, 'kg', selectedFeed.uom, selectedFeed.packSize)
+    : null;
+  const hasEnoughFeed = requestedStockQuantity !== null && selectedFeed
+    ? selectedFeed.currentStock >= requestedStockQuantity
+    : true;
 
   async function submitLog() {
     const flock = flocks.find(f => f.id === form.flockHerdId);
     const feed  = feedInventory.find(i => i.id === form.feedItemId);
     if (!flock || !feed || !form.quantityKg) return;
+    setSubmitError(null);
+    if (!canConvertItemQuantity('kg', feed.uom, feed.packSize)) {
+      setSubmitError(`This item is stocked in ${feed.uom}. Add a pack size or use a weight unit before logging feed.`);
+      return;
+    }
+    const quantityInStockUom = convertItemQuantity(form.quantityKg, 'kg', feed.uom, feed.packSize);
+    if (feed.currentStock < quantityInStockUom) {
+      setSubmitError(`Only ${formatQuantity(feed.currentStock, feed.uom)} is available; this entry requires ${formatQuantity(quantityInStockUom, feed.uom)}.`);
+      return;
+    }
     const rec: FeedConsumptionLog = {
       id: `fc_${Date.now()}`,
       flockHerdId: flock.id, flockHerdName: flock.name,
@@ -51,14 +70,18 @@ export default function LivestockFeedPage() {
       quantityKg: form.quantityKg,
       feedsPerDay: form.feedsPerDay,
       animalCount: flock.currentCount,
-      costPerKg: feed.unitCost,
-      totalCost: form.quantityKg * (feed.unitCost ?? 0),
+      costPerKg: quantityInStockUom > 0 ? ((quantityInStockUom * (feed.unitCost ?? 0)) / form.quantityKg) : 0,
+      totalCost: quantityInStockUom * (feed.unitCost ?? 0),
       recordedBy: user?.name ?? 'Farm Manager',
       notes: form.notes || undefined,
     };
-    await addRecord('feedLog', rec);
-    setShowForm(false);
-    setForm({ flockHerdId: flocks[0]?.id ?? '', feedItemId: feedInventory[0]?.id ?? '', quantityKg: 0, feedsPerDay: 2, date: today, notes: '' });
+    try {
+      await addRecord('feedLog', rec);
+      setShowForm(false);
+      setForm({ flockHerdId: flocks[0]?.id ?? '', feedItemId: feedInventory[0]?.id ?? '', quantityKg: 0, feedsPerDay: 2, date: today, notes: '' });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Unable to save this feed log.');
+    }
   }
 
   function exportCSV() {
@@ -80,7 +103,7 @@ export default function LivestockFeedPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={exportCSV}><Download className="w-4 h-4 mr-1" /> Export</Button>
-          <Button className="bg-green-700 hover:bg-green-800" onClick={() => setShowForm(true)}><Plus className="w-4 h-4 mr-1" /> Log Feed</Button>
+          <Button className="bg-green-700 hover:bg-green-800" onClick={() => { setSubmitError(null); setShowForm(true); }}><Plus className="w-4 h-4 mr-1" /> Log Feed</Button>
         </div>
       </div>
 
@@ -306,15 +329,20 @@ export default function LivestockFeedPage() {
                     const fi = feedInventory.find(i => i.id === form.feedItemId);
                     if (!fl || !fi) return null;
                     const gPerAnimal = ((form.quantityKg * 1000) / fl.currentCount).toFixed(0);
-                    const cost = form.quantityKg * (fi.unitCost ?? 0);
-                    return <p>→ <strong>{gPerAnimal}g/animal</strong> · Cost: <strong>GHS {cost.toFixed(2)}</strong></p>;
+                    if (!canConvertItemQuantity('kg', fi.uom, fi.packSize)) {
+                      return <p className="text-red-700">This item cannot be converted from kg. Add its pack size in stock management.</p>;
+                    }
+                    const stockQty = convertItemQuantity(form.quantityKg, 'kg', fi.uom, fi.packSize);
+                    const cost = stockQty * (fi.unitCost ?? 0);
+                    return <p>→ <strong>{gPerAnimal}g/animal</strong> · Uses <strong>{formatQuantity(stockQty, fi.uom)}</strong> · Cost: <strong>GHS {cost.toFixed(2)}</strong>{stockQty > fi.currentStock ? <span className="text-red-700"> · Insufficient stock</span> : null}</p>;
                   })()}
                 </div>
               )}
+              {submitError && <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{submitError}</p>}
               <Input className="mt-1" placeholder="Notes (optional)" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
               <div className="flex gap-2 pt-2">
                 <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>Cancel</Button>
-                <Button className="flex-1 bg-green-700 hover:bg-green-800" onClick={submitLog} disabled={!form.quantityKg}>Save</Button>
+                <Button className="flex-1 bg-green-700 hover:bg-green-800" onClick={submitLog} disabled={!form.quantityKg || !form.flockHerdId || !form.feedItemId || !hasEnoughFeed}>Save</Button>
               </div>
             </CardContent>
           </Card>

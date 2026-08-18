@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { addDoc, collection, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, doc, increment, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAppStore } from '@/lib/store';
+import { canConvertItemQuantity, convertItemQuantity } from './units';
 import type {
   AnimalFlockHerd, EggProductionRecord, EggSaleRecord, FeedConsumptionLog,
   LivestockFeedPlan, LivestockSaleRecord, MilkProductionRecord, MortalityRecord,
@@ -88,7 +89,45 @@ export function useLivestock() {
     record: T,
   ) => {
     if (!organization?.id || !user?.id) throw new Error('An authenticated organization is required.');
+    if (kind === 'feedLog' && typeof navigator !== 'undefined' && !navigator.onLine) {
+      throw new Error('Feed logging requires a connection so available stock can be verified safely.');
+    }
     const { id: _id, ...data } = record;
+
+    if (kind === 'feedLog') {
+      const feedLog = data as unknown as Omit<FeedConsumptionLog, 'id'>;
+      await runTransaction(db, async tx => {
+        const inventoryRef = doc(db, `organizations/${organization.id}/agric_inventory/${feedLog.feedItemId}`);
+        const inventorySnap = await tx.get(inventoryRef);
+        if (!inventorySnap.exists()) throw new Error('The selected feed item is no longer in inventory.');
+
+        const inventory = inventorySnap.data();
+        const stockUom = inventory.uom as import('./types').UOM;
+        if (!canConvertItemQuantity('kg', stockUom, inventory.packSize)) {
+          throw new Error(`Cannot convert kilograms to this feed item's stock unit (${stockUom}). Add a pack size or use a weight unit.`);
+        }
+        const stockQuantity = convertItemQuantity(feedLog.quantityKg, 'kg', stockUom, inventory.packSize);
+        const currentStock = Number(inventory.currentStock ?? 0);
+        if (currentStock < stockQuantity) {
+          throw new Error(`Insufficient feed stock: ${currentStock} ${stockUom} available.`);
+        }
+
+        tx.update(inventoryRef, {
+          currentStock: increment(-stockQuantity),
+          lastUpdated: new Date().toISOString().slice(0, 10),
+          updatedAt: serverTimestamp(),
+        });
+        tx.set(doc(collection(db, `organizations/${organization.id}/agric_livestock`)), {
+          ...data,
+          kind,
+          createdById: user.id,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      });
+      return;
+    }
+
     await addDoc(collection(db, `organizations/${organization.id}/agric_livestock`), {
       ...data,
       kind,

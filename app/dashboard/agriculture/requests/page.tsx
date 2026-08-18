@@ -13,7 +13,7 @@ import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
 import { StockRequest, StockRequestItem, RequestStatus, FarmZone, AgricCategory, UserRole, UOM } from '@/lib/agric/types';
 import { getAgricultureProfile } from '@/lib/agric/config';
-import { compatibleUnits, convertQuantity, formatQuantity } from '@/lib/agric/units';
+import { compatibleUnitsForItem, convertItemQuantity, formatQuantity } from '@/lib/agric/units';
 
 const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon: ElementType }> = {
   pending: { label: 'Pending', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Clock },
@@ -72,7 +72,7 @@ export default function RequestsPage() {
     const invItem = inventory.find(i => i.id === newReqItem.itemId);
     if (!invItem) return;
     const requestedUom = newReqItem.requestedUom ?? invItem.uom;
-    const requestedQtyInStockUom = convertQuantity(newReqItem.requestedQty, requestedUom, invItem.uom);
+    const requestedQtyInStockUom = convertItemQuantity(newReqItem.requestedQty, requestedUom, invItem.uom, invItem.packSize);
     const item: StockRequestItem = {
       itemId: invItem.id, itemName: invItem.name, category: invItem.category as AgricCategory,
       requestedQty: newReqItem.requestedQty,
@@ -370,7 +370,7 @@ export default function RequestsPage() {
                     value={newReqItem.requestedUom ?? inventory.find(i => i.id === newReqItem.itemId)?.uom ?? 'lt'}
                     onChange={e => setNewReqItem(p => ({ ...p, requestedUom: e.target.value as UOM }))}
                   >
-                    {(inventory.find(i => i.id === newReqItem.itemId) ? compatibleUnits(inventory.find(i => i.id === newReqItem.itemId)!.uom) : ['lt', 'ml', 'kg', 'g', 'units'] as UOM[]).map(uom => <option key={uom} value={uom}>{uom}</option>)}
+                    {(inventory.find(i => i.id === newReqItem.itemId) ? compatibleUnitsForItem(inventory.find(i => i.id === newReqItem.itemId)!.uom, inventory.find(i => i.id === newReqItem.itemId)!.packSize) : ['lt', 'ml', 'kg', 'g', 'units'] as UOM[]).map(uom => <option key={uom} value={uom}>{uom}</option>)}
                   </select>
                   <Button variant="outline" onClick={addNewReqItem} disabled={!newReqItem.itemId || !newReqItem.requestedQty}>
                     <Plus className="w-4 h-4" />
@@ -380,7 +380,7 @@ export default function RequestsPage() {
                   const item = inventory.find(i => i.id === newReqItem.itemId);
                   if (!item) return null;
                   const requestedUom = newReqItem.requestedUom ?? item.uom;
-                  const stockQty = convertQuantity(Number(newReqItem.requestedQty), requestedUom, item.uom);
+                  const stockQty = convertItemQuantity(Number(newReqItem.requestedQty), requestedUom, item.uom, item.packSize);
                   const enough = item.currentStock >= stockQty;
                   return (
                     <div className={`mt-2 rounded-lg border p-2 text-xs ${enough ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>

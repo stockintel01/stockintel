@@ -26,11 +26,11 @@ import type {
   SprayPlan, PackingRecord, ShippingRecord, StockAdjustment,
   AgricAlert, AgricCategory, FarmZone,
 } from './types';
-import { convertQuantity } from './units';
+import { convertItemQuantity } from './units';
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 // Collection helpers
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 const col = (orgId: string, name: string) =>
   collection(db, `organizations/${orgId}/${name}`);
@@ -47,9 +47,9 @@ function clean<T extends object>(obj: T): Partial<T> {
   ) as Partial<T>;
 }
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 // INVENTORY
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 export function subscribeInventory(
   orgId: string,
@@ -158,9 +158,9 @@ export async function seedAgricInventory(
   }
 }
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 // USAGE LOGS
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 export function subscribeUsageLogs(
   orgId: string,
@@ -184,11 +184,11 @@ export async function addUsageLog(
   // Also decrement inventory stock atomically
   await runTransaction(db, async tx => {
     const invRef = ref(orgId, 'agric_inventory', log.itemId);
-      const invSnap = await tx.get(invRef);
-      if (invSnap.exists()) {
-        const current = (invSnap.data().currentStock as number) ?? 0;
+    const invSnap = await tx.get(invRef);
+    if (invSnap.exists()) {
+      const current = (invSnap.data().currentStock as number) ?? 0;
       const stockUom = invSnap.data().uom;
-      const quantityInStockUom = convertQuantity(log.quantity, log.uom, stockUom);
+      const quantityInStockUom = convertItemQuantity(log.quantity, log.uom, stockUom, invSnap.data().packSize);
       if (current - quantityInStockUom < 0) throw new Error(`Insufficient stock: ${current} ${stockUom} available`);
       tx.update(invRef, {
         currentStock: increment(-quantityInStockUom),
@@ -204,9 +204,9 @@ export async function addUsageLog(
   });
 }
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 // STOCK REQUESTS
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 export function subscribeRequests(
   orgId: string,
@@ -290,9 +290,9 @@ export async function dispatchRequest(
   });
 }
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 // EQUIPMENT CHECKOUTS
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 export function subscribeEquipment(
   orgId: string,
@@ -341,9 +341,9 @@ export async function returnEquipment(
   });
 }
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 // SPRAY PLANS
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 export function subscribePlans(
   orgId: string,
@@ -393,9 +393,9 @@ export async function logApplicationComplete(
   });
 }
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 // PACKING STATION
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 export function subscribePackingToday(
   orgId: string,
@@ -420,9 +420,9 @@ export async function addPackingRecord(
   return r.id;
 }
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 // SHIPPING
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 export function subscribeShipping(
   orgId: string,
@@ -446,9 +446,9 @@ export async function addShippingRecord(
   return r.id;
 }
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 // ALERTS
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 export function subscribeAlerts(
   orgId: string,
@@ -477,9 +477,9 @@ export async function markAlertRead(orgId: string, alertId: string): Promise<voi
   });
 }
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 // LOW-STOCK CHECKER (call on app load and after each usage log)
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 export async function checkAndFireLowStockAlerts(orgId: string): Promise<void> {
   const items = await getDocs(query(
@@ -517,9 +517,9 @@ export async function checkAndFireLowStockAlerts(orgId: string): Promise<void> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 // REPORTS — fetch snapshots for report generation
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 export async function fetchReportData(orgId: string, startDate: string, endDate: string) {
   const [invSnap, usageSnap, packingSnap, shippingSnap, equipSnap] = await Promise.all([
@@ -537,3 +537,4 @@ export async function fetchReportData(orgId: string, startDate: string, endDate:
     equipmentLog: equipSnap.docs.map(d => ({ ...d.data(), id: d.id } as EquipmentCheckout)),
   };
 }
+

@@ -456,8 +456,9 @@ export default function StockManagementPage() {
                   <Input type="number" className="mt-1" placeholder="5" value={newItem.minimumStock || ''} onChange={e => setNewItem(p => ({ ...p, minimumStock: parseFloat(e.target.value) || 5 }))} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Pack Size</label>
-                  <Input className="mt-1" placeholder="e.g. 1kg, 250ml" value={newItem.packSize || ''} onChange={e => setNewItem(p => ({ ...p, packSize: e.target.value }))} />
+                  <label className="text-sm font-medium">Pack Size / Conversion</label>
+                  <Input className="mt-1" placeholder="e.g. 25kg per bag, 20L per box" value={newItem.packSize || ''} onChange={e => setNewItem(p => ({ ...p, packSize: e.target.value }))} />
+                  <p className="mt-1 text-[11px] text-muted-foreground">Use this when stock is stored as bags/boxes but teams request kg, g, L, or ml.</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium">Storage Location</label>

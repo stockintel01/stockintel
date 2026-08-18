@@ -12,7 +12,7 @@ import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
 import { SprayPlan, SprayPlanItem, FarmZone, UOM } from '@/lib/agric/types';
 import { getAgricultureProfile } from '@/lib/agric/config';
-import { calculateRestockByDate, compatibleUnits, convertQuantity, formatQuantity } from '@/lib/agric/units';
+import { calculateRestockByDate, compatibleUnitsForItem, convertItemQuantity, formatQuantity } from '@/lib/agric/units';
 
 const CYCLE_LABELS = { weekly: 'Weekly', biweekly: 'Bi-weekly', monthly: 'Monthly', custom: 'Custom' };
 const STATUS_COLORS = {
@@ -52,7 +52,7 @@ export default function PlannerPage() {
     if (!invItem) return;
     const apps = getCycleApplications(newPlan.cycle || 'weekly', newPlan.startDate || '', newPlan.endDate || '');
     const requestedUom = newPlanItem.uom ?? invItem.uom;
-    const qtyPerAppStockUom = convertQuantity(newPlanItem.qtyPerApp, requestedUom, invItem.uom);
+    const qtyPerAppStockUom = convertItemQuantity(newPlanItem.qtyPerApp, requestedUom, invItem.uom, invItem.packSize);
     const totalQty = newPlanItem.qtyPerApp * apps;
     const totalQtyStockUom = qtyPerAppStockUom * apps;
     const sufficient = invItem.currentStock >= totalQtyStockUom;
@@ -374,7 +374,7 @@ export default function PlannerPage() {
                     value={newPlanItem.uom ?? inventory.find(i => i.id === newPlanItem.itemId)?.uom ?? 'lt'}
                     onChange={e => setNewPlanItem(p => ({ ...p, uom: e.target.value as UOM }))}
                   >
-                    {(inventory.find(i => i.id === newPlanItem.itemId) ? compatibleUnits(inventory.find(i => i.id === newPlanItem.itemId)!.uom) : ['lt', 'ml', 'kg', 'g', 'units'] as UOM[]).map(uom => <option key={uom} value={uom}>{uom}</option>)}
+                    {(inventory.find(i => i.id === newPlanItem.itemId) ? compatibleUnitsForItem(inventory.find(i => i.id === newPlanItem.itemId)!.uom, inventory.find(i => i.id === newPlanItem.itemId)!.packSize) : ['lt', 'ml', 'kg', 'g', 'units'] as UOM[]).map(uom => <option key={uom} value={uom}>{uom}</option>)}
                   </select>
                   <Button variant="outline" onClick={addPlanItem} disabled={!newPlanItem.itemId || !newPlanItem.qtyPerApp}>
                     <Plus className="w-4 h-4" />
@@ -384,7 +384,7 @@ export default function PlannerPage() {
                   const item = inventory.find(i => i.id === newPlanItem.itemId);
                   if (!item) return null;
                   const requestedUom = newPlanItem.uom ?? item.uom;
-                  const stockQty = convertQuantity(newPlanItem.qtyPerApp, requestedUom, item.uom);
+                  const stockQty = convertItemQuantity(newPlanItem.qtyPerApp, requestedUom, item.uom, item.packSize);
                   const apps = newPlan.startDate && newPlan.endDate ? getCycleApplications(newPlan.cycle || 'weekly', newPlan.startDate, newPlan.endDate) : 1;
                   const total = stockQty * apps;
                   const shortfall = Math.max(0, total - item.currentStock);

@@ -10,9 +10,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
-import { UsageLog, FarmZone, AgricCategory } from '@/lib/agric/types';
+import { UsageLog, FarmZone, AgricCategory, UOM } from '@/lib/agric/types';
 import { getAgricultureProfile } from '@/lib/agric/config';
 import { getFarmWeek, getRecentFarmWeeks } from '@/lib/agric/week';
+import { compatibleUnitsForItem, convertItemQuantity, formatQuantity } from '@/lib/agric/units';
 
 const CATEGORY_COLORS: Record<string, string> = {
   fungicide: 'bg-blue-100 text-blue-800',
@@ -87,7 +88,7 @@ export default function UsageTrackerPage() {
       category: invItem.category as AgricCategory,
       date: newLog.date || new Date().toISOString().slice(0, 10),
       quantity: newLog.quantity!,
-      uom: invItem.uom as any,
+      uom: (newLog.uom as UOM) || invItem.uom,
       farmZone: newLog.farmZone as FarmZone,
       appliedBy: newLog.appliedBy || user?.name || 'Unknown',
       batchNumber: newLog.batchNumber,
@@ -326,7 +327,7 @@ export default function UsageTrackerPage() {
                 <label className="text-sm font-medium">Item *</label>
                 <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newLog.itemId || ''} onChange={e => {
                   const item = inventory.find(i => i.id === e.target.value);
-                  setNewLog(p => ({ ...p, itemId: e.target.value, category: item?.category as AgricCategory }));
+                  setNewLog(p => ({ ...p, itemId: e.target.value, category: item?.category as AgricCategory, uom: item?.uom }));
                 }}>
                   <option value="">Select item...</option>
                   {inventory.filter(i => i.isActive && i.category !== 'equipment').map(i => (
@@ -340,11 +341,29 @@ export default function UsageTrackerPage() {
                   <Input type="number" step="0.1" className="mt-1" placeholder="0" value={newLog.quantity || ''} onChange={e => setNewLog(p => ({ ...p, quantity: parseFloat(e.target.value) || 0 }))} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Farm Zone *</label>
-                  <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newLog.farmZone} onChange={e => setNewLog(p => ({ ...p, farmZone: e.target.value as FarmZone }))}>
-                    {farmZones.map(z => <option key={z} value={z}>{z}</option>)}
+                  <label className="text-sm font-medium">Unit</label>
+                  <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newLog.uom || inventory.find(i => i.id === newLog.itemId)?.uom || 'lt'} onChange={e => setNewLog(p => ({ ...p, uom: e.target.value as UOM }))}>
+                    {(inventory.find(i => i.id === newLog.itemId) ? compatibleUnitsForItem(inventory.find(i => i.id === newLog.itemId)!.uom, inventory.find(i => i.id === newLog.itemId)!.packSize) : ['lt', 'ml', 'kg', 'g', 'units'] as UOM[]).map(uom => <option key={uom} value={uom}>{uom}</option>)}
                   </select>
                 </div>
+              </div>
+              {newLog.itemId && Number(newLog.quantity) > 0 && (() => {
+                const item = inventory.find(i => i.id === newLog.itemId);
+                if (!item) return null;
+                const requestedUom = (newLog.uom as UOM) || item.uom;
+                const stockQty = convertItemQuantity(Number(newLog.quantity), requestedUom, item.uom, item.packSize);
+                const enough = item.currentStock >= stockQty;
+                return (
+                  <div className={`rounded-lg border p-2 text-xs ${enough ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                    This will deduct {formatQuantity(stockQty, item.uom)} from stock. {enough ? `${formatQuantity(item.currentStock - stockQty, item.uom)} will remain.` : `Short by ${formatQuantity(stockQty - item.currentStock, item.uom)}.`}
+                  </div>
+                );
+              })()}
+              <div>
+                <label className="text-sm font-medium">Farm Zone *</label>
+                <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newLog.farmZone} onChange={e => setNewLog(p => ({ ...p, farmZone: e.target.value as FarmZone }))}>
+                  {farmZones.map(z => <option key={z} value={z}>{z}</option>)}
+                </select>
               </div>
               <div>
                 <label className="text-sm font-medium">Applied By *</label>
