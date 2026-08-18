@@ -299,14 +299,9 @@ export function subscribeEquipment(
   onData: (checkouts: EquipmentCheckout[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
-  // Today only for real-time tracking; historical via reports
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const q = query(
-    col(orgId, 'agric_equipment'),
-    where('checkoutTime', '>=', startOfDay.toISOString()),
-    orderBy('checkoutTime', 'desc'),
-  );
+  // Include open checkouts and recent return history. Restricting this to today
+  // caused equipment already issued before midnight to disappear from tracking.
+  const q = query(col(orgId, 'agric_equipment'), orderBy('checkoutTime', 'desc'), limit(500));
   return onSnapshot(q,
     snap => onData(snap.docs.map(d => ({ ...d.data(), id: d.id } as EquipmentCheckout))),
     err => { console.error('[agric] equipment:', err); onErr?.(err); },
@@ -385,11 +380,27 @@ export async function createSprayPlan(
 }
 
 export async function logApplicationComplete(
-  orgId: string, planId: string, currentCompleted: number,
+  orgId: string, planId: string, _currentCompleted: number,
 ): Promise<void> {
-  await updateDoc(ref(orgId, 'agric_plans', planId), {
-    completedApplications: increment(1),
-    updatedAt: serverTimestamp(),
+  await runTransaction(db, async tx => {
+    const planRef = ref(orgId, 'agric_plans', planId);
+    const planSnap = await tx.get(planRef);
+    if (!planSnap.exists()) throw new Error('This spray plan no longer exists.');
+
+    const plan = planSnap.data();
+    const completed = Number(plan.completedApplications ?? 0);
+    const total = Number(plan.totalApplications ?? 0);
+    if (plan.status !== 'active') throw new Error('Only active spray plans can be updated.');
+    if (!Number.isFinite(total) || total < 1 || completed >= total) {
+      throw new Error('All planned applications have already been recorded.');
+    }
+
+    const nextCompleted = completed + 1;
+    tx.update(planRef, {
+      completedApplications: nextCompleted,
+      status: nextCompleted >= total ? 'completed' : 'active',
+      updatedAt: serverTimestamp(),
+    });
   });
 }
 
@@ -402,8 +413,9 @@ export function subscribePackingToday(
   onData: (records: PackingRecord[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
-  const today = new Date().toISOString().slice(0, 10);
-  const q = query(col(orgId, 'agric_packing'), where('date', '==', today), orderBy('stationName'));
+  // Packhouse stock is cumulative. Loading only today's records made stock from
+  // previous days vanish while shipments still reduced the displayed balance.
+  const q = query(col(orgId, 'agric_packing'), orderBy('date', 'desc'), limit(1000));
   return onSnapshot(q,
     snap => onData(snap.docs.map(d => ({ ...d.data(), id: d.id } as PackingRecord))),
     err => { console.error('[agric] packing:', err); onErr?.(err); },

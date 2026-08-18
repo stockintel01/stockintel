@@ -8,10 +8,10 @@ import { useAuth } from '@/components/auth/AuthContext';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import {
-    BarChart3, Box, Home, Leaf, LogOut,
+    BarChart3, Box, Cloud, Home, Leaf, LogOut,
     Menu, Package, Settings, ShoppingCart,
     X, UserCog, Shield, Gift, Wallet,
-    ChevronDown, FlaskConical, CalendarDays, Tractor, PackageCheck
+    FlaskConical, CalendarDays, Tractor, PackageCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { canUseFeature, isSubscriptionActive, type PlanFeature } from '@/lib/plans';
@@ -39,10 +39,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const { inventory } = useAgric();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [attentionCount, setAttentionCount] = useState(0);
-    const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-        'Clinical': true, 'Operations': true, 'Business': false,
-        'Field': true, 'Store': true,
-    });
 
     // Live stock attention badge count
     useEffect(() => {
@@ -133,7 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     ],
                 },
                 {
-                    label: 'Inventory',
+                    label: 'Stock & Inputs',
                     items: [
                         { name: 'Stock Management', href: '/dashboard/agriculture/stock-management', icon: Box },
                         { name: 'Stock Requests', href: '/dashboard/agriculture/requests', icon: ShoppingCart },
@@ -141,24 +137,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     ],
                 },
                 {
-                    label: 'Planning & Operations',
+                    label: 'Field & Packhouse',
                     items: [
+                        { name: 'Crop Records', href: '/dashboard/agriculture/crops', icon: Leaf },
                         { name: 'Spray Planner', href: '/dashboard/agriculture/planner', icon: CalendarDays },
                         { name: 'Equipment', href: '/dashboard/agriculture/equipment', icon: Tractor },
                         { name: 'Packing Station', href: '/dashboard/agriculture/packing-station', icon: PackageCheck },
                     ],
                 },
                 {
-                    label: 'Reports',
+                    label: 'Insights',
                     items: [
                         { name: 'Reports', href: '/dashboard/agriculture/reports', icon: BarChart3 },
+                        { name: 'Live Weather', href: '/dashboard/agriculture/weather', icon: Cloud },
                     ],
                 },
                 {
-                    label: 'Business',
+                    label: 'Workspace',
                     items: [
                         { name: 'Expenses', href: '/dashboard/expenses', icon: Wallet },
                         { name: 'Team', href: '/dashboard/team', icon: UserCog },
+                        { name: 'Billing', href: '/dashboard/billing', icon: Wallet },
                         { name: 'Rewards', href: '/dashboard/rewards', icon: Gift },
                         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
                         ...(superAdmin ? [{ name: 'Admin Dashboard', href: '/dashboard/admin', icon: Shield }] : []),
@@ -166,28 +165,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 },
             ],
     };
+    const configuredGroups = baseConfig.groups.map(group => ({
+        ...group,
+        items: group.items.filter(item => {
+            if (!agricultureProfile.modules.crops && ['/dashboard/agriculture/crops', '/dashboard/agriculture/requests', '/dashboard/agriculture/usage-tracker', '/dashboard/agriculture/planner', '/dashboard/agriculture/packing-station'].includes(item.href)) return false;
+            if (!agricultureProfile.modules.weather && item.href === '/dashboard/agriculture/weather') return false;
+            if (!agricultureProfile.modules.reports && item.href === '/dashboard/agriculture/reports') return false;
+            return true;
+        }),
+    })).filter(group => group.items.length > 0);
+    const workspaceGroup = configuredGroups.find(group => group.label === 'Workspace');
+    const operationalGroups = configuredGroups.filter(group => group.label !== 'Workspace');
+    const animalGroup: NavGroup | null = agricultureProfile.modules.livestock ? {
+        label: agricultureProfile.modules.poultry ? 'Animals & Poultry' : 'Animal Production',
+        items: [
+            { name: 'Livestock Overview', href: '/dashboard/agriculture/livestock', icon: Leaf },
+            ...(agricultureProfile.modules.eggProduction ? [{ name: 'Egg Production', href: '/dashboard/agriculture/livestock/egg-production', icon: BarChart3 }] : []),
+            { name: 'Feed Management', href: '/dashboard/agriculture/livestock/feed', icon: Package },
+            { name: 'Mortality', href: '/dashboard/agriculture/livestock/mortality', icon: BarChart3 },
+            { name: 'Health & Vaccines', href: '/dashboard/agriculture/livestock/health', icon: FlaskConical },
+            { name: 'Growth & Weight', href: '/dashboard/agriculture/livestock/growth', icon: BarChart3 },
+            ...(agricultureProfile.modules.dairy ? [{ name: 'Milk Production', href: '/dashboard/agriculture/livestock/milk', icon: PackageCheck }] : []),
+            ...(agricultureProfile.modules.reports ? [{ name: 'Animal Reports', href: '/dashboard/agriculture/livestock/reports', icon: BarChart3 }] : []),
+        ],
+    } : null;
     const config = {
         ...baseConfig,
         name: organization?.name || 'Agriculture Workspace',
         groups: [
-          ...baseConfig.groups.map(group => ({
-            ...group,
-            items: group.items.filter(item => {
-                if (!agricultureProfile.modules.crops && ['/dashboard/agriculture/requests', '/dashboard/agriculture/usage-tracker', '/dashboard/agriculture/planner', '/dashboard/agriculture/packing-station'].includes(item.href)) return false;
-                return true;
-            }),
-          })).filter(group => group.items.length > 0),
-          ...(agricultureProfile.modules.livestock ? [{
-            label: agricultureProfile.modules.poultry ? 'Animals & Poultry' : 'Animal Production',
-            items: [
-              { name: 'Livestock Overview', href: '/dashboard/agriculture/livestock', icon: Leaf },
-              ...(agricultureProfile.modules.eggProduction ? [{ name: 'Egg Production', href: '/dashboard/agriculture/livestock/egg-production', icon: BarChart3 }] : []),
-              { name: 'Feed Management', href: '/dashboard/agriculture/livestock/feed', icon: Package },
-              { name: 'Health & Vaccines', href: '/dashboard/agriculture/livestock/health', icon: FlaskConical },
-              { name: 'Growth & Weight', href: '/dashboard/agriculture/livestock/growth', icon: BarChart3 },
-              ...(agricultureProfile.modules.dairy ? [{ name: 'Milk Production', href: '/dashboard/agriculture/livestock/milk', icon: PackageCheck }] : []),
-            ],
-          }] : []),
+            ...operationalGroups,
+            ...(animalGroup ? [animalGroup] : []),
+            ...(workspaceGroup ? [workspaceGroup] : []),
         ],
     };
     const visibleGroups = config.groups
@@ -197,10 +205,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }))
         .filter(group => group.items.length > 0);
     const ActiveIcon = config.icon;
-
-    const toggleGroup = (label: string) => {
-        setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
-    };
 
     const switchTenant = async (organizationId: string) => {
         if (!user || organizationId === user.organizationId) return;
@@ -222,9 +226,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const mobileNavItems = ([
         { name: 'Home', href: '/dashboard/agriculture', icon: Home },
         { name: 'Stock', href: '/dashboard/agriculture/stock-management', icon: Box },
-        { name: agricultureProfile.modules.livestock ? 'Animals' : 'Requests', href: agricultureProfile.modules.livestock ? '/dashboard/agriculture/livestock' : '/dashboard/agriculture/requests', icon: agricultureProfile.modules.livestock ? Leaf : ShoppingCart },
-        { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+        { name: 'Requests', href: '/dashboard/agriculture/requests', icon: ShoppingCart },
+        { name: 'Usage', href: '/dashboard/agriculture/usage-tracker', icon: FlaskConical },
+        { name: 'Packhouse', href: '/dashboard/agriculture/packing-station', icon: PackageCheck },
+        { name: 'Equipment', href: '/dashboard/agriculture/equipment', icon: Tractor },
+        { name: 'Animals', href: '/dashboard/agriculture/livestock', icon: Leaf },
+        { name: 'Reports', href: '/dashboard/agriculture/reports', icon: BarChart3 },
+        { name: 'Expenses', href: '/dashboard/expenses', icon: Wallet },
     ]).filter(item => userCanAccessHref(user, item.href)).slice(0, 4);
+    const activeNavItem = visibleGroups
+        .flatMap(group => group.items)
+        .filter(item => pathname === item.href || (item.href !== '/dashboard/agriculture' && pathname.startsWith(`${item.href}/`)))
+        .sort((a, b) => b.href.length - a.href.length)[0];
 
     return (
         <div className="min-h-screen bg-muted/20 flex">
@@ -242,52 +255,41 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </button>
                 </div>
 
-                {/* Nav groups — scrollable */}
+                {/* All permitted destinations stay visible and one click away. */}
                 <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
-                    {visibleGroups.map(group => {
-                        const isOpen = openGroups[group.label] !== false; // default open
-                        return (
-                            <div key={group.label}>
-                                {/* Group header */}
-                                <button
-                                    onClick={() => toggleGroup(group.label)}
-                                    className="w-full flex items-center justify-between px-2 py-1.5 mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-                                >
-                                    {group.label}
-                                    <ChevronDown className={cn('w-3 h-3 transition-transform duration-200', !isOpen && '-rotate-90')} />
-                                </button>
-
-                                {/* Items */}
-                                {isOpen && (
-                                    <div className="space-y-0.5 mb-3">
-                                        {group.items.map(item => {
-                                            const isActive = pathname === item.href;
-                                            return (
-                                                <Link
-                                                    key={item.href}
-                                                    href={item.href}
-                                                    className={cn(
-                                                        'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                                                        isActive
-                                                            ? 'bg-primary text-primary-foreground'
-                                                            : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                                                    )}
-                                                >
-                                                    <item.icon className="w-4 h-4 shrink-0" />
-                                                    <span className="flex-1 truncate">{item.name}</span>
-                                                    {item.name === 'Stock Management' && attentionCount > 0 && (
-                                                        <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
-                                                            {attentionCount}
-                                                        </span>
-                                                    )}
-                                                </Link>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                    {visibleGroups.map(group => (
+                        <div key={group.label}>
+                            <div className="mb-1 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                                {group.label}
                             </div>
-                        );
-                    })}
+                            <div className="mb-3 space-y-0.5">
+                                {group.items.map(item => {
+                                    const isActive = pathname === item.href || (item.href !== '/dashboard/agriculture' && pathname.startsWith(`${item.href}/`));
+                                    return (
+                                        <Link
+                                            key={item.href}
+                                            href={item.href}
+                                            aria-current={isActive ? 'page' : undefined}
+                                            className={cn(
+                                                'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                                isActive
+                                                    ? 'bg-primary text-primary-foreground'
+                                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                                            )}
+                                        >
+                                            <item.icon className="h-4 w-4 shrink-0" />
+                                            <span className="flex-1 truncate">{item.name}</span>
+                                            {item.name === 'Stock Management' && attentionCount > 0 && (
+                                                <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                                    {attentionCount}
+                                                </span>
+                                            )}
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
                 </nav>
 
                 {/* User card */}
@@ -328,6 +330,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <button className="lg:hidden" onClick={() => setIsSidebarOpen(true)}>
                         <Menu className="w-5 h-5" />
                     </button>
+                    <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">{activeNavItem?.name || 'Agriculture Workspace'}</p>
+                        <p className="text-xs capitalize text-muted-foreground">{user.role.replace('_', ' ')}</p>
+                    </div>
                     <div className="ml-auto flex items-center gap-2">
                         {(user.memberships?.length ?? 0) > 1 && (
                             <select
@@ -343,7 +349,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                 ))}
                             </select>
                         )}
-                        {attentionCount > 0 && (
+                        {attentionCount > 0 && userCanAccessHref(user, '/dashboard/agriculture/stock-management') && (
                             <Link href="/dashboard/agriculture/stock-management">
                                 <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-1.5 rounded-full font-medium">
                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
@@ -351,11 +357,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                 </div>
                             </Link>
                         )}
-                        <Link href="/dashboard/settings">
+                        {userCanAccessHref(user, '/dashboard/settings') && <Link href="/dashboard/settings" aria-label="Workspace settings">
                             <Button variant="ghost" size="icon">
                                 <Settings className="w-5 h-5" />
                             </Button>
-                        </Link>
+                        </Link>}
                     </div>
                 </header>
 
@@ -367,7 +373,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {mobileNavItems.length > 0 && (
             <nav className="fixed bottom-0 left-0 right-0 z-50 grid border-t bg-background/95 px-1 py-1.5 shadow-lg backdrop-blur lg:hidden" style={{ gridTemplateColumns: `repeat(${mobileNavItems.length}, minmax(0, 1fr))` }}>
                 {mobileNavItems.map(item => (
-                    <Link key={item.name} href={item.href} className={cn('flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-medium', pathname === item.href ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}>
+                    <Link key={item.name} href={item.href} className={cn('flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-medium', pathname === item.href || (item.href !== '/dashboard/agriculture' && pathname.startsWith(`${item.href}/`)) ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}>
                         <item.icon className="h-5 w-5" /><span>{item.name}</span>
                     </Link>
                 ))}

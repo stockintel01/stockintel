@@ -5,11 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Download, BarChart3 } from 'lucide-react';
 import { useLivestock } from '@/lib/agric/useLivestock';
+import { useAppStore } from '@/lib/store';
 
 const today = new Date().toISOString().slice(0, 10);
 type Period = 'daily' | 'weekly' | 'monthly';
 
 export default function LivestockReportsPage() {
+  const { organization } = useAppStore();
   const {
     flocks: flocks, eggRecords: eggRecords, feedLogs: feedLogs,
     mortality: mortality, milkRecords: milkRecords,
@@ -106,7 +108,7 @@ export default function LivestockReportsPage() {
       {/* Report Banner */}
       <div className="bg-green-700 text-white rounded-xl p-4 flex items-center justify-between">
         <div>
-          <p className="text-green-200 text-xs uppercase tracking-widest">Moonlight Fresco Ltd — Livestock Division</p>
+          <p className="text-green-200 text-xs uppercase tracking-widest">{organization?.name || 'Agriculture Workspace'} — Livestock Division</p>
           <h2 className="text-xl font-bold capitalize">{period} Report · {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</h2>
         </div>
         <div className="text-right text-sm text-green-200">Generated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>

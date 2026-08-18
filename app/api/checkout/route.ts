@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { getPriceId, getStripeClient } from '@/lib/stripe';
+import { getPriceId, getProductId, getStripeClient } from '@/lib/stripe';
 import { adminDb } from '@/lib/firebase-admin';
 import { ApiError, requireRole, requireUser } from '@/lib/api-auth';
 
@@ -44,9 +44,20 @@ export async function POST(req: NextRequest) {
         if (plan !== 'pro' && plan !== 'enterprise') {
             return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
         }
+        const configSnapshot = await adminDb.collection('system').doc('config').get();
+        const pricing = configSnapshot.data()?.subscriptionPricing;
+        const baseUSD = Number(pricing?.baseUSD ?? 9);
+        const multiplier = Number(plan === 'pro' ? pricing?.proPlanMultiplier ?? 1 : pricing?.enterprisePlanMultiplier ?? 3);
+        const unitAmount = Math.round(baseUSD * multiplier * 100);
+        if (!Number.isSafeInteger(unitAmount) || unitAmount < 50) throw new ApiError('The configured subscription amount is invalid', 503);
+
+        const productId = getProductId(plan);
         const priceId = getPriceId(plan);
-        if (!priceId.startsWith('price_') || priceId === 'price_pro_monthly' || priceId === 'price_enterprise_monthly') {
-            throw new ApiError(`Stripe price for ${plan} is not configured`, 503);
+        const lineItem: Stripe.Checkout.SessionCreateParams.LineItem = productId
+            ? { price_data: { currency: 'usd', unit_amount: unitAmount, recurring: { interval: 'month' }, product: productId }, quantity: 1 }
+            : { price: priceId, quantity: 1 };
+        if (!productId && (!priceId.startsWith('price_') || priceId === 'price_pro_monthly' || priceId === 'price_enterprise_monthly')) {
+            throw new ApiError(`Configure a Stripe product or price for ${plan} before accepting payments`, 503);
         }
 
         // Check if org already has a Stripe customer ID (reuse it)
@@ -58,7 +69,7 @@ export async function POST(req: NextRequest) {
         const sessionConfig: Stripe.Checkout.SessionCreateParams = {
             mode:                   'subscription',
             payment_method_types:   ['card'],
-            line_items:             [{ price: priceId, quantity: 1 }],
+            line_items:             [lineItem],
             success_url:            `${APP_URL}/dashboard/billing?success=true&session_id={CHECKOUT_SESSION_ID}`,
             cancel_url:             `${APP_URL}/dashboard/billing?canceled=true`,
             metadata:               { organizationId, userId: user.uid, plan },

@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { useAgric } from '@/lib/agric/useAgric';
 import { AgricInventoryItem, AgricCategory, UOM } from '@/lib/agric/types';
 import { useAppStore } from '@/lib/store';
-import { parseInventoryFile } from '@/lib/inventory-import';
+import { createInventoryImportTemplateCsv, parseInventoryFile } from '@/lib/inventory-import';
 
 const CATEGORY_LABELS: Record<AgricCategory, string> = {
   fungicide: 'Fungicide', insecticide: 'Insecticide', herbicide: 'Herbicide',
@@ -149,6 +149,15 @@ export default function StockManagementPage() {
     }
   }
 
+  function downloadImportTemplate() {
+    const url = URL.createObjectURL(new Blob([createInventoryImportTemplateCsv()], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'stockintel-agriculture-inventory-import-template.csv';
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   function exportCSV() {
     const rows = [
       ['Name', 'Chemical Component', 'Category', 'UOM', 'Current Stock', 'Min Stock', 'Status', 'Location', 'Last Updated'],
@@ -237,9 +246,10 @@ export default function StockManagementPage() {
           }}
         >
           <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="font-medium">Bulk import agriculture stock</p>
-              <p className="text-sm text-muted-foreground">Drop a CSV/XLSX file here or browse. Required columns: name and current stock. Optional: category, unit, minimum stock, unit cost, location.</p>
+              <p className="text-sm text-muted-foreground">Start with the template, keep its column headings, and replace the two example rows with your stock. Then drop the completed CSV/XLSX file here or choose it below. Name and current stock are required.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Accepted categories: fungicide, insecticide, herbicide, fertilizer, equipment, seed, other. Maximum 5,000 rows or 10 MB.</p>
               {importMessage && <p className="mt-2 text-sm text-green-700">{importMessage}</p>}
               {importError && <pre className="mt-2 whitespace-pre-wrap rounded-md bg-red-50 p-2 text-xs text-red-700">{importError}</pre>}
             </div>
@@ -250,9 +260,14 @@ export default function StockManagementPage() {
               className="hidden"
               onChange={event => void handleImportFile(event.target.files?.[0])}
             />
-            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isImporting}>
-              <Upload className="mr-2 h-4 w-4" /> {isImporting ? 'Importing...' : 'Browse File'}
-            </Button>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              <Button variant="outline" onClick={downloadImportTemplate} disabled={isImporting}>
+                <Download className="mr-2 h-4 w-4" /> Download Template
+              </Button>
+              <Button onClick={() => fileInputRef.current?.click()} disabled={isImporting}>
+                <Upload className="mr-2 h-4 w-4" /> {isImporting ? 'Importing...' : 'Choose File'}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

@@ -9,6 +9,35 @@ export interface InventoryImportResult {
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MAX_ROWS = 5000;
 
+export const INVENTORY_IMPORT_TEMPLATE_HEADERS = [
+    'Name',
+    'Chemical Component',
+    'Category',
+    'UOM',
+    'Pack Size',
+    'Current Stock',
+    'Minimum Stock',
+    'Unit Cost',
+    'Average Weekly Usage',
+    'Reorder Alert Days',
+    'Location',
+] as const;
+
+const INVENTORY_IMPORT_TEMPLATE_ROWS: Array<Array<string | number>> = [
+    ['Copper Fungicide', 'Copper compound', 'fungicide', 'kg', '20 x 500 g', 80, 25, 92, 12, 7, 'Main Store'],
+    ['NPK 15-15-15', '', 'fertilizer', 'kg', '50 kg bag', 500, 200, 8.8, 75, 14, 'Fertilizer Bay'],
+];
+
+function csvCell(value: string | number): string {
+    return `"${String(value).replaceAll('"', '""')}"`;
+}
+
+export function createInventoryImportTemplateCsv(): string {
+    return [INVENTORY_IMPORT_TEMPLATE_HEADERS, ...INVENTORY_IMPORT_TEMPLATE_ROWS]
+        .map(row => row.map(csvCell).join(','))
+        .join('\r\n');
+}
+
 function normalizeHeader(value: unknown): string {
     return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -86,7 +115,10 @@ const HEADER_ALIASES: Record<string, string[]> = {
     chemicalComponent: ['chemicalcomponent', 'component', 'activeingredient', 'ingredient'],
     currentStock: ['quantity', 'qty', 'stock', 'currentstock'],
     uom: ['unit', 'uom', 'unitofmeasure'],
+    packSize: ['packsize', 'packagesize', 'packaging'],
     unitCost: ['costprice', 'cost', 'purchaseprice', 'unitcost', 'price', 'unitprice', 'marketprice'],
+    avgWeeklyUsage: ['averageweeklyusage', 'avgweeklyusage', 'weeklyusage'],
+    reorderAlertDays: ['reorderalertdays', 'alertdays', 'reorderdays'],
     minimumStock: ['minimumstock', 'minstock', 'reorderpoint', 'reorderlevel'],
     category: ['category', 'type'],
     location: ['location', 'rack', 'warehouse', 'storagelocation'],
@@ -139,6 +171,10 @@ export async function parseInventoryFile(file: File): Promise<InventoryImportRes
         const minimumStock = text(minimumStockRaw) ? numberValue(minimumStockRaw) : 5;
         const unitCostRaw = get('unitCost');
         const unitCost = text(unitCostRaw) ? numberValue(unitCostRaw) : 0;
+        const avgWeeklyUsageRaw = get('avgWeeklyUsage');
+        const avgWeeklyUsage = text(avgWeeklyUsageRaw) ? numberValue(avgWeeklyUsageRaw) : undefined;
+        const reorderAlertDaysRaw = get('reorderAlertDays');
+        const reorderAlertDays = text(reorderAlertDaysRaw) ? numberValue(reorderAlertDaysRaw) : 7;
         const rowKey = `${name}:${text(get('category'))}`.toLowerCase();
 
         const rowErrors: string[] = [];
@@ -146,6 +182,8 @@ export async function parseInventoryFile(file: File): Promise<InventoryImportRes
         if (!Number.isFinite(currentStock) || currentStock < 0) rowErrors.push('current stock must be zero or greater');
         if (!Number.isFinite(minimumStock) || minimumStock < 0) rowErrors.push('minimum stock must be zero or greater');
         if (!Number.isFinite(unitCost) || unitCost < 0) rowErrors.push('unit cost must be zero or greater');
+        if (avgWeeklyUsage !== undefined && (!Number.isFinite(avgWeeklyUsage) || avgWeeklyUsage < 0)) rowErrors.push('average weekly usage must be zero or greater');
+        if (!Number.isFinite(reorderAlertDays) || reorderAlertDays < 0) rowErrors.push('reorder alert days must be zero or greater');
         if (name && seenNames.has(rowKey)) rowErrors.push('duplicate item/category in file');
 
         if (rowErrors.length) {
@@ -159,10 +197,12 @@ export async function parseInventoryFile(file: File): Promise<InventoryImportRes
             chemicalComponent: text(get('chemicalComponent')) || undefined,
             category: parseCategory(text(get('category'))),
             uom: parseUom(text(get('uom'))),
+            packSize: text(get('packSize')) || undefined,
             currentStock,
             minimumStock,
-            reorderAlertDays: 7,
+            reorderAlertDays,
             unitCost,
+            avgWeeklyUsage,
             location: text(get('location')) || 'Main Store',
             lastUpdated: new Date().toISOString().slice(0, 10),
             createdBy: 'import',

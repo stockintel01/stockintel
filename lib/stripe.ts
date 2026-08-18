@@ -23,3 +23,8 @@ export const STRIPE_PRICE_IDS = {
 export function getPriceId(plan: 'pro' | 'enterprise'): string {
     return plan === 'pro' ? STRIPE_PRICE_IDS.PRO_MONTHLY : STRIPE_PRICE_IDS.ENTERPRISE_MONTHLY;
 }
+
+/** Stripe products remain stable; the superadmin-configured amount is supplied at checkout. */
+export function getProductId(plan: 'pro' | 'enterprise'): string | undefined {
+    return plan === 'pro' ? process.env.STRIPE_PRODUCT_PRO : process.env.STRIPE_PRODUCT_ENTERPRISE;
+}

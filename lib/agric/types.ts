@@ -1,7 +1,5 @@
 // ============================================================
-// MOONLIGHT FRESCO / STOCKINTEL AGRI - Core Types
-// Derived from real farm data: Fungicides, Insecticides,
-// Herbicides, Fertilizers, Weekly Stock Reports, Daily Work Logs
+// STOCKINTEL AGRI - Core operational types
 // ============================================================
 
 export type AgricCategory = 'fungicide' | 'insecticide' | 'herbicide' | 'fertilizer' | 'equipment' | 'seed' | 'other';

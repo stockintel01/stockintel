@@ -19,10 +19,27 @@ export async function POST(request: NextRequest) {
         const defaultAccess = ACCESS_PRESETS[industry].find(preset => preset.role === role)?.access ?? [];
         const normalizedAccess = normalizeAccess(Array.isArray(access) ? access : defaultAccess, industry);
 
-        const members = await adminDb.collection('users').where('organizationId', '==', user.organizationId).count().get();
-        const pending = await adminDb.collection('invitations')
-            .where('organizationId', '==', user.organizationId).where('status', '==', 'pending').count().get();
-        const limit = getPlanLimit(user.subscription, 'teamMembers', user.role === 'super_admin');
+        const [members, pending, configSnapshot] = await Promise.all([
+            adminDb.collection('users').where('organizationId', '==', user.organizationId).count().get(),
+            adminDb.collection('invitations').where('organizationId', '==', user.organizationId).where('status', '==', 'pending').count().get(),
+            adminDb.collection('system').doc('config').get(),
+        ]);
+        const configuredWorkers = configSnapshot.data()?.features;
+        const configuredLimit = user.subscription?.plan === 'free_trial'
+            ? configuredWorkers?.maxWorkersFreeTrial
+            : user.subscription?.plan === 'pro'
+                ? configuredWorkers?.maxWorkersPro
+                : user.subscription?.plan === 'enterprise'
+                    ? configuredWorkers?.maxWorkersEnterprise
+                    : undefined;
+        const hasConfiguredLimit = typeof configuredLimit === 'number'
+            && Number.isFinite(configuredLimit)
+            && configuredLimit >= 1;
+        const limit = user.role === 'super_admin'
+            ? Number.POSITIVE_INFINITY
+            : hasConfiguredLimit
+                ? configuredLimit
+                : getPlanLimit(user.subscription, 'teamMembers');
         if (members.data().count + pending.data().count >= limit) throw new ApiError(`Your plan allows up to ${limit} team members`, 403);
 
         const ref = adminDb.collection('invitations').doc();

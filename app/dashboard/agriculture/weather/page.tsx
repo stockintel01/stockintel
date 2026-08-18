@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/lib/store';
 import { getAgricultureProfile } from '@/lib/agric/config';
 
-// ── Farm locations (Moonlight Fresco context, editable) ─────
+// ── Farm locations (organization-configurable) ──────────────
 const FARM_LOCATIONS = [
   { id: 'main', name: 'Main Farm — Accra', lat: 5.6037, lon: -0.1870, timezone: 'Africa/Accra' },
   { id: 'north', name: 'North Block — Kumasi', lat: 6.6885, lon: -1.6244, timezone: 'Africa/Accra' },

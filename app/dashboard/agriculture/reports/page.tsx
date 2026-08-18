@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import {
-  BarChart3, Download, Calendar, FileText, ChevronDown,
-  TrendingUp, TrendingDown, Minus, Package, Leaf, Boxes,
+  BarChart3, Download, Package, Leaf, Boxes,
   FlaskConical, Tractor, Sprout, Bug
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { useAgric } from '@/lib/agric/useAgric';
 import { useAppStore } from '@/lib/store';
 import { getAgricultureProfile } from '@/lib/agric/config';
 import { getFarmWeek, getRecentFarmWeeks } from '@/lib/agric/week';
+import { convertItemQuantity } from '@/lib/agric/units';
 
 type ReportPeriod = 'daily' | 'weekly' | 'monthly';
 type ReportType = 'stock' | 'usage' | 'packing' | 'equipment' | 'full';
@@ -20,10 +21,14 @@ const PERIOD_LABELS: Record<ReportPeriod, string> = {
   daily: 'Daily Report', weekly: 'Weekly Report', monthly: 'Monthly Report'
 };
 
-const CATEGORY_ICONS: Record<string, any> = {
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
   fungicide: FlaskConical, insecticide: Bug, herbicide: Leaf,
   fertilizer: Sprout, equipment: Tractor, seed: Package,
 };
+
+function csvCell(value: string | number): string {
+  return `"${String(value).replaceAll('"', '""')}"`;
+}
 
 export default function ReportsPage() {
   const { inventory: liveInv, usageLogs, packingRecords: livePacking, shippingRecords: liveShipping, checkouts: liveCheckouts } = useAgric();
@@ -38,26 +43,31 @@ export default function ReportsPage() {
   const lowItems = inventory.filter(i => i.currentStock > i.minimumStock * 0.5 && i.currentStock <= i.minimumStock);
   const inStockItems = inventory.filter(i => i.currentStock > i.minimumStock);
 
-  const categorySummary = useMemo(() => {
+  const categorySummary = (() => {
     const cats = ['fungicide', 'insecticide', 'herbicide', 'fertilizer', 'equipment', 'seed'];
     return cats.map(cat => {
       const items = inventory.filter(i => i.category === cat);
       const critical = items.filter(i => i.currentStock <= i.minimumStock).length;
       return { cat, count: items.length, critical };
     });
-  }, [inventory]);
+  })();
 
-  const weeklyMovements = inventory.map(item => ({
-    itemId: item.id,
-    itemName: item.name,
-    category: item.category,
-    uom: item.uom,
-    openingStock: item.currentStock,
-    received: 0,
-    totalUsage: item.avgWeeklyUsage ?? 0,
-    damaged: 0,
-    closingStock: item.currentStock,
-  }));
+  const weeklyUsage = inventory.map(item => {
+    const logs = usageLogs.filter(log =>
+      log.itemId === item.id
+      && log.weekNumber === weekNum
+      && (!log.weekYear || log.weekYear === getFarmWeek(new Date(), weekStartsOn).year)
+    );
+    const used = logs.reduce((sum, log) => {
+      try {
+        return sum + convertItemQuantity(log.quantity, log.uom, item.uom, item.packSize);
+      } catch {
+        return sum;
+      }
+    }, 0);
+    const coverage = (item.avgWeeklyUsage ?? 0) > 0 ? item.currentStock / item.avgWeeklyUsage! : null;
+    return { ...item, used, coverage, logCount: logs.length };
+  });
 
   // Packing summary
   const packingToday = livePacking.filter(r => r.date === new Date().toISOString().slice(0, 10));
@@ -81,48 +91,34 @@ export default function ReportsPage() {
   });
 
   function exportReport() {
-    const lines: string[] = [];
-    lines.push(`${PERIOD_LABELS[period].toUpperCase()} — FARM OPERATIONS REPORT`);
-    lines.push(`Generated: ${new Date().toLocaleString()}`);
-    lines.push(`Week: ${weekNum}`);
-    lines.push('');
-    lines.push('=== INVENTORY STATUS ===');
-    lines.push(`Total Active SKUs: ${inventory.length}`);
-    lines.push(`Critical (< 50% min): ${criticalItems.length}`);
-    lines.push(`Low Stock: ${lowItems.length}`);
-    lines.push(`In Stock: ${inStockItems.length}`);
-    lines.push('');
-    lines.push('=== STOCK DETAILS ===');
-    lines.push('Item,Category,Current Stock,UOM,Min Stock,Status');
-    inventory.forEach(i => {
-      const status = i.currentStock <= i.minimumStock * 0.5 ? 'CRITICAL' : i.currentStock <= i.minimumStock ? 'LOW' : 'OK';
-      lines.push(`${i.name},${i.category},${i.currentStock},${i.uom},${i.minimumStock},${status}`);
-    });
-    lines.push('');
-    lines.push('=== WEEKLY MOVEMENTS ===');
-    lines.push('Item,Opening,Received,Total Usage,Damaged,Closing');
-    weeklyMovements.forEach(m => {
-      lines.push(`${m.itemName},${m.openingStock},${m.received},${m.totalUsage},${m.damaged},${m.closingStock}`);
-    });
-    lines.push('');
-    lines.push('=== PACKING STATION ===');
-    lines.push(`Packed Today: ${totalPacked} boxes`);
-    lines.push(`Target: ${totalTarget} boxes`);
-    lines.push(`Rejected: ${totalRejected} boxes`);
-    lines.push(`Total Shipped: ${totalShipped} boxes`);
+    const rows: Array<Array<string | number>> = [
+      ['Section', 'Item / metric', 'Category', 'Value', 'Unit', 'Reference value', 'Status / records'],
+      ['Report', 'Organization', '', organization?.name || 'Agriculture Workspace', '', '', ''],
+      ['Report', 'Period', '', PERIOD_LABELS[period], '', weekNum, new Date().toISOString()],
+      ['Summary', 'Active SKUs', '', inventory.length, 'items', '', ''],
+      ['Summary', 'Critical stock', '', criticalItems.length, 'items', '', ''],
+      ['Summary', 'Low stock', '', lowItems.length, 'items', '', ''],
+      ['Summary', 'In stock', '', inStockItems.length, 'items', '', ''],
+    ];
+    for (const item of weeklyUsage) {
+      const status = item.currentStock <= item.minimumStock * 0.5 ? 'CRITICAL' : item.currentStock <= item.minimumStock ? 'LOW' : 'OK';
+      rows.push(['Inventory', item.name, item.category, item.currentStock, item.uom, item.minimumStock, status]);
+      rows.push([`Week ${weekNum} usage`, item.name, item.category, item.used, item.uom, item.currentStock, item.logCount]);
+    }
+    rows.push(
+      ['Packing', 'Packed today', '', totalPacked, 'boxes', totalTarget, ''],
+      ['Packing', 'Rejected today', '', totalRejected, 'boxes', '', ''],
+      ['Shipping', 'Total shipped', '', totalShipped, 'boxes', '', ''],
+    );
 
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const csv = rows.map(row => row.map(csvCell).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `farm-report-wk${weekNum}-${period}-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.download = `farm-report-wk${weekNum}-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
+    URL.revokeObjectURL(a.href);
   }
-
-  const weekTrend = (cur: number, prev: number) => {
-    if (cur > prev) return { icon: TrendingUp, color: 'text-red-500', label: `+${cur - prev}` };
-    if (cur < prev) return { icon: TrendingDown, color: 'text-green-500', label: `${cur - prev}` };
-    return { icon: Minus, color: 'text-muted-foreground', label: '0' };
-  };
 
   return (
     <div className="space-y-6">
@@ -152,7 +148,7 @@ export default function ReportsPage() {
             </div>
             <div>
               <label className="text-xs text-muted-foreground block mb-1">Report Type</label>
-              <select className="border rounded-md px-3 py-2 text-sm bg-background" value={reportType} onChange={e => setReportType(e.target.value as any)}>
+              <select className="border rounded-md px-3 py-2 text-sm bg-background" value={reportType} onChange={e => setReportType(e.target.value as ReportType)}>
                 <option value="full">Full Report</option>
                 <option value="stock">Stock Only</option>
                 <option value="usage">Usage Only</option>
@@ -178,7 +174,7 @@ export default function ReportsPage() {
       <div className="bg-green-700 text-white rounded-xl p-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-green-200 text-xs uppercase tracking-widest">Moonlight Fresco Ltd</p>
+            <p className="text-green-200 text-xs uppercase tracking-widest">{organization?.name || 'Agriculture Workspace'}</p>
             <h2 className="text-xl font-bold mt-0.5">
               {PERIOD_LABELS[period]}
               {period === 'weekly' && ` — Week ${weekNum}`}
@@ -281,11 +277,11 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* Section 2: Weekly Stock Movements (mimics Excel format) */}
+      {/* Section 2: Actual usage and current stock */}
       {(reportType === 'full' || reportType === 'usage') && period === 'weekly' && (
         <div className="space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-blue-600" /> 2. Week {weekNum} Stock Movements
+            <BarChart3 className="w-5 h-5 text-blue-600" /> 2. Week {weekNum} Usage and Current Balance
           </h2>
           <Card>
             <CardContent className="p-0">
@@ -295,32 +291,24 @@ export default function ReportsPage() {
                     <tr>
                       <th className="text-left px-4 py-3">Item</th>
                       <th className="text-left px-4 py-3">Category</th>
-                      <th className="text-right px-4 py-3">Opening</th>
-                      <th className="text-right px-4 py-3">Received</th>
-                      <th className="text-right px-4 py-3">Used</th>
-                      <th className="text-right px-4 py-3">Damaged</th>
-                      <th className="text-right px-4 py-3 font-bold">Closing</th>
-                      <th className="text-center px-4 py-3">Trend</th>
+                      <th className="text-right px-4 py-3">Used this week</th>
+                      <th className="text-right px-4 py-3">Current balance</th>
+                      <th className="text-right px-4 py-3">Minimum</th>
+                      <th className="text-right px-4 py-3">Coverage</th>
+                      <th className="text-center px-4 py-3">Records</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {weeklyMovements.map((item, i) => {
-                      const trend = weekTrend(item.closingStock, item.openingStock);
-                      const TrendIcon = trend.icon;
+                    {weeklyUsage.map((item, i) => {
                       return (
-                        <tr key={item.itemId} className={`border-b ${i % 2 === 0 ? '' : 'bg-muted/10'}`}>
-                          <td className="px-4 py-2 font-medium">{item.itemName}</td>
+                        <tr key={item.id} className={`border-b ${i % 2 === 0 ? '' : 'bg-muted/10'}`}>
+                          <td className="px-4 py-2 font-medium">{item.name}</td>
                           <td className="px-4 py-2 text-xs capitalize text-muted-foreground">{item.category}</td>
-                          <td className="px-4 py-2 text-right font-mono">{item.openingStock} {item.uom}</td>
-                          <td className="px-4 py-2 text-right font-mono text-green-600">{item.received > 0 ? `+${item.received}` : '—'}</td>
-                          <td className="px-4 py-2 text-right font-mono text-orange-600">{item.totalUsage > 0 ? item.totalUsage : '—'} {item.totalUsage > 0 ? item.uom : ''}</td>
-                          <td className="px-4 py-2 text-right font-mono text-red-500">{item.damaged > 0 ? item.damaged : '—'}</td>
-                          <td className="px-4 py-2 text-right font-mono font-bold">{item.closingStock} {item.uom}</td>
-                          <td className="px-4 py-2 text-center">
-                            <span className={`flex items-center justify-center gap-0.5 text-xs ${trend.color}`}>
-                              <TrendIcon className="w-3 h-3" />{trend.label}
-                            </span>
-                          </td>
+                          <td className="px-4 py-2 text-right font-mono text-orange-600">{item.used > 0 ? `${item.used.toFixed(2)} ${item.uom}` : '—'}</td>
+                          <td className="px-4 py-2 text-right font-mono font-bold">{item.currentStock} {item.uom}</td>
+                          <td className="px-4 py-2 text-right font-mono">{item.minimumStock} {item.uom}</td>
+                          <td className="px-4 py-2 text-right font-mono">{item.coverage === null ? 'Not set' : `${item.coverage.toFixed(1)} wk`}</td>
+                          <td className="px-4 py-2 text-center font-mono">{item.logCount}</td>
                         </tr>
                       );
                     })}
@@ -333,7 +321,7 @@ export default function ReportsPage() {
           {/* 6-week usage trend */}
           <Card>
             <CardHeader className="py-4">
-              <CardTitle className="text-sm">6-Week Chemical Usage Trend (Wk 5 – Wk 10)</CardTitle>
+              <CardTitle className="text-sm">6-Week Chemical Usage Trend ({usageHistory.at(0)?.week} - {usageHistory.at(-1)?.week})</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
               <div className="overflow-x-auto">

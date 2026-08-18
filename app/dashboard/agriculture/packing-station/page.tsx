@@ -15,11 +15,6 @@ import { useAgric } from '@/lib/agric/useAgric';
 import { PackingRecord, ShippingRecord, FarmZone, PackingStation } from '@/lib/agric/types';
 import { getAgricultureProfile } from '@/lib/agric/config';
 
-const DEFAULT_STATIONS: PackingStation[] = [
-  { id: 'packing-station-a', name: 'Packing Station A', storageName: 'Reefer A', assignedUserIds: [], isActive: true },
-  { id: 'packing-station-b', name: 'Packing Station B', storageName: 'Reefer B', assignedUserIds: [], isActive: true },
-  { id: 'packing-station-c', name: 'Packing Station C', storageName: 'Cold Room C', assignedUserIds: [], isActive: true },
-];
 const PRODUCE_TYPES = ['Banana', 'Okra', 'Papaya', 'Tomato', 'Beans', 'Moringa', 'Passion Fruit'];
 const SHIFTS = ['morning', 'afternoon', 'evening'] as const;
 
@@ -47,13 +42,13 @@ export default function PackingStationPage() {
   const [stationForm, setStationForm] = useState({ id: '', name: '', storageName: '', assignedUserIds: [] as string[] });
 
   const [newPacking, setNewPacking] = useState<Partial<PackingRecord>>({
-    stationId: 'packing-station-a', stationName: 'Packing Station A', farmZone: 'Banana', produce: 'Banana', shift: 'morning',
+    stationId: '', stationName: '', farmZone: 'Banana', produce: 'Banana', shift: 'morning',
     date: today, supervisorName: currentUserName, supervisorId: currentUserId, workers: [],
   });
   const [workersInput, setWorkersInput] = useState('');
 
   const [newShipping, setNewShipping] = useState<Partial<ShippingRecord>>({
-    dispatchDate: today, produce: 'Banana', supervisorId: currentUserId, stationId: 'packing-station-a', stationName: 'Packing Station A',
+    dispatchDate: today, produce: 'Banana', supervisorId: currentUserId, stationId: '', stationName: '',
   });
 
   useEffect(() => {
@@ -75,7 +70,7 @@ export default function PackingStationPage() {
     });
   }, [canManageStations, organization?.id]);
 
-  const activeStations = (stations.length ? stations : DEFAULT_STATIONS).filter(station => station.isActive !== false);
+  const activeStations = stations.filter(station => station.isActive !== false);
   const assignedStations = activeStations.filter(station => station.assignedUserIds?.includes(currentUserId));
   const visibleStations = !canManageStations && assignedStations.length ? assignedStations : activeStations;
   const selectedPackingStation = visibleStations.find(station => station.id === newPacking.stationId) ?? visibleStations[0];
@@ -115,26 +110,34 @@ export default function PackingStationPage() {
 
   async function submitPacking() {
     if (!selectedPackingStation || !newPacking.produce || !newPacking.packedBoxes) return;
+    if ((newPacking.rejectedBoxes ?? 0) > newPacking.packedBoxes) {
+      setError('Rejected boxes cannot be greater than packed boxes.');
+      return;
+    }
     setError('');
-    await addPacking({
-      date: newPacking.date || today,
-      stationId: selectedPackingStation.id,
-      stationName: selectedPackingStation.name,
-      supervisorId: newPacking.supervisorId || 's01',
-      supervisorName: newPacking.supervisorName || 'Supervisor',
-      farmZone: (newPacking.farmZone as FarmZone) || 'Banana',
-      produce: newPacking.produce!,
-      targetBoxes: newPacking.targetBoxes || 0,
-      packedBoxes: newPacking.packedBoxes!,
-      rejectedBoxes: newPacking.rejectedBoxes || 0,
-      totalWeight: newPacking.totalWeight,
-      shift: (newPacking.shift as any) || 'morning',
-      workers: workersInput ? workersInput.split(',').map(w => w.trim()).filter(Boolean) : [],
-      notes: newPacking.notes,
-    });
-    setNewPacking({ stationId: selectedPackingStation.id, stationName: selectedPackingStation.name, farmZone: 'Banana', produce: 'Banana', shift: 'morning', date: today, supervisorName: currentUserName, supervisorId: currentUserId, workers: [] });
-    setWorkersInput('');
-    setShowNewPacking(false);
+    try {
+      await addPacking({
+        date: newPacking.date || today,
+        stationId: selectedPackingStation.id,
+        stationName: selectedPackingStation.name,
+        supervisorId: newPacking.supervisorId || 's01',
+        supervisorName: newPacking.supervisorName || 'Supervisor',
+        farmZone: (newPacking.farmZone as FarmZone) || 'Banana',
+        produce: newPacking.produce,
+        targetBoxes: newPacking.targetBoxes || 0,
+        packedBoxes: newPacking.packedBoxes,
+        rejectedBoxes: newPacking.rejectedBoxes || 0,
+        totalWeight: newPacking.totalWeight,
+        shift: (newPacking.shift as any) || 'morning',
+        workers: workersInput ? workersInput.split(',').map(w => w.trim()).filter(Boolean) : [],
+        notes: newPacking.notes,
+      });
+      setNewPacking({ stationId: selectedPackingStation.id, stationName: selectedPackingStation.name, farmZone: 'Banana', produce: 'Banana', shift: 'morning', date: today, supervisorName: currentUserName, supervisorId: currentUserId, workers: [] });
+      setWorkersInput('');
+      setShowNewPacking(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to save the packing record.');
+    }
   }
 
   async function submitShipping() {
@@ -144,7 +147,8 @@ export default function PackingStationPage() {
       return;
     }
     setError('');
-    await addShipping({
+    try {
+      await addShipping({
       dispatchDate: newShipping.dispatchDate || today,
       destinationName: newShipping.destinationName!,
       supervisorId: newShipping.supervisorId || currentUserId,
@@ -157,10 +161,13 @@ export default function PackingStationPage() {
       vehicleId: newShipping.vehicleId,
       driverName: newShipping.driverName,
       invoiceNumber: newShipping.invoiceNumber,
-      notes: newShipping.notes,
-    });
-    setNewShipping({ dispatchDate: today, produce: 'Banana', supervisorId: currentUserId, stationId: selectedShippingStation.id, stationName: selectedShippingStation.name });
-    setShowShipping(false);
+        notes: newShipping.notes,
+      });
+      setNewShipping({ dispatchDate: today, produce: 'Banana', supervisorId: currentUserId, stationId: selectedShippingStation.id, stationName: selectedShippingStation.name });
+      setShowShipping(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to save the shipment.');
+    }
   }
 
   async function saveStation() {
@@ -198,10 +205,10 @@ export default function PackingStationPage() {
           <p className="text-muted-foreground text-sm">Record daily packing output · Log shipments (auto-reduces packed stock)</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setActiveTab('shipping'); setShowShipping(true); }}>
+          <Button variant="outline" disabled={!selectedShippingStation} onClick={() => { setActiveTab('shipping'); setShowShipping(true); }}>
             <Truck className="w-4 h-4 mr-1" /> Log Shipment
           </Button>
-          <Button className="bg-green-600 hover:bg-green-700" onClick={() => { setActiveTab('packing'); setShowNewPacking(true); }}>
+          <Button className="bg-green-600 hover:bg-green-700" disabled={!selectedPackingStation} onClick={() => { setActiveTab('packing'); setShowNewPacking(true); }}>
             <Plus className="w-4 h-4 mr-1" /> Record Packing
           </Button>
         </div>
