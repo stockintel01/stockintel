@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
+import { userHasAccess } from '@/lib/access-permissions';
 import type {
   AgricInventoryItem, UsageLog, StockRequest, EquipmentCheckout,
   SprayPlan, PackingRecord, ShippingRecord, AgricAlert, StockAdjustment,
@@ -22,7 +23,7 @@ import {
   addInventoryItem as fsAddItem, updateInventoryItem, softDeleteInventoryItem,
   submitStockAdjustment, approveStockAdjustment,
   addUsageLog, createStockRequest, updateRequestStatus, dispatchRequest,
-  checkoutEquipment, returnEquipment, createSprayPlan, logApplicationComplete,
+  checkoutEquipment, returnEquipment, createSprayPlan, logApplicationComplete, confirmRequestReceipt,
   addPackingRecord, addShippingRecord, markAlertRead,
   checkAndFireLowStockAlerts,
 } from './agric-service';
@@ -82,6 +83,13 @@ export function useAgric(): AgricState & AgricActions {
   const orgId = organization?.id ?? null;
   const userId = user?.id ?? null;
   const isLive = !!(orgId && userId);
+  const canInventory = userHasAccess(user, 'agricStock') || userHasAccess(user, 'agricReports') || userHasAccess(user, 'agricRequests') || userHasAccess(user, 'agricUsage') || userHasAccess(user, 'agricPlanner');
+  const canManageInventory = userHasAccess(user, 'agricStock');
+  const canUsage = userHasAccess(user, 'agricUsage') || userHasAccess(user, 'agricReports');
+  const canRequests = userHasAccess(user, 'agricRequests');
+  const canEquipment = userHasAccess(user, 'agricEquipment') || userHasAccess(user, 'agricReports');
+  const canPlans = userHasAccess(user, 'agricPlanner') || userHasAccess(user, 'agricReports');
+  const canPacking = userHasAccess(user, 'agricPacking') || userHasAccess(user, 'agricReports');
 
   const [state, setState] = useState<AgricState>({
     inventory: [],
@@ -121,31 +129,38 @@ export function useAgric(): AgricState & AgricActions {
       return;
     }
 
-    setState(s => ({ ...s, loading: true, isLive: true }));
+    setState(s => ({
+      ...s,
+      inventory: [], usageLogs: [], requests: [], checkouts: [], plans: [],
+      packingRecords: [], shippingRecords: [], alerts: [],
+      loading: true, error: null, isLive: true,
+    }));
     let loaded = 0;
-    const TOTAL_SUBS = 8;
-    const onLoad = () => { loaded++; if (loaded >= TOTAL_SUBS) setState(s => ({ ...s, loading: false })); };
+    const totalSubscriptions = Number(canInventory) + Number(canUsage) + Number(canRequests) + Number(canEquipment) + Number(canPlans) + Number(canPacking) * 2 + 1;
+    const onLoad = () => { loaded++; if (loaded >= totalSubscriptions) setState(s => ({ ...s, loading: false })); };
     const onErr = (e: Error) => setState(s => ({ ...s, error: e.message, loading: false }));
 
-    unsubsRef.current = [
-      subscribeInventory(orgId, inv => { setState(s => ({ ...s, inventory: inv })); onLoad(); }, onErr),
-      subscribeUsageLogs(orgId, logs => { setState(s => ({ ...s, usageLogs: logs })); onLoad(); }, onErr),
-      subscribeRequests(orgId, reqs => { setState(s => ({ ...s, requests: reqs })); onLoad(); }, onErr),
-      subscribeEquipment(orgId, ch => { setState(s => ({ ...s, checkouts: ch })); onLoad(); }, onErr),
-      subscribePlans(orgId, plans => { setState(s => ({ ...s, plans })); onLoad(); }, onErr),
-      subscribePackingToday(orgId, pr => { setState(s => ({ ...s, packingRecords: pr })); onLoad(); }, onErr),
-      subscribeShipping(orgId, sr => { setState(s => ({ ...s, shippingRecords: sr })); onLoad(); }, onErr),
-      subscribeAlerts(orgId, al => { setState(s => ({ ...s, alerts: al })); onLoad(); }, onErr),
-    ];
+    const subscriptions: Array<() => void> = [];
+    if (canInventory) subscriptions.push(subscribeInventory(orgId, inv => { setState(s => ({ ...s, inventory: inv })); onLoad(); }, onErr));
+    if (canUsage) subscriptions.push(subscribeUsageLogs(orgId, logs => { setState(s => ({ ...s, usageLogs: logs })); onLoad(); }, onErr));
+    if (canRequests) subscriptions.push(subscribeRequests(orgId, reqs => { setState(s => ({ ...s, requests: reqs })); onLoad(); }, onErr));
+    if (canEquipment) subscriptions.push(subscribeEquipment(orgId, ch => { setState(s => ({ ...s, checkouts: ch })); onLoad(); }, onErr));
+    if (canPlans) subscriptions.push(subscribePlans(orgId, plans => { setState(s => ({ ...s, plans })); onLoad(); }, onErr));
+    if (canPacking) {
+      subscriptions.push(subscribePackingToday(orgId, pr => { setState(s => ({ ...s, packingRecords: pr })); onLoad(); }, onErr));
+      subscriptions.push(subscribeShipping(orgId, sr => { setState(s => ({ ...s, shippingRecords: sr })); onLoad(); }, onErr));
+    }
+    subscriptions.push(subscribeAlerts(orgId, al => { setState(s => ({ ...s, alerts: al })); onLoad(); }, onErr));
+    unsubsRef.current = subscriptions;
 
     // Fire low-stock check on mount
-    checkAndFireLowStockAlerts(orgId).catch(console.warn);
+    if (canManageInventory) checkAndFireLowStockAlerts(orgId).catch(console.warn);
 
     return () => {
       unsubsRef.current.forEach(u => u());
       unsubsRef.current = [];
     };
-  }, [orgId, userId]);
+  }, [canEquipment, canInventory, canManageInventory, canPacking, canPlans, canRequests, canUsage, orgId, userId]);
 
   // ── Production write guard ──────────────────────────────
   const requireLiveContext = useCallback(() => {
@@ -210,7 +225,7 @@ export function useAgric(): AgricState & AgricActions {
 
     confirmReceived: useCallback(async (reqId) => {
       const ctx = requireLiveContext();
-      await updateRequestStatus(ctx.orgId, reqId, { status: 'received', receivedBy: ctx.userId, receivedAt: new Date().toISOString() });
+      await confirmRequestReceipt(ctx.orgId, reqId, ctx.userId);
     }, [requireLiveContext]),
 
     // Equipment
@@ -231,8 +246,9 @@ export function useAgric(): AgricState & AgricActions {
     }, [requireLiveContext]),
 
     markApplication: useCallback(async (planId, current) => {
+      void current;
       const ctx = requireLiveContext();
-      await logApplicationComplete(ctx.orgId, planId, current);
+      await logApplicationComplete(ctx.orgId, planId);
     }, [requireLiveContext]),
 
     // Packing

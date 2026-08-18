@@ -6,7 +6,7 @@ export type AgricCategory = 'fungicide' | 'insecticide' | 'herbicide' | 'fertili
 export type FarmZone = 'Banana' | 'Okra' | 'Papaya' | 'Tomato' | 'Beans' | 'Bitter Gourd' | 'Bitter Melon' | 'Moringa' | 'Passion Fruit';
 export type UOM = 'lt' | 'kg' | 'ml' | 'g' | 'units' | 'bags' | 'L' | 'boxes';
 export type ItemStatus = 'in_stock' | 'low_stock' | 'critical' | 'out_of_stock';
-export type RequestStatus = 'pending' | 'approved' | 'dispatched' | 'received' | 'rejected';
+export type RequestStatus = 'pending' | 'approved' | 'partially_fulfilled' | 'dispatched' | 'received' | 'rejected';
 export type EquipmentStatus = 'available' | 'checked_out' | 'overdue' | 'damaged' | 'maintenance';
 export type AdjustmentStatus = 'pending_approval' | 'approved' | 'rejected';
 export type UserRole = 'farm_manager' | 'stockkeeper' | 'supervisor' | 'worker' | 'admin';
@@ -101,9 +101,18 @@ export interface StockRequest {
   approvedAt?: string;
   dispatchedBy?: string;
   dispatchedAt?: string;
+  lastDispatchedAt?: string;
   receivedBy?: string;
   receivedAt?: string;
   rejectionReason?: string;
+  fulfillmentHistory?: RequestFulfillmentEvent[];
+}
+
+export interface RequestFulfillmentEvent {
+  type: 'dispatch' | 'receipt';
+  recordedAt: string;
+  recordedBy: string;
+  items: Array<{ itemId: string; quantity: number; uom: UOM }>;
 }
 
 export interface StockRequestItem {

@@ -52,6 +52,10 @@ service cloud.firestore {
         (userDoc().keys().hasAny(['access']) && userDoc().access.hasAny([key]));
     }
 
+    function canFulfillStockRequests() {
+      return isOwnerOrManager() || (hasAccess('agricRequests') && hasAccess('agricStock'));
+    }
+
     function isSameOrg(resourceOrgId) {
       return orgId() == resourceOrgId;
     }
@@ -242,7 +246,10 @@ service cloud.firestore {
       }
 
       match /agric_inventory/{id} {
-        allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricStock') || hasAccess('agricReports'));
+        allow read: if isSignedIn() && isSameOrg(orgId) && (
+          hasAccess('agricStock') || hasAccess('agricReports') || hasAccess('agricRequests') ||
+          hasAccess('agricUsage') || hasAccess('agricPlanner')
+        );
         allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricStock');
         allow delete: if isSuperAdmin();
       }
@@ -253,21 +260,35 @@ service cloud.firestore {
       }
       match /agric_requests/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricRequests');
-        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricRequests');
+        allow create: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
+          && hasAccess('agricRequests')
+          && request.resource.data.requestedBy == request.auth.uid
+          && request.resource.data.status == 'pending';
         allow update: if isSignedIn()
           && isSameOrg(orgId)
           && hasActiveSubscription(orgId)
           && (
-            hasAccess('agricRequests') ||
+            (hasAccess('agricRequests') && isOwnerOrManager()) ||
+            (
+              canFulfillStockRequests()
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status', 'items', 'dispatchedBy', 'dispatchedAt', 'lastDispatchedAt',
+                'receivedBy', 'receivedAt', 'fulfillmentHistory', 'updatedAt'
+              ])
+            ) ||
             (
               request.auth.uid == resource.data.requestedBy
-              && resource.data.status == 'dispatched'
-              && request.resource.data.status == 'received'
+              && resource.data.status in ['partially_fulfilled', 'dispatched']
+              && request.resource.data.status in ['partially_fulfilled', 'received']
               && request.resource.data.receivedBy == request.auth.uid
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'receivedBy', 'receivedAt', 'updatedAt'])
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status', 'items', 'receivedBy', 'receivedAt', 'fulfillmentHistory', 'updatedAt'
+              ])
             )
           );
-        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricRequests');
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
       }
       match /agric_equipment/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricEquipment') || hasAccess('agricReports'));

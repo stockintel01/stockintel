@@ -18,15 +18,16 @@
 import {
   collection, doc, onSnapshot, addDoc, updateDoc, setDoc,
   getDocs, query, orderBy, where, serverTimestamp,
-  runTransaction, writeBatch, increment, Timestamp, limit,
+  runTransaction, writeBatch, increment, limit,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type {
   AgricInventoryItem, UsageLog, StockRequest, EquipmentCheckout,
   SprayPlan, PackingRecord, ShippingRecord, StockAdjustment,
-  AgricAlert, AgricCategory, FarmZone,
+  AgricAlert,
 } from './types';
 import { convertItemQuantity } from './units';
+import { planRequestDispatch, planRequestReceipt } from './request-fulfillment';
 
 // -------------------------------------------------------------
 // Collection helpers
@@ -40,11 +41,22 @@ const ref = (orgId: string, name: string, id: string) =>
 
 type Unsub = () => void;
 
-// Strip undefined values Firestore doesn't accept
+// Strip undefined values recursively because Firestore also rejects them inside arrays.
 function clean<T extends object>(obj: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(obj).filter(([, v]) => v !== undefined)
-  ) as Partial<T>;
+  const cleanValue = (value: unknown): unknown => {
+    if (value === undefined) return undefined;
+    if (Array.isArray(value)) return value.map(cleanValue).filter(item => item !== undefined);
+    if (value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+      return Object.fromEntries(
+        Object.entries(value).flatMap(([key, nested]) => {
+          const cleaned = cleanValue(nested);
+          return cleaned === undefined ? [] : [[key, cleaned]];
+        }),
+      );
+    }
+    return value;
+  };
+  return cleanValue(obj) as Partial<T>;
 }
 
 // -------------------------------------------------------------
@@ -224,28 +236,27 @@ export async function createStockRequest(
   orgId: string,
   req: Omit<StockRequest, 'id'>,
 ): Promise<string> {
-  // Generate request number: REQ-{YEAR}-{sequential padded}
   const year = new Date().getFullYear();
-  const existing = await getDocs(query(col(orgId, 'agric_requests')));
-  const num = String(existing.size + 1).padStart(3, '0');
-  const r = await addDoc(col(orgId, 'agric_requests'), {
+  const requestRef = doc(col(orgId, 'agric_requests'));
+  const requestNumber = `REQ-${year}-${requestRef.id.slice(0, 6).toUpperCase()}`;
+  await setDoc(requestRef, {
     ...clean(req),
-    requestNumber: `REQ-${year}-${num}`,
+    requestNumber,
     status: 'pending',
     requestDate: new Date().toISOString(),
     createdAt: serverTimestamp(),
   });
-  // Create alert for storekeepers
-  await addAgricAlert(orgId, {
+  // The request is authoritative; an alert delivery failure must not make users retry it.
+  void addAgricAlert(orgId, {
     type: 'restock_request',
     severity: req.priority === 'urgent' ? 'critical' : 'info',
-    title: `New ${req.priority === 'urgent' ? 'URGENT ' : ''}Request: REQ-${year}-${num}`,
+    title: `New ${req.priority === 'urgent' ? 'URGENT ' : ''}Request: ${requestNumber}`,
     message: `${req.requestedByName} requested ${req.items.length} item(s) for ${req.farmZone} zone.`,
     createdAt: new Date().toISOString(),
     isRead: false,
     isActionRequired: true,
-  });
-  return r.id;
+  }).catch(error => console.warn('[agric] request alert:', error));
+  return requestRef.id;
 }
 
 export async function updateRequestStatus(
@@ -259,7 +270,7 @@ export async function updateRequestStatus(
   });
 }
 
-/** Dispatch: decrements live inventory for each dispatched item */
+/** Dispatch available quantities and keep any shortfall open for later fulfillment. */
 export async function dispatchRequest(
   orgId: string,
   reqId: string,
@@ -267,24 +278,76 @@ export async function dispatchRequest(
   dispatchedItems: Array<{ itemId: string; qty: number }>,
 ): Promise<void> {
   await runTransaction(db, async tx => {
-    // Verify stock for each item
-    for (const di of dispatchedItems) {
-      const invRef = ref(orgId, 'agric_inventory', di.itemId);
-      const snap = await tx.get(invRef);
-      if (!snap.exists()) continue;
-      const current = (snap.data().currentStock as number) ?? 0;
-      if (current - di.qty < 0) throw new Error(`Insufficient stock for item ${di.itemId}`);
-      tx.update(invRef, {
-        currentStock: increment(-di.qty),
+    const reqRef = ref(orgId, 'agric_requests', reqId);
+    const reqSnap = await tx.get(reqRef);
+    if (!reqSnap.exists()) throw new Error('This request no longer exists.');
+    const request = reqSnap.data() as StockRequest;
+    if (!['approved', 'partially_fulfilled'].includes(request.status)) {
+      throw new Error('Only approved or partially fulfilled requests can be dispatched.');
+    }
+
+    const dispatchPlan = planRequestDispatch(request.items, dispatchedItems);
+
+    const inventorySnapshots = new Map<string, { document: ReturnType<typeof ref>; stock: number }>();
+    for (const dispatch of dispatchPlan.dispatches) {
+      const itemId = dispatch.itemId;
+      const inventoryRef = ref(orgId, 'agric_inventory', itemId);
+      const snapshot = await tx.get(inventoryRef);
+      if (!snapshot.exists()) throw new Error('One of the requested stock items no longer exists.');
+      inventorySnapshots.set(itemId, { document: inventoryRef, stock: Number(snapshot.data().currentStock ?? 0) });
+    }
+
+    for (const dispatch of dispatchPlan.dispatches) {
+      const inventory = inventorySnapshots.get(dispatch.itemId)!;
+      const requestItem = request.items.find(item => item.itemId === dispatch.itemId);
+      if (dispatch.quantity > inventory.stock + 0.000001) throw new Error(`${requestItem?.itemName}: only ${inventory.stock} ${requestItem?.uom ?? 'units'} are available.`);
+      tx.update(inventory.document, {
+        currentStock: increment(-dispatch.quantity),
         lastUpdated: new Date().toISOString().slice(0, 10),
         updatedAt: serverTimestamp(),
       });
     }
-    const reqRef = ref(orgId, 'agric_requests', reqId);
+
+    const recordedAt = new Date().toISOString();
     tx.update(reqRef, {
-      status: 'dispatched',
+      items: clean(dispatchPlan.items),
+      status: dispatchPlan.fullyDispatched ? 'dispatched' : 'partially_fulfilled',
       dispatchedBy,
-      dispatchedAt: new Date().toISOString(),
+      dispatchedAt: request.dispatchedAt ?? recordedAt,
+      lastDispatchedAt: recordedAt,
+      fulfillmentHistory: [
+        ...(request.fulfillmentHistory ?? []),
+        {
+          type: 'dispatch', recordedAt, recordedBy: dispatchedBy,
+          items: dispatchPlan.dispatches,
+        },
+      ],
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function confirmRequestReceipt(orgId: string, reqId: string, receivedBy: string): Promise<void> {
+  await runTransaction(db, async tx => {
+    const reqRef = ref(orgId, 'agric_requests', reqId);
+    const reqSnap = await tx.get(reqRef);
+    if (!reqSnap.exists()) throw new Error('This request no longer exists.');
+    const request = reqSnap.data() as StockRequest;
+    if (!['partially_fulfilled', 'dispatched'].includes(request.status)) {
+      throw new Error('There are no dispatched quantities awaiting receipt.');
+    }
+
+    const receiptPlan = planRequestReceipt(request.items);
+    const recordedAt = new Date().toISOString();
+    tx.update(reqRef, {
+      items: clean(receiptPlan.items),
+      status: receiptPlan.fullyReceived ? 'received' : 'partially_fulfilled',
+      receivedBy,
+      receivedAt: receiptPlan.fullyReceived ? recordedAt : request.receivedAt ?? null,
+      fulfillmentHistory: [
+        ...(request.fulfillmentHistory ?? []),
+        { type: 'receipt', recordedAt, recordedBy: receivedBy, items: receiptPlan.receipts },
+      ],
       updatedAt: serverTimestamp(),
     });
   });
@@ -380,7 +443,7 @@ export async function createSprayPlan(
 }
 
 export async function logApplicationComplete(
-  orgId: string, planId: string, _currentCompleted: number,
+  orgId: string, planId: string,
 ): Promise<void> {
   await runTransaction(db, async tx => {
     const planRef = ref(orgId, 'agric_plans', planId);
