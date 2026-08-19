@@ -6,7 +6,8 @@ export type AgricCategory = 'fungicide' | 'insecticide' | 'herbicide' | 'fertili
 export type FarmZone = 'Banana' | 'Okra' | 'Papaya' | 'Tomato' | 'Beans' | 'Bitter Gourd' | 'Bitter Melon' | 'Moringa' | 'Passion Fruit';
 export type UOM = 'lt' | 'kg' | 'ml' | 'g' | 'units' | 'bags' | 'L' | 'boxes';
 export type ItemStatus = 'in_stock' | 'low_stock' | 'critical' | 'out_of_stock';
-export type RequestStatus = 'pending' | 'approved' | 'partially_fulfilled' | 'dispatched' | 'received' | 'rejected';
+export type RequestStatus = 'draft' | 'pending' | 'approved' | 'partially_fulfilled' | 'dispatched' | 'received' | 'rejected';
+export type RequestItemMode = 'consumable' | 'returnable';
 export type EquipmentStatus = 'available' | 'checked_out' | 'overdue' | 'damaged' | 'maintenance';
 export type AdjustmentStatus = 'pending_approval' | 'approved' | 'rejected';
 export type UserRole = 'farm_manager' | 'stockkeeper' | 'supervisor' | 'worker' | 'admin';
@@ -56,6 +57,11 @@ export interface UsageLog {
   weekYear?: number;
   weekStartDate?: string;
   weekEndDate?: string;
+  sourceType?: 'manual' | 'stock_request';
+  sourceRequestId?: string;
+  sourceRequestNumber?: string;
+  sourceIssueId?: string;
+  recordedBy?: string;
 }
 
 // ── Weekly Stock Report (from End-of-Week Excel) ─────────────
@@ -106,13 +112,49 @@ export interface StockRequest {
   receivedAt?: string;
   rejectionReason?: string;
   fulfillmentHistory?: RequestFulfillmentEvent[];
+  issueHistory?: RequestIssue[];
 }
 
 export interface RequestFulfillmentEvent {
-  type: 'dispatch' | 'receipt';
+  type: 'dispatch' | 'receipt' | 'usage' | 'return';
   recordedAt: string;
   recordedBy: string;
-  items: Array<{ itemId: string; quantity: number; uom: UOM }>;
+  items: Array<{ itemId: string; quantity: number; uom: UOM; issueId?: string; condition?: RequestReturnCondition }>;
+}
+
+export type RequestReturnCondition = 'good' | 'damaged' | 'lost';
+
+export interface RequestReturnEvent {
+  quantity: number;
+  condition: RequestReturnCondition;
+  returnedAt: string;
+  returnedBy: string;
+  notes?: string;
+}
+
+export interface RequestIssue {
+  id: string;
+  itemId: string;
+  itemName: string;
+  category: AgricCategory;
+  quantity: number;
+  uom: UOM;
+  mode: RequestItemMode;
+  issueDate: string;
+  issuedAt: string;
+  issuedBy: string;
+  issuedToName: string;
+  expectedReturnDate?: string;
+  notes?: string;
+  usageStatus: 'pending' | 'used' | 'not_applicable';
+  usedDate?: string;
+  usedAt?: string;
+  usedBy?: string;
+  returnedQty?: number;
+  damagedQty?: number;
+  lostQty?: number;
+  returnStatus: 'not_applicable' | 'out' | 'partially_resolved' | 'resolved';
+  returnEvents?: RequestReturnEvent[];
 }
 
 export interface StockRequestItem {
@@ -125,6 +167,7 @@ export interface StockRequestItem {
   dispatchedQty?: number;
   receivedQty?: number;
   uom: UOM;
+  mode: RequestItemMode;
   note?: string;
 }
 

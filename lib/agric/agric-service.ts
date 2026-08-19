@@ -24,10 +24,11 @@ import { db } from '@/lib/firebase';
 import type {
   AgricInventoryItem, UsageLog, StockRequest, EquipmentCheckout,
   SprayPlan, PackingRecord, ShippingRecord, StockAdjustment,
-  AgricAlert,
+  AgricAlert, RequestIssue, RequestReturnCondition,
 } from './types';
 import { convertItemQuantity } from './units';
-import { planRequestDispatch, planRequestReceipt } from './request-fulfillment';
+import { planRequestDispatch, planRequestIssueReturn, planRequestReceipt } from './request-fulfillment';
+import { getFarmWeek } from './week';
 
 // -------------------------------------------------------------
 // Collection helpers
@@ -222,12 +223,17 @@ export async function addUsageLog(
 
 export function subscribeRequests(
   orgId: string,
+  includeDrafts: boolean,
   onData: (reqs: StockRequest[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
-  const q = query(col(orgId, 'agric_requests'), orderBy('requestDate', 'desc'), limit(200));
+  const q = includeDrafts
+    ? query(col(orgId, 'agric_requests'), orderBy('requestDate', 'desc'), limit(200))
+    : query(col(orgId, 'agric_requests'), where('status', 'in', ['pending', 'approved', 'partially_fulfilled', 'dispatched', 'received', 'rejected']), limit(200));
   return onSnapshot(q,
-    snap => onData(snap.docs.map(d => ({ ...d.data(), id: d.id } as StockRequest))),
+    snap => onData(snap.docs
+      .map(d => ({ ...d.data(), id: d.id } as StockRequest))
+      .sort((a, b) => b.requestDate.localeCompare(a.requestDate))),
     err => { console.error('[agric] requests:', err); onErr?.(err); },
   );
 }
@@ -239,15 +245,16 @@ export async function createStockRequest(
   const year = new Date().getFullYear();
   const requestRef = doc(col(orgId, 'agric_requests'));
   const requestNumber = `REQ-${year}-${requestRef.id.slice(0, 6).toUpperCase()}`;
+  const status = req.status === 'draft' || req.status === 'approved' ? req.status : 'pending';
   await setDoc(requestRef, {
     ...clean(req),
     requestNumber,
-    status: 'pending',
+    status,
     requestDate: new Date().toISOString(),
     createdAt: serverTimestamp(),
   });
   // The request is authoritative; an alert delivery failure must not make users retry it.
-  void addAgricAlert(orgId, {
+  if (status !== 'draft') void addAgricAlert(orgId, {
     type: 'restock_request',
     severity: req.priority === 'urgent' ? 'critical' : 'info',
     title: `New ${req.priority === 'urgent' ? 'URGENT ' : ''}Request: ${requestNumber}`,
@@ -276,6 +283,14 @@ export async function dispatchRequest(
   reqId: string,
   dispatchedBy: string,
   dispatchedItems: Array<{ itemId: string; qty: number }>,
+  options: {
+    issueDate: string;
+    issuedToName?: string;
+    expectedReturnDate?: string;
+    notes?: string;
+    recordConsumablesAsUsed?: boolean;
+    weekStartsOn?: number;
+  },
 ): Promise<void> {
   await runTransaction(db, async tx => {
     const reqRef = ref(orgId, 'agric_requests', reqId);
@@ -309,18 +324,177 @@ export async function dispatchRequest(
     }
 
     const recordedAt = new Date().toISOString();
+    const newIssues: RequestIssue[] = [];
+    const dispatchEvents: Array<{ itemId: string; quantity: number; uom: RequestIssue['uom']; issueId: string }> = [];
+    for (const dispatch of dispatchPlan.dispatches) {
+      const requestItem = request.items.find(item => item.itemId === dispatch.itemId)!;
+      const mode = requestItem.mode ?? (requestItem.category === 'equipment' ? 'returnable' : 'consumable');
+      const issueId = doc(col(orgId, 'agric_usage')).id;
+      const recordAsUsed = mode === 'consumable' && options.recordConsumablesAsUsed === true;
+      const issue: RequestIssue = {
+        id: issueId,
+        itemId: requestItem.itemId,
+        itemName: requestItem.itemName,
+        category: requestItem.category,
+        quantity: dispatch.quantity,
+        uom: requestItem.uom,
+        mode,
+        issueDate: options.issueDate,
+        issuedAt: recordedAt,
+        issuedBy: dispatchedBy,
+        issuedToName: options.issuedToName?.trim() || request.requestedByName,
+        expectedReturnDate: mode === 'returnable' ? options.expectedReturnDate : undefined,
+        notes: options.notes?.trim() || undefined,
+        usageStatus: mode === 'consumable' ? (recordAsUsed ? 'used' : 'pending') : 'not_applicable',
+        usedDate: recordAsUsed ? options.issueDate : undefined,
+        usedAt: recordAsUsed ? recordedAt : undefined,
+        usedBy: recordAsUsed ? dispatchedBy : undefined,
+        returnStatus: mode === 'returnable' ? 'out' : 'not_applicable',
+      };
+      newIssues.push(issue);
+      dispatchEvents.push({ itemId: dispatch.itemId, quantity: dispatch.quantity, uom: dispatch.uom, issueId });
+
+      if (recordAsUsed) {
+        const farmWeek = getFarmWeek(options.issueDate, options.weekStartsOn ?? 0);
+        tx.set(ref(orgId, 'agric_usage', issueId), {
+          itemId: issue.itemId,
+          itemName: issue.itemName,
+          category: issue.category,
+          date: options.issueDate,
+          quantity: issue.quantity,
+          uom: issue.uom,
+          farmZone: request.farmZone,
+          appliedBy: issue.issuedToName,
+          supervisorId: dispatchedBy,
+          notes: options.notes?.trim() || `Issued through ${request.requestNumber}`,
+          weekNumber: farmWeek.week,
+          weekYear: farmWeek.year,
+          weekStartDate: farmWeek.startDate,
+          weekEndDate: farmWeek.endDate,
+          sourceType: 'stock_request',
+          sourceRequestId: reqId,
+          sourceRequestNumber: request.requestNumber,
+          sourceIssueId: issueId,
+          recordedBy: dispatchedBy,
+          createdAt: serverTimestamp(),
+        });
+      }
+    }
     tx.update(reqRef, {
       items: clean(dispatchPlan.items),
       status: dispatchPlan.fullyDispatched ? 'dispatched' : 'partially_fulfilled',
       dispatchedBy,
       dispatchedAt: request.dispatchedAt ?? recordedAt,
       lastDispatchedAt: recordedAt,
+      issueHistory: [...(request.issueHistory ?? []), ...newIssues].map(issue => clean(issue)),
       fulfillmentHistory: [
         ...(request.fulfillmentHistory ?? []),
         {
           type: 'dispatch', recordedAt, recordedBy: dispatchedBy,
-          items: dispatchPlan.dispatches,
+          items: dispatchEvents,
         },
+        ...(newIssues.some(issue => issue.usageStatus === 'used') ? [{
+          type: 'usage' as const,
+          recordedAt,
+          recordedBy: dispatchedBy,
+          items: newIssues.filter(issue => issue.usageStatus === 'used').map(issue => ({ itemId: issue.itemId, quantity: issue.quantity, uom: issue.uom, issueId: issue.id })),
+        }] : []),
+      ],
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function recordRequestIssueUsage(
+  orgId: string,
+  reqId: string,
+  issueId: string,
+  usedBy: string,
+  usedDate: string,
+  weekStartsOn = 0,
+): Promise<void> {
+  await runTransaction(db, async tx => {
+    const reqRef = ref(orgId, 'agric_requests', reqId);
+    const reqSnap = await tx.get(reqRef);
+    if (!reqSnap.exists()) throw new Error('This request no longer exists.');
+    const request = reqSnap.data() as StockRequest;
+    const issue = (request.issueHistory ?? []).find(item => item.id === issueId);
+    if (!issue) throw new Error('This issue record no longer exists.');
+    if (issue.mode !== 'consumable') throw new Error('Returnable items cannot be logged as consumed.');
+    if (issue.usageStatus === 'used') throw new Error('This issue has already been logged as used.');
+
+    const recordedAt = new Date().toISOString();
+    const farmWeek = getFarmWeek(usedDate, weekStartsOn);
+    const updatedIssues = (request.issueHistory ?? []).map(item => item.id === issueId ? {
+      ...item, usageStatus: 'used' as const, usedDate, usedAt: recordedAt, usedBy,
+    } : item);
+    tx.set(ref(orgId, 'agric_usage', issueId), {
+      itemId: issue.itemId,
+      itemName: issue.itemName,
+      category: issue.category,
+      date: usedDate,
+      quantity: issue.quantity,
+      uom: issue.uom,
+      farmZone: request.farmZone,
+      appliedBy: issue.issuedToName,
+      supervisorId: usedBy,
+      notes: issue.notes || `Issued through ${request.requestNumber}`,
+      weekNumber: farmWeek.week,
+      weekYear: farmWeek.year,
+      weekStartDate: farmWeek.startDate,
+      weekEndDate: farmWeek.endDate,
+      sourceType: 'stock_request',
+      sourceRequestId: reqId,
+      sourceRequestNumber: request.requestNumber,
+      sourceIssueId: issueId,
+      recordedBy: usedBy,
+      createdAt: serverTimestamp(),
+    });
+    tx.update(reqRef, {
+      issueHistory: clean(updatedIssues),
+      fulfillmentHistory: [
+        ...(request.fulfillmentHistory ?? []),
+        { type: 'usage', recordedAt, recordedBy: usedBy, items: [{ itemId: issue.itemId, quantity: issue.quantity, uom: issue.uom, issueId }] },
+      ],
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function returnRequestIssue(
+  orgId: string,
+  reqId: string,
+  issueId: string,
+  quantity: number,
+  condition: RequestReturnCondition,
+  returnedBy: string,
+  notes?: string,
+): Promise<void> {
+  await runTransaction(db, async tx => {
+    const reqRef = ref(orgId, 'agric_requests', reqId);
+    const reqSnap = await tx.get(reqRef);
+    if (!reqSnap.exists()) throw new Error('This request no longer exists.');
+    const request = reqSnap.data() as StockRequest;
+    const issue = (request.issueHistory ?? []).find(item => item.id === issueId);
+    if (!issue) throw new Error('This issue record no longer exists.');
+    const inventoryRef = ref(orgId, 'agric_inventory', issue.itemId);
+    const inventorySnap = await tx.get(inventoryRef);
+    if (!inventorySnap.exists()) throw new Error('The linked inventory item no longer exists.');
+
+    const recordedAt = new Date().toISOString();
+    const plan = planRequestIssueReturn(request.issueHistory ?? [], issueId, quantity, condition, returnedBy, recordedAt, notes);
+    if (plan.restoreQuantity > 0) {
+      tx.update(inventoryRef, {
+        currentStock: increment(plan.restoreQuantity),
+        lastUpdated: recordedAt.slice(0, 10),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    tx.update(reqRef, {
+      issueHistory: clean(plan.issues),
+      fulfillmentHistory: [
+        ...(request.fulfillmentHistory ?? []),
+        { type: 'return', recordedAt, recordedBy: returnedBy, items: [{ itemId: issue.itemId, quantity, uom: issue.uom, issueId, condition }] },
       ],
       updatedAt: serverTimestamp(),
     });

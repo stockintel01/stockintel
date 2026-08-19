@@ -305,23 +305,54 @@ service cloud.firestore {
         allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricUsage') && isOwnerOrManager();
       }
       match /agric_requests/{id} {
-        allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricRequests');
+        allow read: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasAccess('agricRequests')
+          && (resource.data.status != 'draft' || resource.data.requestedBy == request.auth.uid || isOwnerOrManager());
         allow create: if isSignedIn()
           && isSameOrg(orgId)
           && hasActiveSubscription(orgId)
           && hasAccess('agricRequests')
           && request.resource.data.requestedBy == request.auth.uid
-          && request.resource.data.status == 'pending';
+          && (
+            request.resource.data.status == 'pending' ||
+            (isOwnerOrManager() && request.resource.data.status == 'draft') ||
+            (
+              isOwnerOrManager()
+              && request.resource.data.status == 'approved'
+              && request.resource.data.approvedBy == request.auth.uid
+            )
+          );
         allow update: if isSignedIn()
           && isSameOrg(orgId)
           && hasActiveSubscription(orgId)
           && (
-            (hasAccess('agricRequests') && isOwnerOrManager()) ||
+            (
+              hasAccess('agricRequests')
+              && isOwnerOrManager()
+              && resource.data.status in ['draft', 'pending']
+              && request.resource.data.status in ['approved', 'rejected']
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status', 'approvedBy', 'approvedAt', 'rejectionReason', 'updatedAt'
+              ])
+            ) ||
+            (
+              hasAccess('agricRequests')
+              && isOwnerOrManager()
+              && resource.data.status == 'draft'
+              && resource.data.requestedBy == request.auth.uid
+              && request.resource.data.requestedBy == resource.data.requestedBy
+              && request.resource.data.status in ['draft', 'pending', 'approved']
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'farmZone', 'priority', 'items', 'status', 'note', 'requiredByDate',
+                'approvedBy', 'approvedAt', 'updatedAt'
+              ])
+            ) ||
             (
               canFulfillStockRequests()
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 'status', 'items', 'dispatchedBy', 'dispatchedAt', 'lastDispatchedAt',
-                'receivedBy', 'receivedAt', 'fulfillmentHistory', 'updatedAt'
+                'receivedBy', 'receivedAt', 'issueHistory', 'fulfillmentHistory', 'updatedAt'
               ])
             ) ||
             (

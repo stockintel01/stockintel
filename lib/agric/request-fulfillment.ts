@@ -1,4 +1,4 @@
-import type { StockRequestItem, UOM } from './types';
+import type { RequestIssue, RequestReturnCondition, StockRequestItem, UOM } from './types';
 
 const EPSILON = 0.000001;
 
@@ -16,6 +16,53 @@ export function remainingToReceive(item: StockRequestItem): number {
 
 export function awaitingReceipt(item: StockRequestItem): number {
   return Math.max(0, Number(item.dispatchedQty ?? 0) - Number(item.receivedQty ?? 0));
+}
+
+export function resolvedReturnQuantity(issue: RequestIssue): number {
+  return Number(issue.returnedQty ?? 0) + Number(issue.damagedQty ?? 0) + Number(issue.lostQty ?? 0);
+}
+
+export function remainingToReturn(issue: RequestIssue): number {
+  if (issue.mode !== 'returnable') return 0;
+  return Math.max(0, issue.quantity - resolvedReturnQuantity(issue));
+}
+
+export function planRequestIssueReturn(
+  issues: RequestIssue[],
+  issueId: string,
+  quantity: number,
+  condition: RequestReturnCondition,
+  returnedBy: string,
+  returnedAt: string,
+  notes?: string,
+): { issues: RequestIssue[]; issue: RequestIssue; restoreQuantity: number } {
+  if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('Return quantity must be greater than zero.');
+  const current = issues.find(issue => issue.id === issueId);
+  if (!current) throw new Error('This issue record no longer exists.');
+  if (current.mode !== 'returnable') throw new Error('Only returnable items can be returned.');
+  const outstanding = remainingToReturn(current);
+  if (quantity > outstanding + EPSILON) throw new Error(`Return exceeds the outstanding ${outstanding} ${current.uom}.`);
+
+  const returnedQty = Number(current.returnedQty ?? 0) + (condition === 'good' ? quantity : 0);
+  const damagedQty = Number(current.damagedQty ?? 0) + (condition === 'damaged' ? quantity : 0);
+  const lostQty = Number(current.lostQty ?? 0) + (condition === 'lost' ? quantity : 0);
+  const remaining = Math.max(0, current.quantity - returnedQty - damagedQty - lostQty);
+  const updated: RequestIssue = {
+    ...current,
+    returnedQty,
+    damagedQty,
+    lostQty,
+    returnStatus: remaining <= EPSILON ? 'resolved' : 'partially_resolved',
+    returnEvents: [
+      ...(current.returnEvents ?? []),
+      { quantity, condition, returnedAt, returnedBy, notes },
+    ],
+  };
+  return {
+    issues: issues.map(issue => issue.id === issueId ? updated : issue),
+    issue: updated,
+    restoreQuantity: condition === 'good' ? quantity : 0,
+  };
 }
 
 export function planRequestDispatch(

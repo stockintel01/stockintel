@@ -4,20 +4,21 @@ import { useState } from 'react';
 import type { ElementType } from 'react';
 import {
   Plus, Search, CheckCircle2, Clock, XCircle, Truck,
-  Package, X
+  Package, X, RotateCcw, ClipboardCheck
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/lib/store';
 import { useAgric } from '@/lib/agric/useAgric';
-import { StockRequest, StockRequestItem, RequestStatus, FarmZone, AgricCategory, UserRole, UOM } from '@/lib/agric/types';
+import { StockRequest, StockRequestItem, RequestStatus, FarmZone, AgricCategory, UserRole, UOM, RequestReturnCondition } from '@/lib/agric/types';
 import { getAgricultureProfile } from '@/lib/agric/config';
 import { compatibleUnitsForItem, convertItemQuantity, formatQuantity } from '@/lib/agric/units';
 import { userHasAccess } from '@/lib/access-permissions';
-import { awaitingReceipt, remainingToDispatch, remainingToReceive } from '@/lib/agric/request-fulfillment';
+import { awaitingReceipt, remainingToDispatch, remainingToReceive, remainingToReturn } from '@/lib/agric/request-fulfillment';
 
 const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon: ElementType }> = {
+  draft: { label: 'Draft', color: 'bg-slate-100 text-slate-700 border-slate-200', icon: ClipboardCheck },
   pending: { label: 'Pending', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Clock },
   approved: { label: 'Approved', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: CheckCircle2 },
   partially_fulfilled: { label: 'Partially Fulfilled', color: 'bg-cyan-100 text-cyan-800 border-cyan-200', icon: Package },
@@ -27,21 +28,31 @@ const STATUS_CONFIG: Record<RequestStatus, { label: string; color: string; icon:
 };
 
 export default function RequestsPage() {
-  const { requests, inventory, approveRequest, rejectRequest, dispatchReq, confirmReceived, createRequest } = useAgric();
+  const { requests, inventory, approveRequest, submitDraftRequest, rejectRequest, dispatchReq, confirmReceived, createRequest, saveRequestDraft, markIssueUsed, returnIssuedItem } = useAgric();
   const { user, organization } = useAppStore();
-  const farmZones = getAgricultureProfile(organization?.settings).farmZones.length ? getAgricultureProfile(organization?.settings).farmZones : ['Main Farm'];
+  const agricultureProfile = getAgricultureProfile(organization?.settings);
+  const farmZones = agricultureProfile.farmZones.length ? agricultureProfile.farmZones : ['Main Farm'];
   const currentUserName = user?.name ?? 'Farm Manager';
   const currentUserId = user?.id ?? 'user';
   const canApproveRequests = !!user && ['super_admin', 'owner', 'manager'].includes(user.role) && userHasAccess(user, 'agricRequests');
   const canFulfillRequests = !!user && userHasAccess(user, 'agricRequests') && userHasAccess(user, 'agricStock');
+  const canRecordUsage = !!user && userHasAccess(user, 'agricUsage');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequestStatus | 'all'>('all');
   const [selectedRequest, setSelectedRequest] = useState<StockRequest | null>(null);
   const [showNewRequest, setShowNewRequest] = useState(false);
+  const [editingDraftId, setEditingDraftId] = useState('');
   const [actionError, setActionError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   const [isWorking, setIsWorking] = useState(false);
   const [dispatchQuantities, setDispatchQuantities] = useState<Record<string, number>>({});
+  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [issuedToName, setIssuedToName] = useState('');
+  const [expectedReturnDate, setExpectedReturnDate] = useState('');
+  const [issueNotes, setIssueNotes] = useState('');
+  const [recordAsUsed, setRecordAsUsed] = useState(false);
+  const [usageDates, setUsageDates] = useState<Record<string, string>>({});
+  const [returnForms, setReturnForms] = useState<Record<string, { quantity: number; condition: RequestReturnCondition; notes: string }>>({});
 
   // New request state
   const [newReq, setNewReq] = useState<Partial<StockRequest>>({
@@ -58,6 +69,7 @@ export default function RequestsPage() {
   });
 
   const stats = {
+    draft: requests.filter(r => r.status === 'draft').length,
     pending: requests.filter(r => r.status === 'pending').length,
     approved: requests.filter(r => r.status === 'approved').length,
     partial: requests.filter(r => r.status === 'partially_fulfilled').length,
@@ -69,6 +81,11 @@ export default function RequestsPage() {
     setActionError('');
     setActionMessage('');
     setSelectedRequest(request);
+    setIssuedToName(request.requestedByName);
+    setIssueDate(new Date().toISOString().slice(0, 10));
+    setExpectedReturnDate('');
+    setIssueNotes('');
+    setRecordAsUsed(false);
     setDispatchQuantities(Object.fromEntries(request.items.map(item => {
       const remaining = remainingToDispatch(item);
       const available = inventory.find(stock => stock.id === item.itemId)?.currentStock ?? 0;
@@ -76,14 +93,14 @@ export default function RequestsPage() {
     })));
   }
 
-  async function runAction(action: () => Promise<void>, message: string) {
+  async function runAction(action: () => Promise<void>, message: string, closeRequest = true) {
     setIsWorking(true);
     setActionError('');
     setActionMessage('');
     try {
       await action();
       setActionMessage(message);
-      setSelectedRequest(null);
+      if (closeRequest) setSelectedRequest(null);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'The request could not be updated.');
     } finally {
@@ -95,17 +112,58 @@ export default function RequestsPage() {
     await runAction(() => approveRequest(reqId), 'Request approved and added to the stockkeeper queue.');
   }
 
+  async function handleSubmitDraft(reqId: string) {
+    await runAction(() => submitDraftRequest(reqId), 'Draft submitted for approval.');
+  }
+
+  function editDraft(request: StockRequest) {
+    setNewReq({
+      farmZone: request.farmZone,
+      priority: request.priority,
+      requiredByDate: request.requiredByDate,
+      note: request.note,
+      items: request.items,
+    });
+    setEditingDraftId(request.id);
+    setSelectedRequest(null);
+    setShowNewRequest(true);
+  }
+
   async function handleReject(reqId: string, reason: string) {
     await runAction(() => rejectRequest(reqId, reason), 'Request rejected.');
   }
 
   async function handleDispatch(req: StockRequest) {
     const items = req.items.map(item => ({ itemId: item.itemId, qty: Number(dispatchQuantities[item.itemId] ?? 0) })).filter(item => item.qty > 0);
-    await runAction(() => dispatchReq(req.id, items), 'Dispatch recorded. Any outstanding quantity remains in the fulfillment queue.');
+    await runAction(() => dispatchReq(req.id, items, {
+      issueDate,
+      issuedToName,
+      expectedReturnDate: expectedReturnDate || undefined,
+      notes: issueNotes || undefined,
+      recordConsumablesAsUsed: recordAsUsed && canRecordUsage,
+      weekStartsOn: agricultureProfile.weekStartsOn,
+    }), recordAsUsed && canRecordUsage
+      ? 'Issue recorded and consumable quantities logged as usage. Outstanding quantities remain open.'
+      : 'Dated issue recorded. Outstanding quantities remain in the fulfillment queue.');
   }
 
   async function handleMarkReceived(reqId: string) {
     await runAction(() => confirmReceived(reqId), 'Receipt recorded. Any outstanding quantity remains open.');
+  }
+
+  async function handleMarkIssueUsed(req: StockRequest, issueId: string) {
+    const usedDate = usageDates[issueId] || new Date().toISOString().slice(0, 10);
+    await runAction(() => markIssueUsed(req.id, issueId, usedDate, agricultureProfile.weekStartsOn), 'Issue logged in the Usage Tracker without deducting stock again.');
+  }
+
+  async function handleReturnIssue(req: StockRequest, issueId: string) {
+    const form = returnForms[issueId];
+    if (!form?.quantity || form.quantity <= 0) {
+      setActionError('Enter a return quantity greater than zero.');
+      return;
+    }
+    await runAction(() => returnIssuedItem(req.id, issueId, form.quantity, form.condition, form.notes || undefined),
+      form.condition === 'good' ? 'Return logged and available stock restored.' : `${form.condition === 'damaged' ? 'Damaged' : 'Lost'} quantity logged without restoring available stock.`);
   }
 
   function addNewReqItem() {
@@ -137,29 +195,48 @@ export default function RequestsPage() {
       requestedUom,
       requestedQtyInStockUom,
       uom: invItem.uom,
+      mode: newReqItem.mode ?? (invItem.category === 'equipment' ? 'returnable' : 'consumable'),
       note: newReqItem.note
     };
     setNewReq(prev => ({ ...prev, items: [...(prev.items || []), item] }));
     setNewReqItem({});
   }
 
-  async function submitNewRequest() {
+  async function submitNewRequest(status: 'draft' | 'pending' | 'approved' = 'pending') {
     if (!newReq.farmZone || !newReq.items?.length || isWorking) return;
     const requestedByRole: UserRole = user?.role === 'worker' ? 'worker' : user?.role === 'manager' ? 'farm_manager' : 'admin';
     setIsWorking(true);
     setActionError('');
     try {
-      await createRequest({
-        requestNumber: '', requestedBy: currentUserId, requestedByName: currentUserName,
+      const approvedAt = status === 'approved' ? new Date().toISOString() : undefined;
+      const requestFields = {
+        requestedBy: currentUserId, requestedByName: currentUserName,
         requestedByRole,
         requestDate: new Date().toISOString(),
         farmZone: newReq.farmZone as FarmZone, priority: newReq.priority ?? 'normal',
-        items: newReq.items!, status: 'pending', note: newReq.note?.trim() || undefined,
+        items: newReq.items!, status, note: newReq.note?.trim() || undefined,
         requiredByDate: newReq.requiredByDate || undefined,
-      });
+        approvedBy: status === 'approved' ? currentUserId : undefined,
+        approvedAt,
+      };
+      if (editingDraftId) {
+        await saveRequestDraft(editingDraftId, {
+          farmZone: requestFields.farmZone,
+          priority: requestFields.priority,
+          items: requestFields.items,
+          status: requestFields.status,
+          note: requestFields.note,
+          requiredByDate: requestFields.requiredByDate,
+          approvedBy: requestFields.approvedBy,
+          approvedAt: requestFields.approvedAt,
+        });
+      } else {
+        await createRequest({ requestNumber: '', ...requestFields });
+      }
       setNewReq({ farmZone: farmZones[0] as FarmZone, priority: 'normal', items: [] });
+      setEditingDraftId('');
       setShowNewRequest(false);
-      setActionMessage('Request submitted. Managers and stockkeepers can now see it in their queue.');
+      setActionMessage(status === 'draft' ? 'Request saved as a draft.' : status === 'approved' ? 'Request submitted and approved. It is ready for the stockkeeper.' : 'Request submitted. Managers and stockkeepers can now see it in their queue.');
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'The request could not be submitted.');
     } finally {
@@ -173,9 +250,9 @@ export default function RequestsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Stock Requests</h1>
-          <p className="text-muted-foreground text-sm">Request farm supplies, approve fulfillment, and track dispatch to receipt.</p>
+          <p className="text-muted-foreground text-sm">Request, approve, issue, use, receive, and return farm stock with a complete audit trail.</p>
         </div>
-        <Button className="bg-green-600 hover:bg-green-700" onClick={() => { setActionError(''); setActionMessage(''); setShowNewRequest(true); }}>
+        <Button className="bg-green-600 hover:bg-green-700" onClick={() => { setActionError(''); setActionMessage(''); setEditingDraftId(''); setNewReq({ farmZone: farmZones[0] as FarmZone, priority: 'normal', items: [] }); setShowNewRequest(true); }}>
           <Plus className="w-4 h-4 mr-1" /> New Request
         </Button>
       </div>
@@ -196,8 +273,9 @@ export default function RequestsPage() {
       )}
 
       {/* Pipeline Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
+          ...(canApproveRequests ? [{ label: 'Drafts', status: 'draft' as RequestStatus, count: stats.draft, color: 'border-l-slate-500 text-slate-700' }] : []),
           { label: 'Pending Approval', status: 'pending' as RequestStatus, count: stats.pending, color: 'border-l-amber-500 text-amber-700' },
           { label: 'Ready to Dispatch', status: 'approved' as RequestStatus, count: stats.approved, color: 'border-l-blue-500 text-blue-700' },
           { label: 'Partly Fulfilled', status: 'partially_fulfilled' as RequestStatus, count: stats.partial, color: 'border-l-cyan-500 text-cyan-700' },
@@ -338,7 +416,7 @@ export default function RequestsPage() {
                         <tr key={item.itemId} className="border-t">
                           <td className="px-3 py-2">
                             <p>{item.itemName}</p>
-                            <p className="text-xs text-muted-foreground capitalize">{item.category}</p>
+                            <p className="text-xs text-muted-foreground capitalize">{item.category} · {item.mode ?? (item.category === 'equipment' ? 'returnable' : 'consumable')}</p>
                           </td>
                           <td className="px-3 py-2 font-mono">
                             {formatQuantity(item.requestedQty, item.requestedUom ?? item.uom)}
@@ -356,8 +434,16 @@ export default function RequestsPage() {
 
               {canFulfillRequests && ['approved', 'partially_fulfilled'].includes(selectedRequest.status) && selectedRequest.items.some(item => remainingToDispatch(item) > 0) && (
                 <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                  <p className="text-sm font-semibold text-blue-950">Record this dispatch</p>
-                  <p className="mb-3 text-xs text-blue-800">Enter what is leaving the store now. Short quantities remain open automatically.</p>
+                  <p className="text-sm font-semibold text-blue-950">Record this dated issue</p>
+                  <p className="mb-3 text-xs text-blue-800">Enter what is leaving the store today. Each partial issue is retained separately.</p>
+                  <div className="mb-3 grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-medium text-blue-950">Issue date<Input className="mt-1 bg-white" type="date" value={issueDate} onChange={event => setIssueDate(event.target.value)} /></label>
+                    <label className="text-xs font-medium text-blue-950">Issued to<Input className="mt-1 bg-white" value={issuedToName} onChange={event => setIssuedToName(event.target.value)} placeholder="Worker, team, or supervisor" /></label>
+                    {selectedRequest.items.some(item => (item.mode ?? (item.category === 'equipment' ? 'returnable' : 'consumable')) === 'returnable') && (
+                      <label className="text-xs font-medium text-blue-950">Expected return date<Input className="mt-1 bg-white" type="date" value={expectedReturnDate} onChange={event => setExpectedReturnDate(event.target.value)} /></label>
+                    )}
+                    <label className="text-xs font-medium text-blue-950">Issue note<Input className="mt-1 bg-white" value={issueNotes} onChange={event => setIssueNotes(event.target.value)} placeholder="Task, block, or purpose" /></label>
+                  </div>
                   <div className="space-y-2">
                     {selectedRequest.items.map(item => {
                       const remaining = remainingToDispatch(item);
@@ -368,6 +454,52 @@ export default function RequestsPage() {
                           <span><span className="font-medium">{item.itemName}</span><span className="block text-xs text-blue-800">Remaining {formatQuantity(remaining, item.uom)} · Available {formatQuantity(available, item.uom)}</span></span>
                           <Input type="number" min={0} max={Math.min(remaining, available)} step="any" value={dispatchQuantities[item.itemId] ?? 0} onChange={event => setDispatchQuantities(current => ({ ...current, [item.itemId]: Number(event.target.value) }))} aria-label={`Dispatch quantity for ${item.itemName}`} />
                         </label>
+                      );
+                    })}
+                  </div>
+                  {canRecordUsage && selectedRequest.items.some(item => (item.mode ?? (item.category === 'equipment' ? 'returnable' : 'consumable')) === 'consumable') && (
+                    <label className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-white p-3 text-sm text-blue-950">
+                      <input className="mt-1" type="checkbox" checked={recordAsUsed} onChange={event => setRecordAsUsed(event.target.checked)} />
+                      <span><span className="block font-medium">Log consumable quantities as used on the issue date</span><span className="text-xs text-blue-700">Creates Usage Tracker records. Stock will not be deducted twice.</span></span>
+                    </label>
+                  )}
+                </div>
+              )}
+
+              {(selectedRequest.issueHistory?.length ?? 0) > 0 && (
+                <div>
+                  <p className="mb-2 text-sm font-semibold">Dated issue ledger</p>
+                  <div className="space-y-2">
+                    {selectedRequest.issueHistory!.slice().reverse().map(issue => {
+                      const outstandingReturn = remainingToReturn(issue);
+                      const returnForm = returnForms[issue.id] ?? { quantity: outstandingReturn, condition: 'good' as RequestReturnCondition, notes: '' };
+                      return (
+                        <div key={issue.id} className="rounded-lg border p-3 text-sm">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium">{issue.itemName} · {formatQuantity(issue.quantity, issue.uom)}</p>
+                              <p className="text-xs text-muted-foreground">Issued {new Date(issue.issueDate).toLocaleDateString()} to {issue.issuedToName} · {issue.mode}</p>
+                            </div>
+                            <span className={`rounded-full px-2 py-1 text-xs font-medium ${issue.mode === 'consumable' ? issue.usageStatus === 'used' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700' : issue.returnStatus === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>
+                              {issue.mode === 'consumable' ? issue.usageStatus === 'used' ? `Used ${issue.usedDate ?? ''}` : 'Usage not logged' : issue.returnStatus === 'resolved' ? 'Return resolved' : `${formatQuantity(outstandingReturn, issue.uom)} outstanding`}
+                            </span>
+                          </div>
+                          {issue.notes && <p className="mt-2 text-xs text-muted-foreground">{issue.notes}</p>}
+                          {issue.mode === 'consumable' && issue.usageStatus !== 'used' && canFulfillRequests && canRecordUsage && (
+                            <div className="mt-3 flex flex-wrap items-end gap-2 border-t pt-3">
+                              <label className="text-xs font-medium">Usage date<Input className="mt-1 h-9 w-40" type="date" value={usageDates[issue.id] ?? issue.issueDate} onChange={event => setUsageDates(current => ({ ...current, [issue.id]: event.target.value }))} /></label>
+                              <Button size="sm" onClick={() => void handleMarkIssueUsed(selectedRequest, issue.id)} disabled={isWorking}><ClipboardCheck className="mr-1 h-4 w-4" />Mark as used</Button>
+                            </div>
+                          )}
+                          {issue.mode === 'returnable' && outstandingReturn > 0 && canFulfillRequests && (
+                            <div className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-[7rem_9rem_1fr_auto] sm:items-end">
+                              <label className="text-xs font-medium">Quantity<Input className="mt-1 h-9" type="number" min={0} max={outstandingReturn} step="any" value={returnForm.quantity} onChange={event => setReturnForms(current => ({ ...current, [issue.id]: { ...returnForm, quantity: Number(event.target.value) } }))} /></label>
+                              <label className="text-xs font-medium">Condition<select className="mt-1 h-9 w-full rounded-md border bg-background px-2" value={returnForm.condition} onChange={event => setReturnForms(current => ({ ...current, [issue.id]: { ...returnForm, condition: event.target.value as RequestReturnCondition } }))}><option value="good">Good</option><option value="damaged">Damaged</option><option value="lost">Lost</option></select></label>
+                              <label className="text-xs font-medium">Return note<Input className="mt-1 h-9" value={returnForm.notes} onChange={event => setReturnForms(current => ({ ...current, [issue.id]: { ...returnForm, notes: event.target.value } }))} placeholder="Optional condition details" /></label>
+                              <Button size="sm" onClick={() => void handleReturnIssue(selectedRequest, issue.id)} disabled={isWorking}><RotateCcw className="mr-1 h-4 w-4" />Log return</Button>
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -409,6 +541,13 @@ export default function RequestsPage() {
 
               {/* Actions */}
               <div className="flex flex-wrap gap-2 pt-2 border-t">
+                {selectedRequest.status === 'draft' && canApproveRequests && (
+                  <>
+                    {selectedRequest.requestedBy === currentUserId && <Button variant="outline" onClick={() => editDraft(selectedRequest)} disabled={isWorking}>Edit Draft</Button>}
+                    {selectedRequest.requestedBy === currentUserId && <Button variant="outline" onClick={() => void handleSubmitDraft(selectedRequest.id)} disabled={isWorking}>Submit for Approval</Button>}
+                    <Button className="bg-green-600 hover:bg-green-700" onClick={() => void handleApprove(selectedRequest.id)} disabled={isWorking}><CheckCircle2 className="mr-1 h-4 w-4" />Approve Draft Now</Button>
+                  </>
+                )}
                 {selectedRequest.status === 'pending' && canApproveRequests && (
                   <>
                     <Button className="bg-green-600 hover:bg-green-700" onClick={() => void handleApprove(selectedRequest.id)} disabled={isWorking}>
@@ -442,7 +581,7 @@ export default function RequestsPage() {
           <Card className="w-full max-w-xl max-h-[90vh] overflow-y-auto">
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
-                New Stock Request <button onClick={() => setShowNewRequest(false)}><X className="w-4 h-4" /></button>
+                {editingDraftId ? 'Edit Request Draft' : 'New Stock Request'} <button onClick={() => { setShowNewRequest(false); setEditingDraftId(''); }}><X className="w-4 h-4" /></button>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -474,7 +613,10 @@ export default function RequestsPage() {
               <div>
                 <p className="text-sm font-semibold mb-2">Add Items</p>
                 <div className="flex flex-wrap gap-2">
-                  <select className="flex-1 border rounded-md px-3 py-2 text-sm bg-background" value={newReqItem.itemId || ''} onChange={e => setNewReqItem(p => ({ ...p, itemId: e.target.value }))}>
+                  <select className="flex-1 border rounded-md px-3 py-2 text-sm bg-background" value={newReqItem.itemId || ''} onChange={e => {
+                    const item = inventory.find(entry => entry.id === e.target.value);
+                    setNewReqItem(p => ({ ...p, itemId: e.target.value, requestedUom: item?.uom, mode: item?.category === 'equipment' ? 'returnable' : 'consumable' }));
+                  }}>
                     <option value="">Select item...</option>
                     {inventory.filter(i => i.isActive).map(i => (
                       <option key={i.id} value={i.id}>{i.name} ({i.currentStock} {i.uom} available)</option>
@@ -487,6 +629,10 @@ export default function RequestsPage() {
                     onChange={e => setNewReqItem(p => ({ ...p, requestedUom: e.target.value as UOM }))}
                   >
                     {(inventory.find(i => i.id === newReqItem.itemId) ? compatibleUnitsForItem(inventory.find(i => i.id === newReqItem.itemId)!.uom, inventory.find(i => i.id === newReqItem.itemId)!.packSize) : ['lt', 'ml', 'kg', 'g', 'units'] as UOM[]).map(uom => <option key={uom} value={uom}>{uom}</option>)}
+                  </select>
+                  <select className="w-32 border rounded-md px-2 py-2 text-sm bg-background" value={newReqItem.mode ?? 'consumable'} onChange={e => setNewReqItem(p => ({ ...p, mode: e.target.value as StockRequestItem['mode'] }))} aria-label="Item handling">
+                    <option value="consumable">Consumable</option>
+                    <option value="returnable">Returnable</option>
                   </select>
                   <Button variant="outline" onClick={addNewReqItem} disabled={!newReqItem.itemId || !newReqItem.requestedQty}>
                     <Plus className="w-4 h-4" />
@@ -510,7 +656,7 @@ export default function RequestsPage() {
                 <div className="border rounded-lg divide-y">
                   {(newReq.items || []).map((item, i) => (
                     <div key={i} className="flex items-center justify-between px-3 py-2 text-sm">
-                      <span>{item.itemName}</span>
+                      <span>{item.itemName}<span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs capitalize text-muted-foreground">{item.mode}</span></span>
                       <div className="flex items-center gap-2">
                         <span className="font-mono">{formatQuantity(item.requestedQty, item.requestedUom ?? item.uom)}</span>
                         <button onClick={() => setNewReq(p => ({ ...p, items: (p.items || []).filter((_, j) => j !== i) }))} className="text-red-500 hover:text-red-700">
@@ -522,11 +668,13 @@ export default function RequestsPage() {
                 </div>
               )}
 
-              <div className="flex gap-2 pt-2">
-                <Button variant="outline" className="flex-1" onClick={() => setShowNewRequest(false)}>Cancel</Button>
-                <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => void submitNewRequest()} disabled={!(newReq.items || []).length || isWorking}>
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => { setShowNewRequest(false); setEditingDraftId(''); }}>Cancel</Button>
+                {canApproveRequests && <Button variant="outline" className="flex-1" onClick={() => void submitNewRequest('draft')} disabled={!(newReq.items || []).length || isWorking}>Save Draft</Button>}
+                <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => void submitNewRequest('pending')} disabled={!(newReq.items || []).length || isWorking}>
                   {isWorking ? 'Submitting...' : 'Submit Request'}
                 </Button>
+                {canApproveRequests && <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={() => void submitNewRequest('approved')} disabled={!(newReq.items || []).length || isWorking}>Submit & Approve</Button>}
               </div>
             </CardContent>
           </Card>

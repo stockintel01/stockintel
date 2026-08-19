@@ -15,6 +15,7 @@ import { userHasAccess } from '@/lib/access-permissions';
 import type {
   AgricInventoryItem, UsageLog, StockRequest, EquipmentCheckout,
   SprayPlan, PackingRecord, ShippingRecord, AgricAlert, StockAdjustment,
+  RequestReturnCondition,
 } from './types';
 import {
   subscribeInventory, subscribeUsageLogs, subscribeRequests,
@@ -23,6 +24,7 @@ import {
   addInventoryItem as fsAddItem, updateInventoryItem, softDeleteInventoryItem,
   submitStockAdjustment, approveStockAdjustment,
   addUsageLog, createStockRequest, updateRequestStatus, dispatchRequest,
+  recordRequestIssueUsage, returnRequestIssue,
   checkoutEquipment, returnEquipment, createSprayPlan, logApplicationComplete, confirmRequestReceipt,
   addPackingRecord, addShippingRecord, markAlertRead,
   checkAndFireLowStockAlerts,
@@ -57,10 +59,21 @@ export interface AgricActions {
   logUsage: (log: Omit<UsageLog, 'id'>) => Promise<void>;
   // Requests
   createRequest: (req: Omit<StockRequest, 'id'>) => Promise<void>;
+  saveRequestDraft: (reqId: string, fields: Partial<StockRequest>) => Promise<void>;
   approveRequest: (reqId: string) => Promise<void>;
+  submitDraftRequest: (reqId: string) => Promise<void>;
   rejectRequest: (reqId: string, reason: string) => Promise<void>;
-  dispatchReq: (reqId: string, items: Array<{ itemId: string; qty: number }>) => Promise<void>;
+  dispatchReq: (reqId: string, items: Array<{ itemId: string; qty: number }>, options: {
+    issueDate: string;
+    issuedToName?: string;
+    expectedReturnDate?: string;
+    notes?: string;
+    recordConsumablesAsUsed?: boolean;
+    weekStartsOn?: number;
+  }) => Promise<void>;
   confirmReceived: (reqId: string) => Promise<void>;
+  markIssueUsed: (reqId: string, issueId: string, usedDate: string, weekStartsOn?: number) => Promise<void>;
+  returnIssuedItem: (reqId: string, issueId: string, quantity: number, condition: RequestReturnCondition, notes?: string) => Promise<void>;
   // Equipment
   checkout: (item: Omit<EquipmentCheckout, 'id'>) => Promise<void>;
   returnItem: (checkoutId: string, condition: 'good' | 'damaged' | 'lost', notes?: string) => Promise<void>;
@@ -143,7 +156,7 @@ export function useAgric(): AgricState & AgricActions {
     const subscriptions: Array<() => void> = [];
     if (canInventory) subscriptions.push(subscribeInventory(orgId, inv => { setState(s => ({ ...s, inventory: inv })); onLoad(); }, onErr));
     if (canUsage) subscriptions.push(subscribeUsageLogs(orgId, logs => { setState(s => ({ ...s, usageLogs: logs })); onLoad(); }, onErr));
-    if (canRequests) subscriptions.push(subscribeRequests(orgId, reqs => { setState(s => ({ ...s, requests: reqs })); onLoad(); }, onErr));
+    if (canRequests) subscriptions.push(subscribeRequests(orgId, ['owner', 'manager', 'super_admin'].includes(user?.role ?? ''), reqs => { setState(s => ({ ...s, requests: reqs })); onLoad(); }, onErr));
     if (canEquipment) subscriptions.push(subscribeEquipment(orgId, ch => { setState(s => ({ ...s, checkouts: ch })); onLoad(); }, onErr));
     if (canPlans) subscriptions.push(subscribePlans(orgId, plans => { setState(s => ({ ...s, plans })); onLoad(); }, onErr));
     if (canPacking) {
@@ -160,7 +173,7 @@ export function useAgric(): AgricState & AgricActions {
       unsubsRef.current.forEach(u => u());
       unsubsRef.current = [];
     };
-  }, [canEquipment, canInventory, canManageInventory, canPacking, canPlans, canRequests, canUsage, orgId, userId]);
+  }, [canEquipment, canInventory, canManageInventory, canPacking, canPlans, canRequests, canUsage, orgId, user?.role, userId]);
 
   // ── Production write guard ──────────────────────────────
   const requireLiveContext = useCallback(() => {
@@ -208,9 +221,19 @@ export function useAgric(): AgricState & AgricActions {
       await createStockRequest(ctx.orgId, req);
     }, [requireLiveContext]),
 
+    saveRequestDraft: useCallback(async (reqId, fields) => {
+      const ctx = requireLiveContext();
+      await updateRequestStatus(ctx.orgId, reqId, fields);
+    }, [requireLiveContext]),
+
     approveRequest: useCallback(async (reqId) => {
       const ctx = requireLiveContext();
       await updateRequestStatus(ctx.orgId, reqId, { status: 'approved', approvedBy: ctx.userId, approvedAt: new Date().toISOString() });
+    }, [requireLiveContext]),
+
+    submitDraftRequest: useCallback(async (reqId) => {
+      const ctx = requireLiveContext();
+      await updateRequestStatus(ctx.orgId, reqId, { status: 'pending' });
     }, [requireLiveContext]),
 
     rejectRequest: useCallback(async (reqId, reason) => {
@@ -218,14 +241,24 @@ export function useAgric(): AgricState & AgricActions {
       await updateRequestStatus(ctx.orgId, reqId, { status: 'rejected', rejectionReason: reason });
     }, [requireLiveContext]),
 
-    dispatchReq: useCallback(async (reqId, items) => {
+    dispatchReq: useCallback(async (reqId, items, options) => {
       const ctx = requireLiveContext();
-      await dispatchRequest(ctx.orgId, reqId, ctx.userId, items);
+      await dispatchRequest(ctx.orgId, reqId, ctx.userId, items, options);
     }, [requireLiveContext]),
 
     confirmReceived: useCallback(async (reqId) => {
       const ctx = requireLiveContext();
       await confirmRequestReceipt(ctx.orgId, reqId, ctx.userId);
+    }, [requireLiveContext]),
+
+    markIssueUsed: useCallback(async (reqId, issueId, usedDate, weekStartsOn = 0) => {
+      const ctx = requireLiveContext();
+      await recordRequestIssueUsage(ctx.orgId, reqId, issueId, ctx.userId, usedDate, weekStartsOn);
+    }, [requireLiveContext]),
+
+    returnIssuedItem: useCallback(async (reqId, issueId, quantity, condition, notes) => {
+      const ctx = requireLiveContext();
+      await returnRequestIssue(ctx.orgId, reqId, issueId, quantity, condition, ctx.userId, notes);
     }, [requireLiveContext]),
 
     // Equipment
