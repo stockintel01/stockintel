@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { ApiError, requireRole, requireUser } from '@/lib/api-auth';
+import { ApiError, requireAccess, requireRole, requireUser } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
-import { normalizeAccess } from '@/lib/access-permissions';
+import { canDelegateAccess, normalizeAccess, normalizeAccessForRole } from '@/lib/access-permissions';
 import type { IndustryType } from '@/lib/store';
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ uid: string }> }) {
     try {
         const user = await requireUser(request);
         requireRole(user, ['owner', 'manager']);
+        requireAccess(user, 'team');
         const { uid } = await context.params;
         const { role, access } = await request.json();
         if (!['manager', 'worker'].includes(role)) throw new ApiError('Valid role is required', 400);
@@ -26,7 +27,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ u
         if (target.role === 'owner' || target.role === 'super_admin') throw new ApiError('Owner access cannot be changed here', 403);
 
         const industry = 'agriculture' as IndustryType;
-        const normalizedAccess = normalizeAccess(access, industry);
+        if (!Array.isArray(access)) throw new ApiError('Access permissions are required', 400);
+        const recognizedAccess = normalizeAccess(access, industry);
+        if (recognizedAccess.length !== access.length) throw new ApiError('One or more access permissions are invalid', 400);
+        if (!canDelegateAccess(user, role, recognizedAccess, industry)) {
+            throw new ApiError('You cannot grant owner-only access or permissions beyond your own access level', 403);
+        }
+        const normalizedAccess = normalizeAccessForRole(recognizedAccess, industry, role);
         await targetRef.update({
             role,
             access: normalizedAccess,

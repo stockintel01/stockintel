@@ -8,9 +8,19 @@ import { useAppStore } from '@/lib/store';
 import { inviteMember } from '@/lib/firebase-utils';
 import { addDoc, collection, doc, query, where, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Users, MoreHorizontal, Shield, Mail, UserPlus, Clock, Calendar as CalendarIcon } from 'lucide-react';
+import { Users, Shield, Mail, UserPlus, Clock, Calendar as CalendarIcon, ChevronDown, ChevronUp } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
-import { ACCESS_DEFINITIONS, ACCESS_PRESETS, INDUSTRY_ACCESS, type AccessKey } from '@/lib/access-permissions';
+import {
+    ACCESS_DEFINITIONS,
+    ACCESS_PRESETS,
+    assignableAccessForRole,
+    defaultAccessForRole,
+    effectiveAccessForUser,
+    normalizeAccessForRole,
+    roleLabel,
+    userHasAccess,
+    type AccessKey,
+} from '@/lib/access-permissions';
 
 interface TeamMember {
     id: string;
@@ -30,6 +40,11 @@ interface Shift {
     status: string;
 }
 
+interface MemberDraft {
+    role: 'manager' | 'worker';
+    access: AccessKey[];
+}
+
 export default function TeamPage() {
     const { user, organization } = useAppStore();
     const [team, setTeam] = useState<TeamMember[]>([]);
@@ -39,9 +54,12 @@ export default function TeamPage() {
     const [inviteEmail, setInviteEmail] = useState('');
     const [inviteRole, setInviteRole] = useState<'manager' | 'worker'>('worker');
     const industry = organization?.industry ?? 'agriculture';
-    const accessOptions = INDUSTRY_ACCESS[industry];
     const defaultPreset = ACCESS_PRESETS[industry][0];
     const [inviteAccess, setInviteAccess] = useState<AccessKey[]>(defaultPreset.access);
+    const [invitePresetId, setInvitePresetId] = useState(defaultPreset.id);
+    const [showInviteCustomization, setShowInviteCustomization] = useState(false);
+    const [editingMemberId, setEditingMemberId] = useState('');
+    const [memberDrafts, setMemberDrafts] = useState<Record<string, MemberDraft>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [savingMemberId, setSavingMemberId] = useState('');
     const [savedMemberId, setSavedMemberId] = useState('');
@@ -54,8 +72,12 @@ export default function TeamPage() {
     useEffect(() => {
         const preset = ACCESS_PRESETS[industry][0];
         setInviteRole(preset.role);
-        setInviteAccess(preset.access);
-    }, [industry]);
+        setInvitePresetId(preset.id);
+        setInviteAccess(preset.access.filter(key => userHasAccess(user, key)));
+    }, [industry, user]);
+
+    const accessOptionsForRole = (role: 'manager' | 'worker') => assignableAccessForRole(role, industry)
+        .filter(key => user?.role === 'owner' || user?.role === 'super_admin' || userHasAccess(user, key));
 
     // Listen to team members
     useEffect(() => {
@@ -101,18 +123,28 @@ export default function TeamPage() {
     };
 
     const toggleInviteAccess = (key: AccessKey) => {
+        setInvitePresetId('');
         setInviteAccess(prev => prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key]);
     };
 
     const applyPreset = (presetId: string) => {
         const preset = ACCESS_PRESETS[industry].find(item => item.id === presetId);
         if (!preset) return;
+        setInvitePresetId(preset.id);
         setInviteRole(preset.role);
-        setInviteAccess(preset.access);
+        setInviteAccess(preset.access.filter(key => accessOptionsForRole(preset.role).includes(key)));
     };
 
-    const updateMemberAccess = async (member: TeamMember, updates: { role?: 'manager' | 'worker'; access?: AccessKey[] }) => {
-        if (member.role === 'owner' || member.role === 'super_admin') return;
+    const changeInviteRole = (role: 'manager' | 'worker') => {
+        const preset = ACCESS_PRESETS[industry].find(item => item.role === role);
+        setInviteRole(role);
+        setInvitePresetId(preset?.id ?? '');
+        setInviteAccess((preset?.access ?? defaultAccessForRole(role, industry))
+            .filter(key => accessOptionsForRole(role).includes(key)));
+    };
+
+    const updateMemberAccess = async (member: TeamMember, updates: { role?: 'manager' | 'worker'; access?: AccessKey[] }): Promise<boolean> => {
+        if (member.role === 'owner' || member.role === 'super_admin') return false;
         setError('');
         setSavedMemberId('');
         setSavingMemberId(member.id);
@@ -126,6 +158,7 @@ export default function TeamPage() {
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error ?? 'Unable to update member access');
+            setTeam(current => current.map(item => item.id === member.id ? { ...item, role, access } : item));
             setSavedMemberId(member.id);
         } catch (err) {
             const message = err instanceof Error ? err.message.toLowerCase() : '';
@@ -136,7 +169,7 @@ export default function TeamPage() {
                 message.includes('service account');
             if (!canFallback || !organization?.id) {
                 setError(err instanceof Error ? err.message : 'Unable to update member access');
-                return;
+                return false;
             }
             try {
                 await setDoc(doc(db, 'users', member.id), {
@@ -154,20 +187,69 @@ export default function TeamPage() {
                     access,
                     updatedAt: serverTimestamp(),
                 }, { merge: true }).catch(() => undefined);
+                setTeam(current => current.map(item => item.id === member.id ? { ...item, role, access } : item));
                 setSavedMemberId(member.id);
             } catch (fallbackErr) {
                 setError(fallbackErr instanceof Error ? fallbackErr.message : 'Unable to update member access');
+                return false;
             }
         } finally {
             setSavingMemberId('');
             setTimeout(() => setSavedMemberId(current => current === member.id ? '' : current), 2500);
         }
+        return true;
     };
 
-    const toggleMemberAccess = (member: TeamMember, key: AccessKey) => {
-        const current = member.access ?? [];
-        const next = current.includes(key) ? current.filter(item => item !== key) : [...current, key];
-        void updateMemberAccess(member, { access: next });
+    const beginEditingMember = (member: TeamMember) => {
+        const role = member.role === 'manager' ? 'manager' : 'worker';
+        setMemberDrafts(current => ({
+            ...current,
+            [member.id]: { role, access: effectiveAccessForUser({ role, access: member.access }, industry) },
+        }));
+        setEditingMemberId(member.id);
+    };
+
+    const changeMemberRole = (member: TeamMember, role: 'manager' | 'worker') => {
+        setMemberDrafts(current => ({
+            ...current,
+            [member.id]: {
+                role,
+                access: normalizeAccessForRole(current[member.id]?.access ?? [], industry, role)
+                    .filter(key => accessOptionsForRole(role).includes(key)),
+            },
+        }));
+    };
+
+    const applyMemberPreset = (member: TeamMember, presetId: string) => {
+        const preset = ACCESS_PRESETS[industry].find(item => item.id === presetId);
+        if (!preset) return;
+        setMemberDrafts(current => ({
+            ...current,
+            [member.id]: {
+                role: preset.role,
+                access: preset.access.filter(key => accessOptionsForRole(preset.role).includes(key)),
+            },
+        }));
+    };
+
+    const toggleMemberDraftAccess = (member: TeamMember, key: AccessKey) => {
+        setMemberDrafts(current => {
+            const draft = current[member.id];
+            if (!draft) return current;
+            return {
+                ...current,
+                [member.id]: {
+                    ...draft,
+                    access: draft.access.includes(key) ? draft.access.filter(item => item !== key) : [...draft.access, key],
+                },
+            };
+        });
+    };
+
+    const saveMemberDraft = async (member: TeamMember) => {
+        const draft = memberDrafts[member.id];
+        if (!draft) return;
+        if (await updateMemberAccess(member, draft)) setEditingMemberId('');
     };
 
     const handleInvite = async (e: React.FormEvent) => {
@@ -267,8 +349,9 @@ export default function TeamPage() {
                                         <select
                                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                                             onChange={(e) => applyPreset(e.target.value)}
-                                            defaultValue={defaultPreset.id}
+                                            value={invitePresetId}
                                         >
+                                            <option value="" disabled>Custom access</option>
                                             {ACCESS_PRESETS[industry].map(preset => (
                                                 <option key={preset.id} value={preset.id}>{preset.label}</option>
                                             ))}
@@ -279,23 +362,33 @@ export default function TeamPage() {
                                         <select
                                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                                             value={inviteRole}
-                                            onChange={(e) => setInviteRole(e.target.value as 'manager' | 'worker')}
+                                            onChange={(e) => changeInviteRole(e.target.value as 'manager' | 'worker')}
                                         >
-                                            <option value="manager">Manager (Full Access)</option>
-                                            <option value="worker">Worker (Limited Access)</option>
+                                            <option value="manager">Manager</option>
+                                            <option value="worker">Team member</option>
                                         </select>
                                     </div>
                                     </div>
                                     <div className="rounded-xl border bg-muted/20 p-4">
-                                        <div className="mb-3 flex items-center justify-between gap-3">
+                                        <div className="flex items-start justify-between gap-3">
                                             <div>
-                                                <p className="text-sm font-semibold">Allowed tabs and tools</p>
-                                                <p className="text-xs text-muted-foreground">Turn on only what this person should see and use.</p>
+                                                <p className="text-sm font-semibold">
+                                                    {ACCESS_PRESETS[industry].find(item => item.id === invitePresetId)?.label ?? 'Custom access'}
+                                                </p>
+                                                <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+                                                    {ACCESS_PRESETS[industry].find(item => item.id === invitePresetId)?.description ?? 'A customized set of farm tools.'}
+                                                </p>
                                             </div>
-                                            <span className="text-xs text-muted-foreground">{inviteAccess.length} enabled</span>
+                                            <Button type="button" variant="outline" size="sm" onClick={() => setShowInviteCustomization(value => !value)}>
+                                                {showInviteCustomization ? <ChevronUp className="mr-1 h-4 w-4" /> : <ChevronDown className="mr-1 h-4 w-4" />}
+                                                Customize
+                                            </Button>
                                         </div>
-                                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                                            {accessOptions.map(key => {
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            {inviteAccess.map(key => <span key={key} className="rounded-full bg-background px-2.5 py-1 text-xs font-medium">{ACCESS_DEFINITIONS[key].label}</span>)}
+                                        </div>
+                                        {showInviteCustomization && <div className="mt-4 grid gap-2 border-t pt-4 sm:grid-cols-2 lg:grid-cols-3">
+                                            {accessOptionsForRole(inviteRole).map(key => {
                                                 const item = ACCESS_DEFINITIONS[key];
                                                 const checked = inviteAccess.includes(key);
                                                 return (
@@ -308,7 +401,8 @@ export default function TeamPage() {
                                                     </label>
                                                 );
                                             })}
-                                        </div>
+                                        </div>}
+                                        <p className="mt-3 text-xs text-muted-foreground">Billing and owner rewards cannot be delegated. Managers can only grant permissions they hold themselves.</p>
                                     </div>
                                     <Button type="submit" disabled={isSubmitting || inviteAccess.length === 0} className="justify-self-start">
                                         {isSubmitting ? 'Sending...' : 'Send Invitation'}
@@ -354,7 +448,12 @@ export default function TeamPage() {
                             <div className="space-y-1">
                                 {team.map((member) => {
                                     const editable = !['owner', 'super_admin'].includes(member.role);
-                                    const enabledAccess = member.access ?? (member.role === 'manager' ? accessOptions : []);
+                                    const memberRole = member.role === 'manager' ? 'manager' : 'worker';
+                                    const draft = memberDrafts[member.id];
+                                    const enabledAccess = editable
+                                        ? effectiveAccessForUser({ role: memberRole, access: member.access }, industry)
+                                        : [];
+                                    const isEditing = editingMemberId === member.id && !!draft;
                                     return (
                                     <div key={member.id} className="rounded-xl border p-4 transition-colors hover:bg-muted/30">
                                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -371,38 +470,49 @@ export default function TeamPage() {
                                             </div>
 
                                             <div className="flex flex-wrap items-center gap-2">
-                                                {editable ? (
-                                                    <select
-                                                        className="h-9 rounded-md border bg-background px-3 text-xs font-medium"
-                                                        value={member.role === 'manager' ? 'manager' : 'worker'}
-                                                        onChange={event => void updateMemberAccess(member, { role: event.target.value as 'manager' | 'worker' })}
-                                                    >
-                                                        <option value="manager">Manager</option>
-                                                        <option value="worker">Worker</option>
-                                                    </select>
-                                                ) : (
-                                                    <div className="flex items-center gap-2 px-3 py-1 bg-secondary rounded-full text-xs font-medium">
-                                                        <Shield className="w-3 h-3" /> {member.role}
-                                                    </div>
-                                                )}
+                                                <div className="flex items-center gap-2 px-3 py-1 bg-secondary rounded-full text-xs font-medium">
+                                                    <Shield className="w-3 h-3" /> {roleLabel(member.role as 'super_admin' | 'owner' | 'manager' | 'worker')}
+                                                </div>
                                                 <div className={`text-xs px-2 py-1 rounded-full ${member.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                                                     {member.status}
                                                 </div>
                                                 {savingMemberId === member.id && <div className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">Saving...</div>}
                                                 {savedMemberId === member.id && <div className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Saved</div>}
-                                                <Button variant="ghost" size="icon">
-                                                    <MoreHorizontal className="w-4 h-4" />
-                                                </Button>
+                                                {editable && <Button variant="outline" size="sm" onClick={() => isEditing ? setEditingMemberId('') : beginEditingMember(member)}>
+                                                    {isEditing ? 'Close' : 'Manage access'}
+                                                </Button>}
                                             </div>
                                         </div>
-                                        {editable && (
-                                            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                                                {accessOptions.map(key => {
+                                        {editable && !isEditing && (
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                {enabledAccess.map(key => <span key={key} className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{ACCESS_DEFINITIONS[key].label}</span>)}
+                                            </div>
+                                        )}
+                                        {editable && isEditing && draft && (
+                                            <div className="mt-4 rounded-xl border bg-muted/20 p-4">
+                                                <div className="grid gap-4 md:grid-cols-2">
+                                                    <div className="space-y-2">
+                                                        <label className="text-sm font-medium">Apply role template</label>
+                                                        <select className="flex h-10 w-full rounded-md border bg-background px-3 text-sm" defaultValue="" onChange={event => applyMemberPreset(member, event.target.value)}>
+                                                            <option value="" disabled>Select a recommended template</option>
+                                                            {ACCESS_PRESETS[industry].map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-sm font-medium">Account level</label>
+                                                        <select className="flex h-10 w-full rounded-md border bg-background px-3 text-sm" value={draft.role} onChange={event => changeMemberRole(member, event.target.value as 'manager' | 'worker')}>
+                                                            <option value="manager">Manager</option>
+                                                            <option value="worker">Team member</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-4 grid gap-2 border-t pt-4 sm:grid-cols-2 xl:grid-cols-3">
+                                                {accessOptionsForRole(draft.role).map(key => {
                                                     const item = ACCESS_DEFINITIONS[key];
-                                                    const checked = enabledAccess.includes(key);
+                                                    const checked = draft.access.includes(key);
                                                     return (
                                                         <label key={key} className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition ${checked ? 'border-primary bg-primary/5' : 'bg-background hover:bg-muted/40'}`}>
-                                                            <input type="checkbox" className="mt-1" checked={checked} onChange={() => toggleMemberAccess(member, key)} />
+                                                            <input type="checkbox" className="mt-1" checked={checked} onChange={() => toggleMemberDraftAccess(member, key)} />
                                                             <span>
                                                                 <span className="block font-medium">{item.label}</span>
                                                                 <span className="text-xs text-muted-foreground">{item.description}</span>
@@ -410,6 +520,16 @@ export default function TeamPage() {
                                                         </label>
                                                     );
                                                 })}
+                                                </div>
+                                                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+                                                    <p className="text-xs text-muted-foreground">Changes take effect on the member&apos;s screen immediately after saving.</p>
+                                                    <div className="flex gap-2">
+                                                        <Button type="button" variant="outline" onClick={() => setEditingMemberId('')}>Cancel</Button>
+                                                        <Button type="button" disabled={savingMemberId === member.id || draft.access.length === 0} onClick={() => void saveMemberDraft(member)}>
+                                                            {savingMemberId === member.id ? 'Saving...' : 'Save access'}
+                                                        </Button>
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
                                     </div>

@@ -7,6 +7,7 @@ import { inviteMember } from '@/lib/firebase-utils';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { buildAgricultureProfile, type AgricultureOperation } from '@/lib/agric/config';
+import { ACCESS_PRESETS } from '@/lib/access-permissions';
 import {
     Leaf, Building2, Globe, Receipt,
     CheckCircle, ArrowRight, ArrowLeft,
@@ -27,7 +28,7 @@ interface BusinessSetup {
     agricultureOperations: AgricultureOperation[];
 }
 
-interface InviteEntry { email: string; role: 'manager' | 'worker' }
+interface InviteEntry { email: string; role: 'manager' | 'worker'; presetId: string }
 
 // ─── Step config ─────────────────────────────────────────────────────────────
 
@@ -78,7 +79,7 @@ export default function OnboardingPage() {
         agricultureOperations: ['crop'],
     });
 
-    const [invites, setInvites] = useState<InviteEntry[]>([{ email: '', role: 'manager' }]);
+    const [invites, setInvites] = useState<InviteEntry[]>([{ email: '', role: 'worker', presetId: 'stockkeeper' }]);
 
     // Skip onboarding if already completed
     useEffect(() => {
@@ -95,7 +96,7 @@ export default function OnboardingPage() {
         setBusiness(prev => ({ ...prev, ...fields }));
 
     const addInvite = () =>
-        setInvites(prev => [...prev, { email: '', role: 'manager' }]);
+        setInvites(prev => [...prev, { email: '', role: 'worker', presetId: 'stockkeeper' }]);
 
     const removeInvite = (i: number) =>
         setInvites(prev => prev.filter((_, idx) => idx !== i));
@@ -172,7 +173,10 @@ export default function OnboardingPage() {
             if (validInvites.length > 0 && organization?.id) {
                 try {
                     await Promise.all(
-                        validInvites.map(inv => inviteMember(inv.email.trim(), inv.role, organization.id))
+                        validInvites.map(inv => {
+                            const preset = ACCESS_PRESETS.agriculture.find(item => item.id === inv.presetId);
+                            return inviteMember(inv.email.trim(), inv.role, organization.id, organization.name, user?.name, preset?.access);
+                        })
                     );
                 } catch (err) {
                     console.error('Some invites failed:', err);
@@ -452,18 +456,17 @@ export default function OnboardingPage() {
                                             value={inv.email}
                                             onChange={e => updateInvite(i, { email: e.target.value })}
                                         />
-                                        <div style={{ display: 'flex', gap: 4 }}>
-                                            {(['manager', 'worker'] as const).map(r => (
-                                                <button
-                                                    key={r}
-                                                    className={`role-badge${inv.role === r ? ` active-${r}` : ''}`}
-                                                    onClick={() => updateInvite(i, { role: r })}
-                                                    type="button"
-                                                >
-                                                    {r}
-                                                </button>
-                                            ))}
-                                        </div>
+                                        <select
+                                            className="input"
+                                            value={inv.presetId}
+                                            onChange={event => {
+                                                const preset = ACCESS_PRESETS.agriculture.find(item => item.id === event.target.value);
+                                                if (preset) updateInvite(i, { presetId: preset.id, role: preset.role });
+                                            }}
+                                            aria-label={`Access template for invite ${i + 1}`}
+                                        >
+                                            {ACCESS_PRESETS.agriculture.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                                        </select>
                                         {invites.length > 1 && (
                                             <button onClick={() => removeInvite(i)} type="button"
                                                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: 4 }}>
@@ -537,7 +540,7 @@ export default function OnboardingPage() {
                         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                             {(step === 3) && (
                                 <button className="btn-ghost" onClick={() => {
-                                    setInvites([{ email: '', role: 'manager' }]);
+                                    setInvites([{ email: '', role: 'worker', presetId: 'stockkeeper' }]);
                                     setStep(4);
                                 }}>
                                     Skip

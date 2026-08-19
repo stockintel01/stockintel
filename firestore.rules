@@ -46,9 +46,45 @@ service cloud.firestore {
       return isOwner() || isManager();
     }
 
+    function workerAssignableAccess() {
+      return [
+        'dashboard', 'expenses', 'agricStock', 'agricRequests', 'agricUsage',
+        'agricPlanner', 'agricEquipment', 'agricPacking', 'agricReports',
+        'agricWeather', 'agricLivestock', 'agricCrops'
+      ];
+    }
+
+    function managerAssignableAccess() {
+      return [
+        'dashboard', 'expenses', 'team', 'settings', 'agricStock',
+        'agricRequests', 'agricUsage', 'agricPlanner', 'agricEquipment',
+        'agricPacking', 'agricReports', 'agricWeather', 'agricLivestock',
+        'agricCrops'
+      ];
+    }
+
+    function validRoleAccess(data) {
+      return data.keys().hasAll(['role', 'access'])
+        && data.access is list
+        && (
+          (data.role == 'worker' && data.access.hasOnly(workerAssignableAccess())) ||
+          (data.role == 'manager' && data.access.hasOnly(managerAssignableAccess()))
+        );
+    }
+
+    function canDelegateRoleAccess(data) {
+      let delegatorAccess = userDoc().keys().hasAny(['access'])
+        ? userDoc().access
+        : managerAssignableAccess();
+      return validRoleAccess(data) && (
+        isOwner() ||
+        (isManager() && data.access.hasOnly(delegatorAccess))
+      );
+    }
+
     function hasAccess(key) {
       return isSuperAdmin() || isOwner() ||
-        (isManager() && !userDoc().keys().hasAny(['access'])) ||
+        (isManager() && !userDoc().keys().hasAny(['access']) && managerAssignableAccess().hasAny([key])) ||
         (userDoc().keys().hasAny(['access']) && userDoc().access.hasAny([key]));
     }
 
@@ -70,7 +106,8 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.organizationId == invite.organizationId
-        && request.resource.data.role in ['manager', 'worker']
+        && request.resource.data.role == invite.role
+        && request.resource.data.access == invite.access
         && invite.email == request.auth.token.email
         && invite.status == 'pending';
     }
@@ -101,7 +138,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn() && (
         request.auth.uid == userId ||
-        (isSameOrg(resource.data.organizationId) && isOwnerOrManager())
+        (isSameOrg(resource.data.organizationId) && isOwnerOrManager() && hasAccess('team'))
       );
       allow create: if isSignedIn()
         && (
@@ -125,6 +162,8 @@ service cloud.firestore {
         (
           isSameOrg(resource.data.organizationId)
           && isOwnerOrManager()
+          && hasAccess('team')
+          && canDelegateRoleAccess(request.resource.data)
           && request.resource.data.organizationId == resource.data.organizationId
           && request.resource.data.role in ['manager', 'worker']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'access', 'updatedAt'])
@@ -139,13 +178,16 @@ service cloud.firestore {
           && request.auth.uid == userId
           && request.resource.data.organizationId == membershipOrgId
           && request.resource.data.email == request.auth.token.email
-          && request.resource.data.role in ['manager', 'worker']
+          && request.resource.data.role == invitationDoc(request.resource.data.acceptedInviteId).role
+          && request.resource.data.access == invitationDoc(request.resource.data.acceptedInviteId).access
           && invitationDoc(request.resource.data.acceptedInviteId).email == request.auth.token.email
           && invitationDoc(request.resource.data.acceptedInviteId).organizationId == membershipOrgId
           && invitationDoc(request.resource.data.acceptedInviteId).status == 'pending';
         allow update: if isSignedIn()
           && isSameOrg(membershipOrgId)
           && isOwnerOrManager()
+          && hasAccess('team')
+          && canDelegateRoleAccess(request.resource.data)
           && request.resource.data.role in ['manager', 'worker']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'access', 'updatedAt']);
         allow delete: if isSuperAdmin();
@@ -183,8 +225,8 @@ service cloud.firestore {
       }
 
       match /shifts/{shiftId} {
-        allow read: if isSignedIn() && isSameOrg(orgId);
-        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+        allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('team');
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager() && hasAccess('team');
       }
 
       // ── Credits / Rewards ──────────────────────────────────────
@@ -196,18 +238,21 @@ service cloud.firestore {
       }
 
       match /members/{memberId} {
-        allow read: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
+        allow read: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager() && hasAccess('team');
         allow create, update: if isSignedIn()
           && request.resource.data.organizationId == orgId
           && request.resource.data.uid == memberId
           && request.resource.data.email == request.auth.token.email
-          && request.resource.data.role in ['manager', 'worker']
+          && request.resource.data.role == invitationDoc(request.resource.data.acceptedInviteId).role
+          && request.resource.data.access == invitationDoc(request.resource.data.acceptedInviteId).access
           && invitationDoc(request.resource.data.acceptedInviteId).email == request.auth.token.email
           && invitationDoc(request.resource.data.acceptedInviteId).organizationId == orgId
           && invitationDoc(request.resource.data.acceptedInviteId).status == 'pending';
         allow update: if isSignedIn()
           && isSameOrg(orgId)
           && isOwnerOrManager()
+          && hasAccess('team')
+          && canDelegateRoleAccess(request.resource.data)
           && resource.data.role in ['manager', 'worker']
           && request.resource.data.role in ['manager', 'worker']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'access', 'updatedAt']);
@@ -256,7 +301,8 @@ service cloud.firestore {
       match /agric_usage/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricUsage') || hasAccess('agricReports'));
         allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricUsage');
-        allow update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricUsage');
+        allow update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricUsage');
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricUsage') && isOwnerOrManager();
       }
       match /agric_requests/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricRequests');
@@ -293,24 +339,27 @@ service cloud.firestore {
       match /agric_equipment/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricEquipment') || hasAccess('agricReports'));
         allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricEquipment');
-        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricEquipment');
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricEquipment') && isOwnerOrManager();
       }
       match /agric_plans/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricPlanner') || hasAccess('agricReports'));
-        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPlanner');
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPlanner');
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPlanner') && isOwnerOrManager();
       }
       match /agric_packing/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricPacking') || hasAccess('agricReports'));
         allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking');
-        allow update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking');
+        allow update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking');
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager();
       }
       match /agric_packing_stations/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricPacking');
-        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager();
       }
       match /agric_shipping/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricPacking') || hasAccess('agricReports'));
-        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking');
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking');
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager();
       }
       match /agric_adjustments/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId);
@@ -330,11 +379,13 @@ service cloud.firestore {
       match /agric_livestock/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricLivestock');
         allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricLivestock');
-        allow update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricLivestock');
+        allow update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricLivestock');
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricLivestock') && isOwnerOrManager();
       }
       match /agric_crop_plans/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricCrops');
-        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricCrops');
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricCrops');
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricCrops') && isOwnerOrManager();
       }
     }
 
@@ -343,6 +394,8 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && isSameOrg(request.resource.data.organizationId)
         && isOwnerOrManager()
+        && hasAccess('team')
+        && canDelegateRoleAccess(request.resource.data)
         && request.resource.data.email is string
         && request.resource.data.role in ['manager', 'worker']
         && request.resource.data.status == 'pending'

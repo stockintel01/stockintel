@@ -2,12 +2,14 @@ import { NextRequest } from 'next/server';
 import { adminAuth, adminDb, adminProjectId } from '@/lib/firebase-admin';
 import { isSuperAdminEmail } from '@/lib/access-control';
 import { canUseFeature, isSubscriptionActive, type PlanFeature, type SubscriptionLike } from '@/lib/plans';
+import { userHasAccess, type AccessKey } from '@/lib/access-permissions';
 
 export interface AuthenticatedUser {
     uid: string;
     email: string;
     organizationId: string;
     role: 'super_admin' | 'owner' | 'manager' | 'worker';
+    access?: AccessKey[];
     subscription: SubscriptionLike | null;
 }
 
@@ -133,6 +135,7 @@ export async function requireUser(request: NextRequest): Promise<AuthenticatedUs
             email: decoded.email ?? '',
             organizationId,
             role: data.role as AuthenticatedUser['role'],
+            access: Array.isArray(data.access) ? data.access : undefined,
             subscription: organization?.data()?.subscription ?? null,
         };
     } catch (error) {
@@ -168,4 +171,8 @@ export function requireFeature(user: AuthenticatedUser, feature: PlanFeature) {
 export function requireRole(user: AuthenticatedUser, roles: AuthenticatedUser['role'][]) {
     if (user.role === 'super_admin') return;
     if (!roles.includes(user.role)) throw new ApiError('Insufficient permissions', 403);
+}
+
+export function requireAccess(user: AuthenticatedUser, access: AccessKey) {
+    if (!userHasAccess(user, access)) throw new ApiError('Insufficient permissions', 403);
 }
