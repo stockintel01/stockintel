@@ -41,6 +41,7 @@ import {
   diseaseClassLabel,
   generateSigatokaDecisionAlerts,
   validateSigatokaPlants,
+  type SigatokaAdvancedStageLeafCount,
   type SigatokaLeafScore,
   type SigatokaPlantObservation,
   type SigatokaSessionRecord,
@@ -96,6 +97,10 @@ function emptyPlants(count: number, sentinels: Array<{ id: string; code: string 
     leavesAtHarvest: null,
     notes: '',
   }));
+}
+
+function emptyAdvancedStageLeafCounts(): SigatokaAdvancedStageLeafCount[] {
+  return Array.from({ length: 9 }, (_, index) => ({ leafNumber: index + 5, stage4Count: null, stage5Count: null, stage6Count: null }));
 }
 
 function optionalNumber(value: string): number | null {
@@ -171,6 +176,9 @@ export default function SigatokaPage() {
   const [treatmentActiveIngredient, setTreatmentActiveIngredient] = useState('');
   const [treatmentDose, setTreatmentDose] = useState('');
   const [treatmentMethod, setTreatmentMethod] = useState('');
+  const [recordAdvancedStages, setRecordAdvancedStages] = useState(false);
+  const [advancedStagePlantNumber, setAdvancedStagePlantNumber] = useState('');
+  const [advancedStageLeafCounts, setAdvancedStageLeafCounts] = useState<SigatokaAdvancedStageLeafCount[]>(emptyAdvancedStageLeafCounts);
   const [reportPlot, setReportPlot] = useState('all');
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>('all');
   const [reportYear, setReportYear] = useState(() => new Date().getFullYear());
@@ -267,6 +275,7 @@ export default function SigatokaPage() {
   const recentWeeks = weeklySummaries.slice(-6);
   const activeMonitoringPlots = config.monitoringPlots.filter(plot => plot.status === 'active');
   const selectedPlant = plants[currentPlant];
+  const advancedStagePlant = plants.find(plant => plant.plantNumber === Number(advancedStagePlantNumber));
   const selectedRegisteredPlot = activeMonitoringPlots.find(plot => plot.name.toLowerCase() === plotName.trim().toLowerCase());
   const selectedSentinel = selectedRegisteredPlot?.sentinels.find(sentinel => sentinel.id === selectedPlant?.sentinelPlantId);
   const carriedFromPlant = previousSession && selectedPlant
@@ -331,6 +340,10 @@ export default function SigatokaPage() {
     setPlants(current => current.map((plant, index) => index === currentPlant ? { ...plant, ...fields } : plant));
   }
 
+  function updateAdvancedStageCount(index: number, field: 'stage4Count' | 'stage5Count' | 'stage6Count', value: string) {
+    setAdvancedStageLeafCounts(current => current.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: optionalNumber(value) } : row));
+  }
+
   function resetObservationForm() {
     setEditingSessionId('');
     setObservedAt(today);
@@ -344,6 +357,9 @@ export default function SigatokaPage() {
     setTreatmentActiveIngredient('');
     setTreatmentDose('');
     setTreatmentMethod('');
+    setRecordAdvancedStages(false);
+    setAdvancedStagePlantNumber('');
+    setAdvancedStageLeafCounts(emptyAdvancedStageLeafCounts());
   }
 
   function applyRegisteredPlot(name: string) {
@@ -393,6 +409,9 @@ export default function SigatokaPage() {
     setTreatmentActiveIngredient(session.treatment?.activeIngredient ?? '');
     setTreatmentDose(session.treatment?.dose ?? '');
     setTreatmentMethod(session.treatment?.method ?? '');
+    setRecordAdvancedStages(Boolean(session.advancedStageObservation));
+    setAdvancedStagePlantNumber(session.advancedStageObservation ? String(session.advancedStageObservation.plantNumber) : '');
+    setAdvancedStageLeafCounts(session.advancedStageObservation?.leafCounts ?? emptyAdvancedStageLeafCounts());
     setCurrentPlant(Math.max(0, session.plants.findIndex(plant => plant.previousLeafReading <= 0 || plant.currentLeafReading <= 0)));
     setShowObservation(true);
   }
@@ -417,7 +436,7 @@ export default function SigatokaPage() {
 
   function exportReportCsv() {
     if (!reportSessions.length) return setMessage('There are no submitted observations to export.');
-    exportToCSV(reportSessions.flatMap(session => session.plants.map(plant => ({
+    exportToCSV(reportSessions.flatMap(session => session.plants.map((plant, plantIndex) => ({
       Year: session.monitoringYear,
       Week: session.monitoringWeek,
       Date: session.observedAt,
@@ -452,6 +471,11 @@ export default function SigatokaPage() {
       'Treatment': session.treatment?.product ?? '',
       'Active ingredient': session.treatment?.activeIngredient ?? '',
       'Treatment dose': session.treatment?.dose ?? '',
+      [`Detailed stage ${config.plantLabel.toLowerCase()}`]: session.advancedStageObservation?.plantNumber ?? '',
+      'Detailed leaf number': session.advancedStageObservation?.leafCounts[plantIndex]?.leafNumber ?? '',
+      'Stage 4 count': session.advancedStageObservation?.leafCounts[plantIndex]?.stage4Count ?? '',
+      'Stage 5 count': session.advancedStageObservation?.leafCounts[plantIndex]?.stage5Count ?? '',
+      'Stage 6 count': session.advancedStageObservation?.leafCounts[plantIndex]?.stage6Count ?? '',
       Notes: session.notes ?? '',
       'Calculation version': session.metrics.calculationVersion,
     }))), `sigatoka-report-${reportPlot}-${reportPeriod}-${new Date().toISOString().slice(0, 10)}.csv`);
@@ -613,6 +637,14 @@ export default function SigatokaPage() {
       setMessage('Observation date cannot be in the future.');
       return;
     }
+    if (status === 'submitted' && recordAdvancedStages) {
+      const invalidCount = advancedStageLeafCounts.some(row => [row.stage4Count, row.stage5Count, row.stage6Count].some(value => value !== null && (!Number.isInteger(value) || value < 0)));
+      const hasCount = advancedStageLeafCounts.some(row => [row.stage4Count, row.stage5Count, row.stage6Count].some(value => value !== null));
+      if (!advancedStagePlant || invalidCount || !hasCount) {
+        setMessage(!advancedStagePlant ? `Select the ${config.plantLabel.toLowerCase()} used for the detailed stage 4-6 observation.` : invalidCount ? 'Detailed stage counts must be zero or positive whole numbers.' : 'Enter at least one detailed stage 4-6 count, or turn off the detailed observation.');
+        return;
+      }
+    }
     const recordWeek = editingSession && observedAt === editingSession.observedAt
       ? { year: editingSession.monitoringYear, week: editingSession.monitoringWeek }
       : farmWeek;
@@ -640,6 +672,11 @@ export default function SigatokaPage() {
         meanRawFerOverride: optionalNumber(meanRawFerOverride),
         status,
         plants,
+        advancedStageObservation: recordAdvancedStages && advancedStagePlant ? {
+          plantNumber: advancedStagePlant.plantNumber,
+          ...(advancedStagePlant.sentinelPlantId ? { sentinelPlantId: advancedStagePlant.sentinelPlantId } : {}),
+          leafCounts: advancedStageLeafCounts,
+        } : null,
         metrics,
         rainfallMm: optionalNumber(rainfallMm),
         treatment: treatmentApplied ? {
@@ -764,6 +801,26 @@ export default function SigatokaPage() {
             <div className="space-y-1.5"><Label>Leaves at flowering (NLF)</Label><Input type="number" min={0} step="0.1" value={plants[currentPlant].leavesAtFlowering ?? ''} onChange={event => updatePlant({ leavesAtFlowering: optionalNumber(event.target.value) })} /></div>
             <div className="space-y-1.5"><Label>Leaves at harvest (NLH)</Label><Input type="number" min={0} step="0.1" value={plants[currentPlant].leavesAtHarvest ?? ''} onChange={event => updatePlant({ leavesAtHarvest: optionalNumber(event.target.value) })} /></div>
           </div>
+        </div>
+
+        <div className="rounded-xl border p-3 sm:p-5">
+          <label className="flex items-start gap-3">
+            <input type="checkbox" className="mt-1 h-4 w-4" checked={recordAdvancedStages} onChange={event => setRecordAdvancedStages(event.target.checked)} />
+            <span><span className="block font-semibold">Detailed stage 4, 5 and 6 observation</span><span className="block text-sm text-muted-foreground">Count stage 4, 5 and 6 symptoms by leaf number on one selected monitored plant. This is stored separately from the Leaf II, III and IV disease classes used in the SED calculation.</span></span>
+          </label>
+          {recordAdvancedStages && <div className="mt-5 space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5"><Label>Observed {config.plantLabel.toLowerCase()}</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={advancedStagePlantNumber} onChange={event => setAdvancedStagePlantNumber(event.target.value)}><option value="">Select {config.plantLabel.toLowerCase()}</option>{plants.map(plant => <option key={plant.plantNumber} value={plant.plantNumber}>{plant.sentinelPlantCode || `${config.plantLabel} ${plant.plantNumber}`}</option>)}</select></div>
+              <div className="rounded-lg border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">Current leaf reading (NLN)</p><p className="mt-1 text-lg font-bold">{metric(advancedStagePlant?.currentLeafReading, 1)}</p><p className="text-xs text-muted-foreground">Filled from the selected plant reading above.</p></div>
+            </div>
+            <div className="overflow-x-auto rounded-lg border">
+              <table className="w-full min-w-[520px] text-sm">
+                <thead className="bg-muted/50"><tr><th className="px-3 py-2 text-left font-semibold">Leaf number</th><th className="px-3 py-2 text-left font-semibold">Stage 4 count</th><th className="px-3 py-2 text-left font-semibold">Stage 5 count</th><th className="px-3 py-2 text-left font-semibold">Stage 6 count</th></tr></thead>
+                <tbody>{advancedStageLeafCounts.map((row, index) => <tr key={row.leafNumber} className="border-t"><td className="px-3 py-2 font-medium">{row.leafNumber}</td>{(['stage4Count', 'stage5Count', 'stage6Count'] as const).map((field, stageIndex) => <td key={field} className="px-2 py-1.5"><Input aria-label={`Leaf ${row.leafNumber} stage ${stageIndex + 4} count`} type="number" min={0} step={1} inputMode="numeric" value={row[field] ?? ''} onChange={event => updateAdvancedStageCount(index, field, event.target.value)} /></td>)}</tr>)}</tbody>
+              </table>
+            </div>
+            <p className="text-xs text-muted-foreground">Use zero when the leaf was checked and none were found. Leave a cell blank only when that stage was not assessed.</p>
+          </div>}
         </div>
 
         {validation.length > 0 && <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-semibold">Quality checks</p>{validation.slice(0, 6).map((issue, index) => <p key={`${issue.plantNumber}-${index}`}><AlertTriangle className="mr-1 inline h-4 w-4" />{config.plantLabel} {issue.plantNumber}: {issue.message}</p>)}</div>}

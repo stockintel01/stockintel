@@ -24,6 +24,19 @@ export interface SigatokaPlantObservation {
   notes?: string;
 }
 
+export interface SigatokaAdvancedStageLeafCount {
+  leafNumber: number;
+  stage4Count: number | null;
+  stage5Count: number | null;
+  stage6Count: number | null;
+}
+
+export interface SigatokaAdvancedStageObservation {
+  plantNumber: number;
+  sentinelPlantId?: string;
+  leafCounts: SigatokaAdvancedStageLeafCount[];
+}
+
 export interface SigatokaMetrics {
   meanRawFer: number;
   fer10d: number;
@@ -79,6 +92,7 @@ export interface SigatokaSessionRecord {
   meanRawFerOverride?: number | null;
   status: 'draft' | 'submitted' | 'verified';
   plants: SigatokaPlantObservation[];
+  advancedStageObservation?: SigatokaAdvancedStageObservation | null;
   metrics: SigatokaMetrics;
   rainfallMm?: number | null;
   treatment?: {
