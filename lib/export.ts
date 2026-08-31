@@ -11,7 +11,11 @@ export function exportToCSV(data: ExportRow[], filename: string): void {
     if (!data.length) throw new Error('No data to export');
 
     const headers = Object.keys(data[0]);
-    const escape  = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const escape = (value: unknown) => {
+        const text = String(value ?? '');
+        const spreadsheetSafe = /^[=+\-@]/.test(text.trimStart()) ? `'${text}` : text;
+        return `"${spreadsheetSafe.replace(/"/g, '""')}"`;
+    };
 
     const csv = [
         headers.map(escape).join(','),
@@ -34,22 +38,25 @@ export async function exportToPDF(
     const win = window.open('', '_blank');
     if (!win) throw new Error('Popup blocked — please allow popups for this site');
 
+    const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] ?? character);
+    const documentStyles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(node => node.outerHTML).join('\n');
     win.document.write(`
         <!DOCTYPE html>
         <html><head>
-        <title>${title}</title>
+        <title>${escapeHtml(filename.replace(/\.pdf$/i, ''))}</title>
+        ${documentStyles}
         <style>
-            body { font-family: Arial, sans-serif; font-size: 12px; padding: 24px; }
+            body { font-family: Arial, sans-serif; font-size: 12px; padding: 24px; color: #111827; background: white; }
             table { width: 100%; border-collapse: collapse; margin: 12px 0; }
             th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
             th { background: #f5f5f5; font-weight: 600; }
             h1 { font-size: 20px; margin-bottom: 4px; }
             h2 { font-size: 15px; margin: 16px 0 6px; color: #444; }
             .meta { color: #888; font-size: 11px; margin-bottom: 16px; }
-            @media print { button { display: none; } }
+            @media print { @page { size: landscape; margin: 10mm; } button { display: none !important; } body { padding: 0; } }
         </style>
         </head><body>
-        <h1>${title}</h1>
+        <h1>${escapeHtml(title)}</h1>
         <p class="meta">Generated: ${new Date().toLocaleString()} · IntelliStock AI</p>
         ${el.innerHTML}
         <script>window.onload = () => window.print();<\/script>

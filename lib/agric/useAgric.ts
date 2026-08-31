@@ -79,7 +79,7 @@ export interface AgricActions {
   returnItem: (checkoutId: string, condition: 'good' | 'damaged' | 'lost', notes?: string) => Promise<void>;
   // Plans
   createPlan: (plan: Omit<SprayPlan, 'id'>) => Promise<void>;
-  markApplication: (planId: string, currentCompleted: number) => Promise<void>;
+  markApplication: (planId: string, appliedAt?: string, notes?: string) => Promise<void>;
   // Packing
   addPacking: (record: Omit<PackingRecord, 'id'>) => Promise<void>;
   addShipping: (record: Omit<ShippingRecord, 'id'>) => Promise<void>;
@@ -278,10 +278,9 @@ export function useAgric(): AgricState & AgricActions {
       await createSprayPlan(ctx.orgId, plan);
     }, [requireLiveContext]),
 
-    markApplication: useCallback(async (planId, current) => {
-      void current;
+    markApplication: useCallback(async (planId, appliedAt = new Date().toISOString().slice(0, 10), notes) => {
       const ctx = requireLiveContext();
-      await logApplicationComplete(ctx.orgId, planId);
+      await logApplicationComplete(ctx.orgId, planId, appliedAt, ctx.userId, notes);
     }, [requireLiveContext]),
 
     // Packing

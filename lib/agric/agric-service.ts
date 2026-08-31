@@ -617,7 +617,7 @@ export async function createSprayPlan(
 }
 
 export async function logApplicationComplete(
-  orgId: string, planId: string,
+  orgId: string, planId: string, appliedAt: string, recordedBy: string, notes?: string,
 ): Promise<void> {
   await runTransaction(db, async tx => {
     const planRef = ref(orgId, 'agric_plans', planId);
@@ -635,6 +635,10 @@ export async function logApplicationComplete(
     const nextCompleted = completed + 1;
     tx.update(planRef, {
       completedApplications: nextCompleted,
+      applicationHistory: [
+        ...(Array.isArray(plan.applicationHistory) ? plan.applicationHistory : []),
+        { appliedAt, recordedAt: new Date().toISOString(), recordedBy, ...(notes?.trim() ? { notes: notes.trim() } : {}) },
+      ],
       status: nextCompleted >= total ? 'completed' : 'active',
       updatedAt: serverTimestamp(),
     });

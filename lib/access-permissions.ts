@@ -4,7 +4,7 @@ export type AccessKey =
     | 'dashboard' | 'expenses' | 'team' | 'rewards' | 'billing' | 'settings'
     | 'agricStock' | 'agricRequests' | 'agricUsage' | 'agricPlanner'
     | 'agricEquipment' | 'agricPacking' | 'agricReports' | 'agricWeather'
-    | 'agricLivestock' | 'agricCrops';
+    | 'agricLivestock' | 'agricCrops' | 'agricSigatoka';
 
 export interface AccessDefinition {
     key: AccessKey;
@@ -36,20 +36,21 @@ export const ACCESS_DEFINITIONS: Record<AccessKey, AccessDefinition> = {
     agricPlanner: { key: 'agricPlanner', label: 'Spray Planner', description: 'Plan applications and stock requirements.', hrefs: ['/dashboard/agriculture/planner'] },
     agricEquipment: { key: 'agricEquipment', label: 'Equipment', description: 'Checkout and return farm equipment.', hrefs: ['/dashboard/agriculture/equipment'] },
     agricPacking: { key: 'agricPacking', label: 'Packhouse', description: 'Packing station stock and shipping records.', hrefs: ['/dashboard/agriculture/packing-station'] },
-    agricReports: { key: 'agricReports', label: 'Operations Reports', description: 'View farm-wide agriculture reports.', hrefs: ['/dashboard/agriculture/reports'] },
+    agricReports: { key: 'agricReports', label: 'Operations Reports', description: 'View farm-wide agriculture and disease-monitoring reports.', hrefs: ['/dashboard/agriculture/reports', '/dashboard/agriculture/sigatoka'] },
     agricWeather: { key: 'agricWeather', label: 'Weather', description: 'Farm weather and advisories.', hrefs: ['/dashboard/agriculture/weather'] },
     agricLivestock: { key: 'agricLivestock', label: 'Livestock', description: 'Animal, poultry, feed, health, and production tools.', hrefs: ['/dashboard/agriculture/livestock'] },
     agricCrops: { key: 'agricCrops', label: 'Crops', description: 'Crop planning and crop production records.', hrefs: ['/dashboard/agriculture/crops'] },
+    agricSigatoka: { key: 'agricSigatoka', label: 'Disease Scouting', description: 'Record and review Sigatoka observations, SED, and plot risk.', hrefs: ['/dashboard/agriculture/sigatoka'] },
 };
 
 export const INDUSTRY_ACCESS: Record<IndustryType, AccessKey[]> = {
-    agriculture: ['dashboard', 'agricStock', 'agricRequests', 'agricUsage', 'agricPlanner', 'agricEquipment', 'agricPacking', 'agricReports', 'agricWeather', 'agricLivestock', 'agricCrops', 'expenses', 'team', 'rewards', 'billing', 'settings'],
+    agriculture: ['dashboard', 'agricStock', 'agricRequests', 'agricUsage', 'agricPlanner', 'agricEquipment', 'agricPacking', 'agricReports', 'agricWeather', 'agricLivestock', 'agricCrops', 'agricSigatoka', 'expenses', 'team', 'rewards', 'billing', 'settings'],
 };
 
 export const WORKER_ASSIGNABLE_ACCESS: AccessKey[] = [
     'dashboard', 'agricStock', 'agricRequests', 'agricUsage', 'agricPlanner',
     'agricEquipment', 'agricPacking', 'agricReports', 'agricWeather',
-    'agricLivestock', 'agricCrops', 'expenses',
+    'agricLivestock', 'agricCrops', 'agricSigatoka', 'expenses',
 ];
 
 export const MANAGER_ASSIGNABLE_ACCESS: AccessKey[] = [
@@ -62,7 +63,8 @@ export const ACCESS_PRESETS: Record<IndustryType, AccessPreset[]> = {
     agriculture: [
         { id: 'stockkeeper', label: 'Stockkeeper', description: 'Controls inventory, fulfils stock requests, and records issued inputs.', role: 'worker', access: ['dashboard', 'agricStock', 'agricRequests', 'agricUsage'] },
         { id: 'packhouse_supervisor', label: 'Packhouse Supervisor', description: 'Runs packing-station stock, packing, and shipment records.', role: 'worker', access: ['dashboard', 'agricPacking'] },
-        { id: 'field_supervisor', label: 'Field Supervisor', description: 'Plans field work, requests inputs, logs usage, and checks weather.', role: 'worker', access: ['dashboard', 'agricRequests', 'agricUsage', 'agricPlanner', 'agricWeather', 'agricCrops'] },
+        { id: 'field_supervisor', label: 'Field Supervisor', description: 'Plans field work, records disease scouting, requests inputs, logs usage, and checks weather.', role: 'worker', access: ['dashboard', 'agricRequests', 'agricUsage', 'agricPlanner', 'agricWeather', 'agricCrops', 'agricSigatoka'] },
+        { id: 'disease_scout', label: 'Disease Scout', description: 'Records Sigatoka observations and reviews assigned disease-monitoring results.', role: 'worker', access: ['dashboard', 'agricSigatoka', 'agricWeather'] },
         { id: 'livestock_supervisor', label: 'Livestock Supervisor', description: 'Manages animal production and requests the inputs needed for it.', role: 'worker', access: ['dashboard', 'agricLivestock', 'agricRequests', 'agricWeather'] },
         { id: 'equipment_custodian', label: 'Equipment Custodian', description: 'Tracks equipment availability, checkout, return, and condition.', role: 'worker', access: ['dashboard', 'agricEquipment'] },
         { id: 'finance_officer', label: 'Finance Officer', description: 'Maintains expense records and reviews authorized operations reports.', role: 'worker', access: ['dashboard', 'expenses', 'agricReports'] },

@@ -50,7 +50,7 @@ service cloud.firestore {
       return [
         'dashboard', 'expenses', 'agricStock', 'agricRequests', 'agricUsage',
         'agricPlanner', 'agricEquipment', 'agricPacking', 'agricReports',
-        'agricWeather', 'agricLivestock', 'agricCrops'
+        'agricWeather', 'agricLivestock', 'agricCrops', 'agricSigatoka'
       ];
     }
 
@@ -59,7 +59,7 @@ service cloud.firestore {
         'dashboard', 'expenses', 'team', 'settings', 'agricStock',
         'agricRequests', 'agricUsage', 'agricPlanner', 'agricEquipment',
         'agricPacking', 'agricReports', 'agricWeather', 'agricLivestock',
-        'agricCrops'
+        'agricCrops', 'agricSigatoka'
       ];
     }
 
@@ -202,12 +202,17 @@ service cloud.firestore {
         && request.resource.data.subscription.plan == 'free_trial'
         && request.resource.data.subscription.status == 'active';
       allow update: if isSignedIn() && (
-        (isSameOrg(orgId) && isOwner()
-          && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly([
-              'name', 'industry', 'currency', 'address', 'phone', 'taxId',
-              'onboardingStep', 'onboardingComplete', 'receiptSettings', 'settings', 'updatedAt'
-            ])) ||
+        (isSameOrg(orgId) && (
+          (isOwner()
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'name', 'industry', 'currency', 'address', 'phone', 'taxId',
+                'onboardingStep', 'onboardingComplete', 'receiptSettings', 'settings', 'updatedAt'
+              ])) ||
+          (isManager()
+            && hasAccess('settings')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['settings', 'updatedAt']))
+        )) ||
         isSuperAdmin()
       );
       allow delete: if isSuperAdmin();
@@ -417,6 +422,35 @@ service cloud.firestore {
         allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricCrops');
         allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricCrops');
         allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricCrops') && isOwnerOrManager();
+      }
+      match /agric_sigatoka_observations/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricSigatoka') || hasAccess('agricReports'));
+        allow create: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
+          && hasAccess('agricSigatoka')
+          && request.resource.data.observerId == request.auth.uid
+          && request.resource.data.status in ['draft', 'submitted'];
+        allow update: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
+          && hasAccess('agricSigatoka')
+          && request.resource.data.observerId == resource.data.observerId
+          && (
+            (
+              request.auth.uid == resource.data.observerId
+              && resource.data.status == 'draft'
+              && request.resource.data.status in ['draft', 'submitted']
+            ) ||
+            (
+              isOwnerOrManager()
+              && resource.data.status == 'submitted'
+              && request.resource.data.status == 'verified'
+              && request.resource.data.verifiedBy == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'metrics', 'verifiedBy', 'verifiedAt', 'updatedAt'])
+            )
+          );
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricSigatoka') && isOwnerOrManager();
       }
     }
 

@@ -205,7 +205,15 @@ export interface SprayPlan {
   items: SprayPlanItem[];
   totalApplications: number;
   completedApplications: number;
+  applicationHistory?: SprayApplicationEvent[];
   restockAlertSent: boolean;
+  notes?: string;
+}
+
+export interface SprayApplicationEvent {
+  appliedAt: string;
+  recordedAt: string;
+  recordedBy: string;
   notes?: string;
 }
 

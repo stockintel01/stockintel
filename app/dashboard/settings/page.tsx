@@ -15,6 +15,7 @@ import {
     agricultureProfileLabel,
     buildAgricultureProfile,
     getAgricultureProfile,
+    parseAgricultureList,
     type AgricultureOperation,
 } from '@/lib/agric/config';
 
@@ -25,8 +26,12 @@ export default function SettingsPage() {
     const [businessName, setBusinessName] = useState(organization?.name ?? '');
     const [saving, setSaving] = useState(false);
     const [agricultureProfile, setAgricultureProfile] = useState(() => getAgricultureProfile(organization?.settings));
+    const [farmZonesInput, setFarmZonesInput] = useState(() => getAgricultureProfile(organization?.settings).farmZones.join(', '));
+    const [cropTypesInput, setCropTypesInput] = useState(() => getAgricultureProfile(organization?.settings).cropTypes.join(', '));
+    const [livestockTypesInput, setLivestockTypesInput] = useState(() => getAgricultureProfile(organization?.settings).livestockTypes.join(', '));
     const [locating, setLocating] = useState(false);
     const [savingAgriculture, setSavingAgriculture] = useState(false);
+    const [newMonitoringPlot, setNewMonitoringPlot] = useState({ name: '', sectorName: '', area: '' });
 
     const toggleAgricultureOperation = (operation: AgricultureOperation) => {
         const selected = agricultureProfile.operationTypes.includes(operation);
@@ -97,11 +102,35 @@ export default function SettingsPage() {
 
     const handleAgricultureSave = async () => {
         if (!organization?.id || !user) return;
+        const sigatoka = agricultureProfile.sigatoka;
+        const thresholds = [sigatoka.riskThresholds.watch, sigatoka.riskThresholds.high, sigatoka.riskThresholds.critical].filter((value): value is number => value !== null);
+        if (sigatoka.enabled && (!sigatoka.sectorLabel.trim() || !sigatoka.plotLabel.trim() || !sigatoka.plantLabel.trim())) {
+            setSuccessMsg('Sigatoka terminology labels cannot be blank.');
+            return;
+        }
+        if (sigatoka.enabled && sigatoka.areaUnit === 'custom' && !sigatoka.customAreaUnitName.trim()) {
+            setSuccessMsg('Enter a name for the custom area unit.');
+            return;
+        }
+        if (thresholds.some((value, index) => index > 0 && value <= thresholds[index - 1])) {
+            setSuccessMsg('SED thresholds must increase from Watch to High to Critical.');
+            return;
+        }
         setSavingAgriculture(true);
         try {
-            const settings = { ...(organization.settings ?? {}), agriculture: agricultureProfile };
+            const normalizedProfile = {
+                ...agricultureProfile,
+                farmZones: parseAgricultureList(farmZonesInput),
+                cropTypes: parseAgricultureList(cropTypesInput),
+                livestockTypes: parseAgricultureList(livestockTypesInput),
+            };
+            const settings = { ...(organization.settings ?? {}), agriculture: normalizedProfile };
             await updateDoc(doc(db, 'organizations', organization.id), { settings, updatedAt: new Date() });
             setStoreUser(user, { ...organization, settings });
+            setAgricultureProfile(normalizedProfile);
+            setFarmZonesInput(normalizedProfile.farmZones.join(', '));
+            setCropTypesInput(normalizedProfile.cropTypes.join(', '));
+            setLivestockTypesInput(normalizedProfile.livestockTypes.join(', '));
             setSuccessMsg('Agriculture workspace saved.');
             setTimeout(() => setSuccessMsg(''), 3000);
         } catch {
@@ -119,6 +148,38 @@ export default function SettingsPage() {
             locations: [...profile.locations.filter(item => item.name.toLowerCase() !== location.name.toLowerCase()), location],
         }));
     };
+
+    const setSigatokaEnabled = (enabled: boolean) => {
+        setAgricultureProfile(profile => ({
+            ...profile,
+            sigatoka: { ...profile.sigatoka, enabled },
+            modules: { ...profile.modules, sigatoka: enabled && profile.operationTypes.includes('crop') },
+        }));
+    };
+
+    const optionalThreshold = (value: string): number | null => value === '' ? null : Math.max(0, Number(value));
+
+    const addMonitoringPlot = () => {
+        const name = newMonitoringPlot.name.trim();
+        const sectorName = newMonitoringPlot.sectorName.trim();
+        if (!name || !sectorName) { setSuccessMsg('Enter both the monitoring plot and sector names.'); return; }
+        if (agricultureProfile.sigatoka.monitoringPlots.some(plot => plot.name.toLowerCase() === name.toLowerCase() && plot.status === 'active')) { setSuccessMsg('That monitoring plot already exists.'); return; }
+        const id = crypto.randomUUID();
+        const enrolledAt = new Date().toISOString().slice(0, 10);
+        const sentinels = Array.from({ length: agricultureProfile.sigatoka.samplePlantCount }, (_, index) => ({ id: crypto.randomUUID(), code: `${name}-${String(index + 1).padStart(2, '0')}`, status: 'active' as const, enrolledAt }));
+        setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, monitoringPlots: [...profile.sigatoka.monitoringPlots, { id, name, sectorName, status: 'active', area: optionalThreshold(newMonitoringPlot.area), sentinels }] } }));
+        setNewMonitoringPlot({ name: '', sectorName, area: '' });
+    };
+
+    const retireMonitoringPlot = (plotId: string) => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, monitoringPlots: profile.sigatoka.monitoringPlots.map(plot => plot.id === plotId ? { ...plot, status: 'retired' as const, sentinels: plot.sentinels.map(plant => plant.status === 'active' ? { ...plant, status: 'retired' as const, retiredAt: new Date().toISOString().slice(0, 10), retirementReason: 'Plot retired' } : plant) } : plot) } }));
+
+    const replaceSentinel = (plotId: string, sentinelId: string) => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, monitoringPlots: profile.sigatoka.monitoringPlots.map(plot => {
+        if (plot.id !== plotId) return plot;
+        const retiring = plot.sentinels.find(plant => plant.id === sentinelId);
+        if (!retiring || retiring.status !== 'active') return plot;
+        const sequence = plot.sentinels.length + 1;
+        return { ...plot, sentinels: [...plot.sentinels.map(plant => plant.id === sentinelId ? { ...plant, status: 'retired' as const, retiredAt: new Date().toISOString().slice(0, 10), retirementReason: 'Replaced after flowering or field change' } : plant), { id: crypto.randomUUID(), code: `${plot.name}-${String(sequence).padStart(2, '0')}`, status: 'active' as const, enrolledAt: new Date().toISOString().slice(0, 10), replacementOf: sentinelId }] };
+    }) } }));
 
     return (
         <div className="max-w-4xl space-y-8">
@@ -201,27 +262,93 @@ export default function SettingsPage() {
                                     <Label>Farm zones / fields</Label>
                                     <Input
                                         placeholder="North Field, Poultry Block"
-                                        value={agricultureProfile.farmZones.join(', ')}
-                                        onChange={event => setAgricultureProfile(profile => ({ ...profile, farmZones: event.target.value.split(',').map(value => value.trim()).filter(Boolean) }))}
+                                        value={farmZonesInput}
+                                        onChange={event => setFarmZonesInput(event.target.value)}
                                     />
+                                    <p className="text-xs text-muted-foreground">Separate names with commas. Spaces and punctuation inside a name are accepted.</p>
                                 </div>
                                 <div className="space-y-2">
                                     <Label>Crop types</Label>
                                     <Input
                                         placeholder="Maize, Tomato, Cocoa"
-                                        value={agricultureProfile.cropTypes.join(', ')}
-                                        onChange={event => setAgricultureProfile(profile => ({ ...profile, cropTypes: event.target.value.split(',').map(value => value.trim()).filter(Boolean) }))}
+                                        value={cropTypesInput}
+                                        onChange={event => setCropTypesInput(event.target.value)}
                                     />
+                                    <p className="text-xs text-muted-foreground">Example: Maize, Cherry Tomato, Cocoa</p>
                                 </div>
                                 <div className="space-y-2">
                                     <Label>Animal types</Label>
                                     <Input
                                         placeholder="Layers, Broilers, Cattle"
-                                        value={agricultureProfile.livestockTypes.join(', ')}
-                                        onChange={event => setAgricultureProfile(profile => ({ ...profile, livestockTypes: event.target.value.split(',').map(value => value.trim()).filter(Boolean) }))}
+                                        value={livestockTypesInput}
+                                        onChange={event => setLivestockTypesInput(event.target.value)}
                                     />
+                                    <p className="text-xs text-muted-foreground">Example: Layers, Broilers, Dairy Cattle</p>
                                 </div>
                             </div>
+
+                            {agricultureProfile.operationTypes.includes('crop') && (
+                                <div className="border-t pt-5 space-y-4">
+                                    <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                                        <div>
+                                            <Label className="text-base">Sigatoka monitoring</Label>
+                                            <p className="text-sm text-muted-foreground">Enable field scouting, SED calculations, trend analysis, and plot-level records.</p>
+                                        </div>
+                                        <input type="checkbox" className="h-5 w-5" checked={agricultureProfile.sigatoka.enabled} onChange={event => setSigatokaEnabled(event.target.checked)} />
+                                    </div>
+
+                                    {agricultureProfile.sigatoka.enabled && (
+                                        <>
+                                            <div>
+                                                <Label className="text-base">Your farm terminology</Label>
+                                                <p className="mb-3 text-sm text-muted-foreground">Use the names your organization already uses. These labels appear throughout scouting and reports.</p>
+                                                <div className="grid gap-3 md:grid-cols-3">
+                                                    <div className="space-y-2"><Label>Sector label</Label><Input value={agricultureProfile.sigatoka.sectorLabel} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, sectorLabel: event.target.value } }))} placeholder="Sector, Estate, Farm" /></div>
+                                                    <div className="space-y-2"><Label>Plot area label</Label><Input value={agricultureProfile.sigatoka.plotLabel} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, plotLabel: event.target.value } }))} placeholder="Plot, Block, Field" /></div>
+                                                    <div className="space-y-2"><Label>Plant label</Label><Input value={agricultureProfile.sigatoka.plantLabel} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, plantLabel: event.target.value } }))} placeholder="Sentinel plant" /></div>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid gap-3 md:grid-cols-3">
+                                                <div className="space-y-2">
+                                                    <Label>Default area unit</Label>
+                                                    <select className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={agricultureProfile.sigatoka.areaUnit} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, areaUnit: event.target.value as typeof profile.sigatoka.areaUnit } }))}>
+                                                        <option value="hectare">Hectare (ha)</option><option value="acre">Acre (ac)</option><option value="square_metre">Square metre (m2)</option><option value="custom">Custom unit</option>
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-2"><Label>Plants per observation</Label><Input type="number" min={1} max={30} value={agricultureProfile.sigatoka.samplePlantCount} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, samplePlantCount: Math.min(30, Math.max(1, Number(event.target.value) || 10)) } }))} /></div>
+                                                <div className="space-y-2"><Label>Initial FER baseline</Label><Input type="number" min={0} step="0.01" value={agricultureProfile.sigatoka.initialFerBaseline} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, initialFerBaseline: Math.max(0, Number(event.target.value) || 0) } }))} /></div>
+                                            </div>
+
+                                            {agricultureProfile.sigatoka.areaUnit === 'custom' && (
+                                                <div className="grid gap-3 rounded-lg bg-muted/40 p-4 md:grid-cols-2">
+                                                    <div className="space-y-2"><Label>Custom area unit name</Label><Input value={agricultureProfile.sigatoka.customAreaUnitName} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, customAreaUnitName: event.target.value } }))} placeholder="e.g. local plot unit" /></div>
+                                                    <div className="space-y-2"><Label>Square metres in one custom unit</Label><Input type="number" min={0.0001} step="any" value={agricultureProfile.sigatoka.customAreaSquareMetres} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, customAreaSquareMetres: Math.max(0.0001, Number(event.target.value) || 1) } }))} /></div>
+                                                </div>
+                                            )}
+
+                                            <div>
+                                                <Label className="text-base">Organization SED attention thresholds</Label>
+                                                <p className="mb-3 text-sm text-muted-foreground">Optional operational thresholds. Leave blank until an agronomist approves values for your production system.</p>
+                                                <div className="grid gap-3 md:grid-cols-3">
+                                                    {(['watch', 'high', 'critical'] as const).map(level => <div key={level} className="space-y-2"><Label className="capitalize">{level}</Label><Input type="number" min={0} placeholder="Not configured" value={agricultureProfile.sigatoka.riskThresholds[level] ?? ''} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, riskThresholds: { ...profile.sigatoka.riskThresholds, [level]: optionalThreshold(event.target.value) } } }))} /></div>)}
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-3 rounded-xl border p-4">
+                                                <div><Label className="text-base">Monitoring plot and sentinel registry</Label><p className="text-sm text-muted-foreground">Register active plots once. Sentinel identities are preserved when a plant flowers, is removed, or is replaced.</p></div>
+                                                <div className="grid gap-3 md:grid-cols-4">
+                                                    <Input placeholder={`${agricultureProfile.sigatoka.plotLabel} name`} value={newMonitoringPlot.name} onChange={event => setNewMonitoringPlot(value => ({ ...value, name: event.target.value }))} />
+                                                    <Input placeholder={`${agricultureProfile.sigatoka.sectorLabel} name`} value={newMonitoringPlot.sectorName} onChange={event => setNewMonitoringPlot(value => ({ ...value, sectorName: event.target.value }))} />
+                                                    <Input type="number" min={0} step="any" placeholder={`Area (${agricultureProfile.sigatoka.areaUnit})`} value={newMonitoringPlot.area} onChange={event => setNewMonitoringPlot(value => ({ ...value, area: event.target.value }))} />
+                                                    <Button type="button" variant="outline" onClick={addMonitoringPlot}><Plus className="mr-2 h-4 w-4" />Add plot</Button>
+                                                </div>
+                                                <div className="space-y-2">{agricultureProfile.sigatoka.monitoringPlots.map(plot => <div key={plot.id} className={`rounded-lg border p-3 ${plot.status === 'retired' ? 'bg-muted/40 opacity-70' : ''}`}><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">{plot.sectorName} / {plot.name}</p><p className="text-xs text-muted-foreground">{plot.sentinels.filter(plant => plant.status === 'active').length} active sentinels · {plot.status}</p></div>{plot.status === 'active' && <Button type="button" size="sm" variant="outline" onClick={() => retireMonitoringPlot(plot.id)}>Retire plot</Button>}</div>{plot.status === 'active' && <div className="mt-3 flex flex-wrap gap-2">{plot.sentinels.filter(plant => plant.status === 'active').map(plant => <Button key={plant.id} type="button" size="sm" variant="ghost" className="h-8 border" title="Retire and create a linked replacement" onClick={() => replaceSentinel(plot.id, plant.id)}>{plant.code} · Replace</Button>)}</div>}</div>)}{agricultureProfile.sigatoka.monitoringPlots.length === 0 && <p className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">No dedicated monitoring plots yet. Add one to create traceable sentinel plant IDs.</p>}</div>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="border-t pt-5 space-y-3">
                                 <div className="flex items-center justify-between gap-3">

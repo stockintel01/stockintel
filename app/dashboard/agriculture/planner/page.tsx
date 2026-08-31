@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   Plus, CalendarDays, AlertTriangle, CheckCircle2,
-  FlaskConical, X, ChevronRight, Clock, Bell, Target
+  FlaskConical, X, Bell, Target
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -42,6 +42,7 @@ export default function PlannerPage() {
   });
   const [newPlanItem, setNewPlanItem] = useState<{ itemId: string; qtyPerApp: number; uom?: UOM }>({ itemId: '', qtyPerApp: 0 });
   const [filter, setFilter] = useState<'all' | 'active' | 'draft' | 'completed'>('all');
+  const [today] = useState(() => new Date().toISOString().slice(0, 10));
 
   const filtered = plans.filter(p => filter === 'all' || p.status === filter);
   const alerts = plans.filter(p => p.status === 'active' && p.items.some(i => !i.isStockSufficient));
@@ -64,7 +65,7 @@ export default function PlannerPage() {
 
     const item: SprayPlanItem = {
       itemId: invItem.id, itemName: invItem.name,
-      category: invItem.category as any, uom: invItem.uom as any, requestedUom,
+      category: invItem.category, uom: invItem.uom, requestedUom,
       quantityPerApplication: newPlanItem.qtyPerApp,
       quantityPerApplicationInStockUom: qtyPerAppStockUom,
       totalPlannedQty: totalQty,
@@ -84,7 +85,7 @@ export default function PlannerPage() {
     await createPlan({
       planName: newPlan.planName || `${newPlan.farmZone} Plan`,
       farmZone: newPlan.farmZone as FarmZone,
-      cycle: newPlan.cycle as any,
+      cycle: newPlan.cycle ?? 'weekly',
       startDate: newPlan.startDate!, endDate: newPlan.endDate!,
       createdBy: currentUserName, createdAt: new Date().toISOString(),
       status: 'active', totalApplications: apps, completedApplications: 0,
@@ -96,7 +97,7 @@ export default function PlannerPage() {
 
   async function markApplicationComplete(planId: string) {
     const plan = plans.find(p => p.id === planId);
-    if (plan) await markApplication(planId, plan.completedApplications);
+    if (plan) await markApplication(planId);
   }
 
   return (
@@ -104,7 +105,7 @@ export default function PlannerPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Spray & Usage Planner</h1>
-          <p className="text-muted-foreground text-sm">Plan chemical application cycles. Get alerts when stock won't last the full cycle.</p>
+          <p className="text-muted-foreground text-sm">Plan chemical application cycles. Get alerts when stock will not last the full cycle.</p>
         </div>
         <Button className="bg-green-600 hover:bg-green-700" onClick={() => setShowNew(true)}>
           <Plus className="w-4 h-4 mr-1" /> New Plan
@@ -141,8 +142,8 @@ export default function PlannerPage() {
 
       {/* Filter tabs */}
       <div className="flex gap-1 border rounded-md p-1 bg-muted/30 w-fit">
-        {[['all', 'All Plans'], ['active', 'Active'], ['draft', 'Draft'], ['completed', 'Completed']].map(([v, l]) => (
-          <button key={v} onClick={() => setFilter(v as any)} className={`px-3 py-1 rounded text-sm transition-colors ${filter === v ? 'bg-background shadow-sm font-medium' : 'hover:bg-background/60'}`}>{l}</button>
+        {([['all', 'All Plans'], ['active', 'Active'], ['draft', 'Draft'], ['completed', 'Completed']] as const).map(([v, l]) => (
+          <button key={v} onClick={() => setFilter(v)} className={`px-3 py-1 rounded text-sm transition-colors ${filter === v ? 'bg-background shadow-sm font-medium' : 'hover:bg-background/60'}`}>{l}</button>
         ))}
       </div>
 
@@ -151,7 +152,7 @@ export default function PlannerPage() {
         {filtered.map(plan => {
           const shortfallItems = plan.items.filter(i => !i.isStockSufficient);
           const progress = plan.totalApplications > 0 ? (plan.completedApplications / plan.totalApplications) * 100 : 0;
-          const daysLeft = Math.max(0, Math.ceil((new Date(plan.endDate).getTime() - Date.now()) / 86400000));
+          const daysLeft = Math.max(0, Math.ceil((new Date(`${plan.endDate}T12:00:00`).getTime() - new Date(`${today}T12:00:00`).getTime()) / 86400000));
           return (
             <Card key={plan.id} className={`hover:shadow-md transition-shadow cursor-pointer ${shortfallItems.length > 0 ? 'border-amber-300' : ''}`} onClick={() => setSelectedPlan(plan)}>
               <CardHeader className="pb-2">
@@ -336,7 +337,7 @@ export default function PlannerPage() {
                 </div>
                 <div>
                   <label className="text-sm font-medium">Application Cycle</label>
-                  <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newPlan.cycle} onChange={e => setNewPlan(p => ({ ...p, cycle: e.target.value as any }))}>
+                  <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={newPlan.cycle} onChange={e => setNewPlan(p => ({ ...p, cycle: e.target.value as SprayPlan['cycle'] }))}>
                     {Object.entries(CYCLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </select>
                 </div>

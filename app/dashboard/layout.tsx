@@ -11,7 +11,7 @@ import {
     BarChart3, Box, Cloud, Home, Leaf, LogOut,
     Menu, Package, Settings, ShoppingCart,
     X, UserCog, Shield, Gift, Wallet,
-    FlaskConical, CalendarDays, Tractor, PackageCheck
+    FlaskConical, CalendarDays, Tractor, PackageCheck, Bug
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { canUseFeature, isSubscriptionActive, type PlanFeature } from '@/lib/plans';
@@ -140,6 +140,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     label: 'Field & Packhouse',
                     items: [
                         { name: 'Crop Records', href: '/dashboard/agriculture/crops', icon: Leaf },
+                        { name: 'Disease Scouting', href: '/dashboard/agriculture/sigatoka', icon: Bug },
                         { name: 'Spray Planner', href: '/dashboard/agriculture/planner', icon: CalendarDays },
                         { name: 'Equipment', href: '/dashboard/agriculture/equipment', icon: Tractor },
                         { name: 'Packing Station', href: '/dashboard/agriculture/packing-station', icon: PackageCheck },
@@ -169,6 +170,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         ...group,
         items: group.items.filter(item => {
             if (!agricultureProfile.modules.crops && ['/dashboard/agriculture/crops', '/dashboard/agriculture/requests', '/dashboard/agriculture/usage-tracker', '/dashboard/agriculture/planner', '/dashboard/agriculture/packing-station'].includes(item.href)) return false;
+            if (!agricultureProfile.modules.sigatoka && item.href === '/dashboard/agriculture/sigatoka') return false;
             if (!agricultureProfile.modules.weather && item.href === '/dashboard/agriculture/weather') return false;
             if (!agricultureProfile.modules.reports && item.href === '/dashboard/agriculture/reports') return false;
             return true;
@@ -228,6 +230,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { name: 'Stock', href: '/dashboard/agriculture/stock-management', icon: Box },
         { name: 'Requests', href: '/dashboard/agriculture/requests', icon: ShoppingCart },
         { name: 'Usage', href: '/dashboard/agriculture/usage-tracker', icon: FlaskConical },
+        { name: 'Scouting', href: '/dashboard/agriculture/sigatoka', icon: Bug },
         { name: 'Packhouse', href: '/dashboard/agriculture/packing-station', icon: PackageCheck },
         { name: 'Equipment', href: '/dashboard/agriculture/equipment', icon: Tractor },
         { name: 'Animals', href: '/dashboard/agriculture/livestock', icon: Leaf },
