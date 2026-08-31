@@ -418,7 +418,14 @@ service cloud.firestore {
             || (
               hasAccess('agricSigatoka')
               && request.resource.data.performedBy == request.auth.uid
-              && request.resource.data.action in ['sigatoka_archive', 'sigatoka_restore']
+              && request.resource.data.action in ['sigatoka_archive', 'sigatoka_restore', 'sigatoka_permanent_delete']
+              && (
+                request.resource.data.action == 'sigatoka_restore'
+                || (
+                  request.resource.data.reason is string
+                  && request.resource.data.reason.size() >= 5
+                )
+              )
             )
           );
         allow update, delete: if false;
@@ -462,9 +469,14 @@ service cloud.firestore {
           && isSameOrg(orgId)
           && hasActiveSubscription(orgId)
           && hasAccess('agricSigatoka')
-          && (isOwnerOrManager() || isSuperAdmin())
-          && ('expireAt' in resource.data)
-          && resource.data.expireAt <= request.time;
+          && (
+            isOwnerOrManager()
+            || isSuperAdmin()
+            || (
+              request.auth.uid == resource.data.observerId
+              && resource.data.status in ['draft', 'submitted']
+            )
+          );
       }
     }
 

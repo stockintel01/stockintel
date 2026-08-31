@@ -115,11 +115,14 @@ function archiveMetadata(userId: string, reason: string, batchId: string) {
 
 export async function archiveSigatokaSessions(orgId: string, sessionIds: string[], userId: string, reason: string): Promise<void> {
   const uniqueIds = Array.from(new Set(sessionIds.filter(Boolean)));
+  const normalizedReason = reason.trim();
+  if (uniqueIds.length === 0) throw new Error('Select at least one observation to archive.');
+  if (normalizedReason.length < 5) throw new Error('Enter a clear reason for archiving these observations.');
   const batchId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `archive-${Date.now()}`;
   for (let start = 0; start < uniqueIds.length; start += 350) {
     const ids = uniqueIds.slice(start, start + 350);
     const batch = writeBatch(db);
-    const metadata = archiveMetadata(userId, reason, batchId);
+    const metadata = archiveMetadata(userId, normalizedReason, batchId);
     ids.forEach(sessionId => batch.update(doc(db, `organizations/${orgId}/agric_sigatoka_observations/${sessionId}`), metadata));
     batch.set(doc(auditCollectionPath(orgId)), {
       action: 'sigatoka_archive',
@@ -127,7 +130,7 @@ export async function archiveSigatokaSessions(orgId: string, sessionIds: string[
       recordIds: ids,
       recordCount: ids.length,
       batchId,
-      reason,
+      reason: normalizedReason,
       performedBy: userId,
       createdAt: serverTimestamp(),
     });
@@ -157,16 +160,27 @@ export async function restoreSigatokaSession(orgId: string, sessionId: string, u
   await batch.commit();
 }
 
-export async function permanentlyDeleteExpiredSigatokaSession(orgId: string, sessionId: string, userId: string): Promise<void> {
-  const batch = writeBatch(db);
-  batch.delete(doc(db, `organizations/${orgId}/agric_sigatoka_observations/${sessionId}`));
-  batch.set(doc(auditCollectionPath(orgId)), {
-    action: 'sigatoka_permanent_delete',
-    entityType: 'sigatoka_observation',
-    recordIds: [sessionId],
-    recordCount: 1,
-    performedBy: userId,
-    createdAt: serverTimestamp(),
-  });
-  await batch.commit();
+export async function permanentlyDeleteSigatokaSessions(orgId: string, sessionIds: string[], userId: string, reason: string): Promise<void> {
+  const uniqueIds = Array.from(new Set(sessionIds.filter(Boolean)));
+  const normalizedReason = reason.trim();
+  if (uniqueIds.length === 0) throw new Error('Select at least one observation to delete.');
+  if (normalizedReason.length < 5) throw new Error('Enter a clear reason for permanently deleting these observations.');
+  const batchId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `delete-${Date.now()}`;
+  for (let start = 0; start < uniqueIds.length; start += 350) {
+    const ids = uniqueIds.slice(start, start + 350);
+    const batch = writeBatch(db);
+    ids.forEach(sessionId => batch.delete(doc(db, `organizations/${orgId}/agric_sigatoka_observations/${sessionId}`)));
+    batch.set(doc(auditCollectionPath(orgId)), {
+      action: 'sigatoka_permanent_delete',
+      entityType: 'sigatoka_observation',
+      recordIds: ids,
+      recordCount: ids.length,
+      batchId,
+      reason: normalizedReason,
+      deletionMode: 'user_selected',
+      performedBy: userId,
+      createdAt: serverTimestamp(),
+    });
+    await batch.commit();
+  }
 }

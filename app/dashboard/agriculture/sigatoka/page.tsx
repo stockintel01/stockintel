@@ -51,7 +51,7 @@ import {
   addSigatokaSession,
   addSigatokaSessions,
   archiveSigatokaSessions,
-  permanentlyDeleteExpiredSigatokaSession,
+  permanentlyDeleteSigatokaSessions,
   restoreSigatokaSession,
   SIGATOKA_ARCHIVE_DAYS,
   subscribeSigatokaSessions,
@@ -64,6 +64,7 @@ import { userHasAccess } from '@/lib/access-permissions';
 
 const AREA_FACTORS = { hectare: 10000, acre: 4046.8564224, square_metre: 1 } as const;
 type ReportPeriod = 'all' | 'week' | 'month' | 'year' | 'custom';
+type DataRemovalAction = 'archive' | 'delete';
 
 function emptyPlants(count: number, sentinels: Array<{ id: string; code: string }> = []): SigatokaPlantObservation[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -160,11 +161,12 @@ export default function SigatokaPage() {
   const [reportStartDate, setReportStartDate] = useState(() => `${new Date().getFullYear()}-01-01`);
   const [reportEndDate, setReportEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [showArchive, setShowArchive] = useState(false);
-  const [archiveSelectionIds, setArchiveSelectionIds] = useState<string[]>([]);
-  const [archiveScope, setArchiveScope] = useState('');
-  const [archiveConfirmation, setArchiveConfirmation] = useState('');
-  const [archiveReason, setArchiveReason] = useState('');
-  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [removalSelectionIds, setRemovalSelectionIds] = useState<string[]>([]);
+  const [removalScope, setRemovalScope] = useState('');
+  const [removalAction, setRemovalAction] = useState<DataRemovalAction>('archive');
+  const [removalConfirmation, setRemovalConfirmation] = useState('');
+  const [removalReason, setRemovalReason] = useState('');
+  const [removalBusy, setRemovalBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [loadError, setLoadError] = useState('');
@@ -237,6 +239,8 @@ export default function SigatokaPage() {
   const latestReport = reportSessions[0];
   const myDrafts = sessions.filter(session => session.status === 'draft' && session.observerId === user?.id);
   const recoverableArchivedSessions = canManage ? archivedSessions : archivedSessions.filter(session => session.observerId === user?.id && session.status !== 'verified');
+  const removalRecords = [...sessions, ...archivedSessions].filter(session => removalSelectionIds.includes(session.id));
+  const removalIncludesArchivedRecord = removalRecords.some(session => Boolean(session.archivedAt || session.archivedAtIso));
   const recentWeeks = weeklySummaries.slice(-6);
   const activeMonitoringPlots = config.monitoringPlots.filter(plot => plot.status === 'active');
   const selectedPlant = plants[currentPlant];
@@ -494,29 +498,40 @@ export default function SigatokaPage() {
     return session.observerId === user.id && session.status !== 'verified';
   }
 
-  function prepareArchive(records: SigatokaSessionRecord[], scope: string) {
-    setArchiveSelectionIds(records.map(record => record.id));
-    setArchiveScope(scope);
-    setArchiveConfirmation('');
-    setArchiveReason('');
+  function prepareDataRemoval(records: SigatokaSessionRecord[], scope: string, action: DataRemovalAction = 'archive') {
+    setRemovalSelectionIds(records.map(record => record.id));
+    setRemovalScope(scope);
+    setRemovalAction(action);
+    setRemovalConfirmation('');
+    setRemovalReason('');
   }
 
-  async function confirmArchive() {
-    const selectedRecords = sessions.filter(session => archiveSelectionIds.includes(session.id));
-    if (!organization?.id || !user || archiveSelectionIds.length === 0 || selectedRecords.length !== archiveSelectionIds.length || !selectedRecords.every(canEditObservation)) return;
-    const requiredPhrase = `ARCHIVE ${archiveSelectionIds.length}`;
-    if (archiveConfirmation.trim().toUpperCase() !== requiredPhrase || archiveReason.trim().length < 5) return;
-    setArchiveBusy(true);
+  function closeDataRemoval() {
+    setRemovalSelectionIds([]);
+    setRemovalConfirmation('');
+    setRemovalReason('');
+    setRemovalAction('archive');
+  }
+
+  async function confirmDataRemoval() {
+    if (!organization?.id || !user || removalSelectionIds.length === 0 || removalRecords.length !== removalSelectionIds.length || !removalRecords.every(canEditObservation)) return;
+    if (removalAction === 'archive' && removalIncludesArchivedRecord) return;
+    const requiredPhrase = `${removalAction === 'delete' ? 'DELETE' : 'ARCHIVE'} ${removalSelectionIds.length}`;
+    if (removalConfirmation.trim().toUpperCase() !== requiredPhrase || removalReason.trim().length < 5) return;
+    setRemovalBusy(true);
     try {
-      await archiveSigatokaSessions(organization.id, archiveSelectionIds, user.id, archiveReason.trim());
-      setMessage(`${archiveSelectionIds.length} observation${archiveSelectionIds.length === 1 ? '' : 's'} moved to the recoverable archive for ${SIGATOKA_ARCHIVE_DAYS} days.`);
-      setArchiveSelectionIds([]);
-      setArchiveConfirmation('');
-      setArchiveReason('');
-      setShowArchive(true);
+      if (removalAction === 'delete') {
+        await permanentlyDeleteSigatokaSessions(organization.id, removalSelectionIds, user.id, removalReason.trim());
+        setMessage(`${removalSelectionIds.length} observation${removalSelectionIds.length === 1 ? '' : 's'} permanently deleted. This action cannot be undone.`);
+      } else {
+        await archiveSigatokaSessions(organization.id, removalSelectionIds, user.id, removalReason.trim());
+        setMessage(`${removalSelectionIds.length} observation${removalSelectionIds.length === 1 ? '' : 's'} moved to the recoverable archive for ${SIGATOKA_ARCHIVE_DAYS} days.`);
+        setShowArchive(true);
+      }
+      closeDataRemoval();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'The selected observations could not be archived.');
-    } finally { setArchiveBusy(false); }
+      setMessage(error instanceof Error ? error.message : `The selected observations could not be ${removalAction === 'delete' ? 'deleted' : 'archived'}.`);
+    } finally { setRemovalBusy(false); }
   }
 
   async function restoreArchivedObservation(session: SigatokaSessionRecord) {
@@ -531,21 +546,6 @@ export default function SigatokaPage() {
       setMessage(`${session.plotName}, ${session.observedAt} was restored to active records.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'The observation could not be restored.');
-    }
-  }
-
-  async function permanentlyDeleteExpiredObservation(session: SigatokaSessionRecord) {
-    if (!organization?.id || !user || !canManage) return;
-    const expires = archiveExpiry(session);
-    if (!expires || expires.getTime() > Date.now()) {
-      setMessage(`This observation remains protected until ${expires?.toLocaleDateString() ?? 'its retention date'}.`);
-      return;
-    }
-    try {
-      await permanentlyDeleteExpiredSigatokaSession(organization.id, session.id, user.id);
-      setMessage(`${session.plotName}, ${session.observedAt} was permanently deleted after its recovery period.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'The expired observation could not be permanently deleted.');
     }
   }
 
@@ -630,11 +630,34 @@ export default function SigatokaPage() {
     {message && <div className="rounded-lg border bg-muted/40 p-3 text-sm">{message}</div>}
     {loadError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{loadError}</div>}
 
-    {archiveSelectionIds.length > 0 && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="archive-confirmation-title"><Card className="w-full max-w-lg shadow-xl"><CardHeader><CardTitle id="archive-confirmation-title" className="flex items-center gap-2"><Archive className="h-5 w-5 text-amber-600" />Move data to recovery archive</CardTitle></CardHeader><CardContent className="space-y-4"><div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"><p className="font-semibold">{archiveSelectionIds.length} observation{archiveSelectionIds.length === 1 ? '' : 's'} selected</p><p className="mt-1 text-amber-900">{archiveScope}. These records will disappear from active reports but can be restored for {SIGATOKA_ARCHIVE_DAYS} days before automatic permanent deletion.</p></div><div className="space-y-1.5"><Label>Reason for archiving</Label><Input value={archiveReason} onChange={event => setArchiveReason(event.target.value)} placeholder="Required, at least 5 characters" /></div><div className="space-y-1.5"><Label>Type <span className="font-mono">ARCHIVE {archiveSelectionIds.length}</span> to confirm</Label><Input autoFocus value={archiveConfirmation} onChange={event => setArchiveConfirmation(event.target.value)} autoComplete="off" /></div><div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button variant="outline" disabled={archiveBusy} onClick={() => { setArchiveSelectionIds([]); setArchiveConfirmation(''); setArchiveReason(''); }}>Cancel</Button><Button variant="destructive" disabled={archiveBusy || archiveReason.trim().length < 5 || archiveConfirmation.trim().toUpperCase() !== `ARCHIVE ${archiveSelectionIds.length}`} onClick={() => void confirmArchive()}>{archiveBusy ? 'Archiving...' : 'Archive selected data'}</Button></div></CardContent></Card></div>}
+    {removalSelectionIds.length > 0 && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="data-removal-title">
+      <Card className="max-h-[90vh] w-full max-w-xl overflow-y-auto shadow-xl">
+        <CardHeader><CardTitle id="data-removal-title" className="flex items-center gap-2">{removalAction === 'delete' ? <Trash2 className="h-5 w-5 text-red-600" /> : <Archive className="h-5 w-5 text-amber-600" />}Manage selected data</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border bg-muted/30 p-3 text-sm"><p className="font-semibold">{removalSelectionIds.length} observation{removalSelectionIds.length === 1 ? '' : 's'} selected</p><p className="mt-1 text-muted-foreground">{removalScope}</p></div>
+          <div className="grid gap-3 sm:grid-cols-2" aria-label="Choose how to remove the selected data">
+            <button type="button" disabled={removalIncludesArchivedRecord} aria-pressed={removalAction === 'archive'} onClick={() => { setRemovalAction('archive'); setRemovalConfirmation(''); }} className={`rounded-lg border p-4 text-left transition-colors ${removalAction === 'archive' ? 'border-amber-500 bg-amber-50' : 'hover:bg-muted/50'} disabled:cursor-not-allowed disabled:opacity-50`}>
+              <span className="flex items-center gap-2 font-semibold"><Archive className="h-4 w-4 text-amber-700" />Recovery archive</span>
+              <span className="mt-1 block text-xs text-muted-foreground">Remove from active reports and allow restoration for {SIGATOKA_ARCHIVE_DAYS} days. Recommended.</span>
+            </button>
+            <button type="button" aria-pressed={removalAction === 'delete'} onClick={() => { setRemovalAction('delete'); setRemovalConfirmation(''); }} className={`rounded-lg border p-4 text-left transition-colors ${removalAction === 'delete' ? 'border-red-600 bg-red-50' : 'hover:bg-muted/50'}`}>
+              <span className="flex items-center gap-2 font-semibold text-red-700"><Trash2 className="h-4 w-4" />Delete permanently</span>
+              <span className="mt-1 block text-xs text-muted-foreground">Delete now without a recovery period. This cannot be undone.</span>
+            </button>
+          </div>
+          <div className={`rounded-lg border p-3 text-sm ${removalAction === 'delete' ? 'border-red-200 bg-red-50 text-red-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+            {removalAction === 'delete' ? 'Permanent deletion removes the selected source records, so they will no longer appear in reports, exports, or the recovery archive.' : `Archived records can be restored for ${SIGATOKA_ARCHIVE_DAYS} days before they become eligible for automatic deletion.`}
+          </div>
+          <div className="space-y-1.5"><Label>Reason</Label><Input value={removalReason} onChange={event => setRemovalReason(event.target.value)} placeholder="Required for the audit log, at least 5 characters" /></div>
+          <div className="space-y-1.5"><Label>Type <span className="font-mono">{removalAction === 'delete' ? 'DELETE' : 'ARCHIVE'} {removalSelectionIds.length}</span> to confirm</Label><Input autoFocus value={removalConfirmation} onChange={event => setRemovalConfirmation(event.target.value)} autoComplete="off" /></div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button variant="outline" disabled={removalBusy} onClick={closeDataRemoval}>Cancel</Button><Button variant={removalAction === 'delete' ? 'destructive' : 'default'} disabled={removalBusy || removalReason.trim().length < 5 || removalConfirmation.trim().toUpperCase() !== `${removalAction === 'delete' ? 'DELETE' : 'ARCHIVE'} ${removalSelectionIds.length}`} onClick={() => void confirmDataRemoval()}>{removalBusy ? (removalAction === 'delete' ? 'Deleting...' : 'Archiving...') : (removalAction === 'delete' ? 'Delete permanently' : 'Move to recovery archive')}</Button></div>
+        </CardContent>
+      </Card>
+    </div>}
 
     {decisionAlerts.length > 0 && <Card className="border-amber-200"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><AlertTriangle className="h-5 w-5 text-amber-600" />Decision alerts</CardTitle></CardHeader><CardContent className="grid gap-3 lg:grid-cols-2">{decisionAlerts.slice(0, 6).map(alert => <div key={alert.id} className={`rounded-lg border p-3 ${alert.severity === 'critical' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}><div className="flex items-center justify-between gap-2"><p className="font-semibold">{alert.plotName}: {alert.title}</p><Badge variant="outline" className="capitalize">{alert.severity}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{alert.explanation}</p></div>)}</CardContent></Card>}
 
-    {canRecord && myDrafts.length > 0 && !showObservation && <Card className="border-amber-200 bg-amber-50/40"><CardHeader><CardTitle className="text-base">Continue an unfinished observation</CardTitle></CardHeader><CardContent className="space-y-2">{myDrafts.map(draft => <div key={draft.id} className="flex flex-col gap-3 rounded-lg border bg-background p-3 sm:flex-row sm:items-center"><div className="flex-1"><p className="font-semibold">{draft.sectorName} / {draft.plotName}</p><p className="text-xs text-muted-foreground">{draft.observedAt} · {draft.plants.filter(plant => plant.previousLeafReading > 0 && plant.currentLeafReading > 0).length}/{draft.plants.length} plants complete</p></div><div className="flex gap-2"><Button size="sm" onClick={() => editObservation(draft)}>Continue</Button><Button size="icon" variant="ghost" aria-label="Archive draft" onClick={() => prepareArchive([draft], `draft for ${draft.plotName} on ${draft.observedAt}`)}><Archive className="h-4 w-4 text-amber-700" /></Button></div></div>)}</CardContent></Card>}
+    {canRecord && myDrafts.length > 0 && !showObservation && <Card className="border-amber-200 bg-amber-50/40"><CardHeader><CardTitle className="text-base">Continue an unfinished observation</CardTitle></CardHeader><CardContent className="space-y-2">{myDrafts.map(draft => <div key={draft.id} className="flex flex-col gap-3 rounded-lg border bg-background p-3 sm:flex-row sm:items-center"><div className="flex-1"><p className="font-semibold">{draft.sectorName} / {draft.plotName}</p><p className="text-xs text-muted-foreground">{draft.observedAt} · {draft.plants.filter(plant => plant.previousLeafReading > 0 && plant.currentLeafReading > 0).length}/{draft.plants.length} plants complete</p></div><div className="flex gap-2"><Button size="sm" onClick={() => editObservation(draft)}>Continue</Button><Button size="icon" variant="ghost" aria-label="Manage draft data" onClick={() => prepareDataRemoval([draft], `Draft for ${draft.plotName} on ${draft.observedAt}`)}><Archive className="h-4 w-4 text-amber-700" /></Button></div></div>)}</CardContent></Card>}
 
     {canRecord && showObservation && <Card className="border-green-200 shadow-sm">
       <CardHeader><CardTitle className="flex items-center justify-between"><span>{editingSession ? editingSession.status === 'draft' ? 'Continue field observation' : 'Edit field observation' : 'New field observation'}</span><Badge variant="outline">Week {editingSession && observedAt === editingSession.observedAt ? editingSession.monitoringWeek : farmWeek.week}</Badge></CardTitle></CardHeader>
@@ -692,9 +715,9 @@ export default function SigatokaPage() {
       </CardContent>
     </Card>}
 
-    <Card><CardHeader><CardTitle className="text-base">Report range</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">Charts, tables, CSV, dashboard printing and bulk data actions follow this selection.</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6"><div className="space-y-1.5"><Label>{config.plotLabel}</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={reportPlot} onChange={event => setReportPlot(event.target.value)}><option value="all">All {config.plotLabel.toLowerCase()}s</option>{knownPlots.map(plot => <option key={plot} value={plot}>{plot}</option>)}</select></div><div className="space-y-1.5"><Label>Period</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={reportPeriod} onChange={event => setReportPeriod(event.target.value as ReportPeriod)}><option value="all">All dates</option><option value="week">Particular week</option><option value="month">Particular month</option><option value="year">Particular year</option><option value="custom">Custom date range</option></select></div>{(reportPeriod === 'week' || reportPeriod === 'year') && <div className="space-y-1.5"><Label>Year</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={reportYear} onChange={event => setReportYear(Number(event.target.value))}>{availableYears.map(year => <option key={year} value={year}>{year}</option>)}</select></div>}{reportPeriod === 'week' && <div className="space-y-1.5"><Label>Farm week</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={reportWeek} onChange={event => setReportWeek(Number(event.target.value))}>{Array.from({ length: 52 }, (_, index) => index + 1).map(week => <option key={week} value={week}>Week {week}</option>)}</select></div>}{reportPeriod === 'month' && <div className="space-y-1.5"><Label>Month</Label><Input type="month" value={reportMonth} onChange={event => setReportMonth(event.target.value)} /></div>}{reportPeriod === 'custom' && <><div className="space-y-1.5"><Label>From</Label><Input type="date" max={reportEndDate || today} value={reportStartDate} onChange={event => setReportStartDate(event.target.value)} /></div><div className="space-y-1.5"><Label>To</Label><Input type="date" min={reportStartDate} max={today} value={reportEndDate} onChange={event => setReportEndDate(event.target.value)} /></div></>}</div><div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{reportRangeLabel}</Badge><Badge variant="outline">{reportSessions.length} submitted observation{reportSessions.length === 1 ? '' : 's'}</Badge>{filteredActiveSessions.some(session => session.status === 'draft') && <Badge variant="outline">{filteredActiveSessions.filter(session => session.status === 'draft').length} draft{filteredActiveSessions.filter(session => session.status === 'draft').length === 1 ? '' : 's'}</Badge>}{canManage && <Button size="sm" variant="outline" disabled={filteredActiveSessions.length === 0} onClick={() => prepareArchive(filteredActiveSessions, `${reportRangeLabel}, ${reportPlot === 'all' ? `all ${config.plotLabel.toLowerCase()}s` : `${config.plotLabel} ${reportPlot}`}`)}><Archive className="mr-2 h-4 w-4" />Clear / archive filtered data</Button>}{recoverableArchivedSessions.length > 0 && <Button size="sm" variant="outline" onClick={() => setShowArchive(current => !current)}><RotateCcw className="mr-2 h-4 w-4" />Recovery archive ({recoverableArchivedSessions.length})</Button>}</div></CardContent></Card>
+    <Card><CardHeader><CardTitle className="text-base">Report range</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">Charts, tables, CSV, dashboard printing and bulk data actions follow this selection.</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6"><div className="space-y-1.5"><Label>{config.plotLabel}</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={reportPlot} onChange={event => setReportPlot(event.target.value)}><option value="all">All {config.plotLabel.toLowerCase()}s</option>{knownPlots.map(plot => <option key={plot} value={plot}>{plot}</option>)}</select></div><div className="space-y-1.5"><Label>Period</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={reportPeriod} onChange={event => setReportPeriod(event.target.value as ReportPeriod)}><option value="all">All dates</option><option value="week">Particular week</option><option value="month">Particular month</option><option value="year">Particular year</option><option value="custom">Custom date range</option></select></div>{(reportPeriod === 'week' || reportPeriod === 'year') && <div className="space-y-1.5"><Label>Year</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={reportYear} onChange={event => setReportYear(Number(event.target.value))}>{availableYears.map(year => <option key={year} value={year}>{year}</option>)}</select></div>}{reportPeriod === 'week' && <div className="space-y-1.5"><Label>Farm week</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={reportWeek} onChange={event => setReportWeek(Number(event.target.value))}>{Array.from({ length: 52 }, (_, index) => index + 1).map(week => <option key={week} value={week}>Week {week}</option>)}</select></div>}{reportPeriod === 'month' && <div className="space-y-1.5"><Label>Month</Label><Input type="month" value={reportMonth} onChange={event => setReportMonth(event.target.value)} /></div>}{reportPeriod === 'custom' && <><div className="space-y-1.5"><Label>From</Label><Input type="date" max={reportEndDate || today} value={reportStartDate} onChange={event => setReportStartDate(event.target.value)} /></div><div className="space-y-1.5"><Label>To</Label><Input type="date" min={reportStartDate} max={today} value={reportEndDate} onChange={event => setReportEndDate(event.target.value)} /></div></>}</div><div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{reportRangeLabel}</Badge><Badge variant="outline">{reportSessions.length} submitted observation{reportSessions.length === 1 ? '' : 's'}</Badge>{filteredActiveSessions.some(session => session.status === 'draft') && <Badge variant="outline">{filteredActiveSessions.filter(session => session.status === 'draft').length} draft{filteredActiveSessions.filter(session => session.status === 'draft').length === 1 ? '' : 's'}</Badge>}{canManage && <Button size="sm" variant="outline" disabled={filteredActiveSessions.length === 0} onClick={() => prepareDataRemoval(filteredActiveSessions, `${reportRangeLabel}, ${reportPlot === 'all' ? `all ${config.plotLabel.toLowerCase()}s` : `${config.plotLabel} ${reportPlot}`}`)}><Archive className="mr-2 h-4 w-4" />Manage filtered data</Button>}{recoverableArchivedSessions.length > 0 && <Button size="sm" variant="outline" onClick={() => setShowArchive(current => !current)}><RotateCcw className="mr-2 h-4 w-4" />Recovery archive ({recoverableArchivedSessions.length})</Button>}</div></CardContent></Card>
 
-    {showArchive && <Card className="border-amber-200"><CardHeader><CardTitle className="flex items-center justify-between gap-3 text-base"><span>Recovery archive</span><Button size="sm" variant="ghost" onClick={() => setShowArchive(false)}>Close</Button></CardTitle></CardHeader><CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Archived observations stay recoverable for {SIGATOKA_ARCHIVE_DAYS} days. Their expiry timestamp is managed by Firestore TTL, after which deletion occurs automatically.</p>{recoverableArchivedSessions.length === 0 ? <p className="rounded-lg border p-4 text-sm">The archive is empty.</p> : recoverableArchivedSessions.map(session => { const expires = archiveExpiry(session); const expired = Boolean(expires && expires.getTime() <= Date.now()); return <div key={session.id} className="flex flex-col gap-3 rounded-lg border p-3 lg:flex-row lg:items-center"><div className="min-w-0 flex-1"><p className="font-semibold">{session.sectorName} / {session.plotName}</p><p className="text-xs text-muted-foreground">{session.observedAt} · Week {session.monitoringWeek}, {session.monitoringYear} · {session.archiveReason || 'No archive reason recorded'}</p><p className={`mt-1 text-xs ${expired ? 'font-semibold text-red-700' : 'text-amber-700'}`}>{expired ? 'Recovery period ended; pending automatic deletion.' : `Recoverable until ${expires?.toLocaleString() ?? 'the recorded expiry time'}.`}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => void restoreArchivedObservation(session)}><RotateCcw className="mr-2 h-4 w-4" />Restore</Button>{canManage && expired && <Button size="sm" variant="destructive" onClick={() => void permanentlyDeleteExpiredObservation(session)}><Trash2 className="mr-2 h-4 w-4" />Delete expired record</Button>}</div></div>; })}</CardContent></Card>}
+    {showArchive && <Card className="border-amber-200"><CardHeader><CardTitle className="flex items-center justify-between gap-3 text-base"><span>Recovery archive</span><Button size="sm" variant="ghost" onClick={() => setShowArchive(false)}>Close</Button></CardTitle></CardHeader><CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Archived observations stay recoverable for {SIGATOKA_ARCHIVE_DAYS} days. They can also be permanently deleted sooner when an authorized user deliberately chooses that option.</p>{recoverableArchivedSessions.length === 0 ? <p className="rounded-lg border p-4 text-sm">The archive is empty.</p> : recoverableArchivedSessions.map(session => { const expires = archiveExpiry(session); const expired = Boolean(expires && expires.getTime() <= Date.now()); return <div key={session.id} className="flex flex-col gap-3 rounded-lg border p-3 lg:flex-row lg:items-center"><div className="min-w-0 flex-1"><p className="font-semibold">{session.sectorName} / {session.plotName}</p><p className="text-xs text-muted-foreground">{session.observedAt} · Week {session.monitoringWeek}, {session.monitoringYear} · {session.archiveReason || 'No archive reason recorded'}</p><p className={`mt-1 text-xs ${expired ? 'font-semibold text-red-700' : 'text-amber-700'}`}>{expired ? 'Recovery period ended; pending automatic deletion.' : `Recoverable until ${expires?.toLocaleString() ?? 'the recorded expiry time'}.`}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => void restoreArchivedObservation(session)}><RotateCcw className="mr-2 h-4 w-4" />Restore</Button>{canEditObservation(session) && <Button size="sm" variant="destructive" onClick={() => prepareDataRemoval([session], `${session.plotName} observation from ${session.observedAt}`, 'delete')}><Trash2 className="mr-2 h-4 w-4" />Delete permanently</Button>}</div></div>; })}</CardContent></Card>}
     <div className="flex flex-wrap gap-2"><Link href="/dashboard/agriculture/weather"><Button size="sm" variant="outline"><Leaf className="mr-2 h-4 w-4" />Weather</Button></Link><Link href="/dashboard/agriculture/planner"><Button size="sm" variant="outline"><FlaskConical className="mr-2 h-4 w-4" />Spray plans</Button></Link><Link href="/dashboard/settings"><Button size="sm" variant="outline"><ShieldCheck className="mr-2 h-4 w-4" />Scouting settings</Button></Link></div>
 
     <div id="sigatoka-report" className="space-y-6">
@@ -720,7 +743,7 @@ export default function SigatokaPage() {
 
     <Card><CardHeader><CardTitle>Weekly sector synthesis</CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><table className="w-full min-w-[900px] border-collapse text-sm"><thead><tr>{['Week', 'Coverage', 'SED mean', 'SED min', 'SED max', 'FER', 'YIL', 'YNL', 'NLF', 'NLH', 'D+', 'Rainfall'].map(label => <th key={label} className="border-b p-2 text-right first:text-left">{label}</th>)}</tr></thead><tbody>{weeklySummaries.slice().reverse().map(summary => <tr key={summary.key}><td className="border-b p-2 font-medium">{summary.year} W{summary.week}</td><td className="border-b p-2 text-right">{summary.plots}/{reportPlots.length || summary.plots}</td><td className="border-b p-2 text-right font-semibold">{metric(summary.sedMean, 0)}</td><td className="border-b p-2 text-right">{metric(summary.sedMin, 0)}</td><td className="border-b p-2 text-right">{metric(summary.sedMax, 0)}</td><td className="border-b p-2 text-right">{metric(summary.averageFer, 3)}</td><td className="border-b p-2 text-right">{metric(summary.averageYil, 1)}</td><td className="border-b p-2 text-right">{metric(summary.averageYnl, 1)}</td><td className="border-b p-2 text-right">{metric(summary.averageNlf, 1)}</td><td className="border-b p-2 text-right">{metric(summary.averageNlh, 1)}</td><td className="border-b p-2 text-right">{summary.highDensityCount}/{summary.possibleHighDensityCount}</td><td className="border-b p-2 text-right">{summary.rainfallMm === null ? '—' : `${metric(summary.rainfallMm, 1)} mm`}</td></tr>)}</tbody></table></div>{weeklySummaries.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No submitted observations in this report view.</p>}</CardContent></Card>
 
-    <Card><CardHeader><CardTitle>Observation history</CardTitle></CardHeader><CardContent>{reportSessions.length === 0 ? <div className="py-12 text-center"><Bug className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p className="font-medium">No submitted observations</p><p className="text-sm text-muted-foreground">Start with one monitoring {config.plotLabel.toLowerCase()}, or change the report filter.</p></div> : <div className="space-y-2">{reportSessions.map(session => <div key={session.id} className="flex flex-col gap-3 rounded-lg border p-3 xl:flex-row xl:items-center"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{session.sectorName} / {session.plotName}</p><Badge variant="outline" className="capitalize">{session.status}</Badge>{session.treatment && <Badge variant="outline">Treatment: {session.treatment.product}</Badge>}</div><p className="text-xs text-muted-foreground">Week {session.monitoringWeek}, {session.monitoringYear} · {session.observedAt} · {session.observerName}{session.rainfallMm !== null && session.rainfallMm !== undefined ? ` · ${session.rainfallMm} mm rain` : ''}</p></div><div className="grid grid-cols-3 gap-4 text-sm xl:text-right"><div><p className="text-xs text-muted-foreground">SED</p><p className="font-bold">{metric(session.metrics.sed, 0)}</p></div><div><p className="text-xs text-muted-foreground">YIL</p><p className="font-bold">{metric(session.metrics.averageYil, 1)}</p></div><div><p className="text-xs text-muted-foreground">D+</p><p className="font-bold">{session.metrics.highDensityCount}</p></div></div><div className="flex flex-wrap gap-2">{canEditObservation(session) && <Button size="sm" variant="outline" onClick={() => editObservation(session)}><Pencil className="mr-2 h-4 w-4" />Edit</Button>}<Button size="sm" variant="outline" onClick={() => printFieldReport(session)}><Printer className="mr-2 h-4 w-4" />Field sheet</Button><Button size="sm" variant="outline" onClick={() => void downloadFieldReport(session)}><FileSpreadsheet className="mr-2 h-4 w-4" />Excel</Button>{canManage && session.status === 'submitted' && <Button size="sm" variant="outline" onClick={() => organization?.id && user?.id && void updateSigatokaSessionStatus(organization.id, session.id, 'verified', session.metrics, user.id)}>Verify result</Button>}{canEditObservation(session) && <Button size="icon" variant="ghost" aria-label="Archive observation" onClick={() => prepareArchive([session], `${session.plotName} observation for ${session.observedAt}`)}><Archive className="h-4 w-4 text-amber-700" /></Button>}</div></div>)}</div>}</CardContent></Card>
+    <Card><CardHeader><CardTitle>Observation history</CardTitle></CardHeader><CardContent>{reportSessions.length === 0 ? <div className="py-12 text-center"><Bug className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p className="font-medium">No submitted observations</p><p className="text-sm text-muted-foreground">Start with one monitoring {config.plotLabel.toLowerCase()}, or change the report filter.</p></div> : <div className="space-y-2">{reportSessions.map(session => <div key={session.id} className="flex flex-col gap-3 rounded-lg border p-3 xl:flex-row xl:items-center"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{session.sectorName} / {session.plotName}</p><Badge variant="outline" className="capitalize">{session.status}</Badge>{session.treatment && <Badge variant="outline">Treatment: {session.treatment.product}</Badge>}</div><p className="text-xs text-muted-foreground">Week {session.monitoringWeek}, {session.monitoringYear} · {session.observedAt} · {session.observerName}{session.rainfallMm !== null && session.rainfallMm !== undefined ? ` · ${session.rainfallMm} mm rain` : ''}</p></div><div className="grid grid-cols-3 gap-4 text-sm xl:text-right"><div><p className="text-xs text-muted-foreground">SED</p><p className="font-bold">{metric(session.metrics.sed, 0)}</p></div><div><p className="text-xs text-muted-foreground">YIL</p><p className="font-bold">{metric(session.metrics.averageYil, 1)}</p></div><div><p className="text-xs text-muted-foreground">D+</p><p className="font-bold">{session.metrics.highDensityCount}</p></div></div><div className="flex flex-wrap gap-2">{canEditObservation(session) && <Button size="sm" variant="outline" onClick={() => editObservation(session)}><Pencil className="mr-2 h-4 w-4" />Edit</Button>}<Button size="sm" variant="outline" onClick={() => printFieldReport(session)}><Printer className="mr-2 h-4 w-4" />Field sheet</Button><Button size="sm" variant="outline" onClick={() => void downloadFieldReport(session)}><FileSpreadsheet className="mr-2 h-4 w-4" />Excel</Button>{canManage && session.status === 'submitted' && <Button size="sm" variant="outline" onClick={() => organization?.id && user?.id && void updateSigatokaSessionStatus(organization.id, session.id, 'verified', session.metrics, user.id)}>Verify result</Button>}{canEditObservation(session) && <Button size="icon" variant="ghost" aria-label="Manage observation data" onClick={() => prepareDataRemoval([session], `${session.plotName} observation for ${session.observedAt}`)}><Archive className="h-4 w-4 text-amber-700" /></Button>}</div></div>)}</div>}</CardContent></Card>
     </div>
 
     <Card><CardHeader><CardTitle>Metric guide</CardTitle></CardHeader><CardContent className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">{[
