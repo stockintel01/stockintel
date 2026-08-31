@@ -1,5 +1,6 @@
 import {
   diseaseClassLabel,
+  normalizeSigatokaAdvancedStageObservation,
   sigatokaCoefficient,
   type SigatokaDensity,
   type SigatokaSessionRecord,
@@ -130,15 +131,16 @@ export function buildSigatokaFieldReportModel(
       leaf4Score: leaf4Count * sigatokaCoefficient(definition, 4),
     };
   });
-  const advancedPlant = session.advancedStageObservation
-    ? session.plants.find(plant => plant.sentinelPlantId && plant.sentinelPlantId === session.advancedStageObservation?.sentinelPlantId)
-      ?? session.plants.find(plant => plant.plantNumber === session.advancedStageObservation?.plantNumber)
+  const normalizedAdvancedStageObservation = normalizeSigatokaAdvancedStageObservation(session.advancedStageObservation, session.plants);
+  const advancedPlant = normalizedAdvancedStageObservation
+    ? session.plants.find(plant => plant.sentinelPlantId && plant.sentinelPlantId === normalizedAdvancedStageObservation.sentinelPlantId)
+      ?? session.plants.find(plant => plant.plantNumber === normalizedAdvancedStageObservation.plantNumber)
     : undefined;
-  const advancedStageObservation = session.advancedStageObservation ? {
-    plantNumber: session.advancedStageObservation.plantNumber,
+  const advancedStageObservation = normalizedAdvancedStageObservation ? {
+    plantNumber: normalizedAdvancedStageObservation.plantNumber,
     plantCode: advancedPlant?.sentinelPlantCode ?? '',
     currentLeafReading: advancedPlant?.currentLeafReading ?? null,
-    leafCounts: session.advancedStageObservation.leafCounts,
+    leafCounts: normalizedAdvancedStageObservation.leafCounts,
   } : null;
   const risk = riskForSed(session.metrics.sed, options.riskThresholds);
   return { session, options, plantRows, stageRows, advancedStageObservation, riskLevel: risk.level, riskLabel: risk.label, generatedAt: new Date().toLocaleString() };

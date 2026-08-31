@@ -38,8 +38,11 @@ import { getFarmWeek } from '@/lib/agric/week';
 import {
   calculateSigatokaMetrics,
   aggregateSigatokaSessions,
+  createEmptySigatokaAdvancedStageLeafCounts as emptyAdvancedStageLeafCounts,
   diseaseClassLabel,
   generateSigatokaDecisionAlerts,
+  normalizeSigatokaAdvancedStageObservation,
+  validateSigatokaAdvancedStageObservation,
   validateSigatokaPlants,
   type SigatokaAdvancedStageLeafCount,
   type SigatokaLeafScore,
@@ -98,10 +101,6 @@ function emptyPlants(count: number, sentinels: Array<{ id: string; code: string 
     leavesAtHarvest: null,
     notes: '',
   }));
-}
-
-function emptyAdvancedStageLeafCounts(): SigatokaAdvancedStageLeafCount[] {
-  return Array.from({ length: 9 }, (_, index) => ({ leafNumber: index + 5, stage4Count: null, stage5Count: null, stage6Count: null }));
 }
 
 function optionalNumber(value: string): number | null {
@@ -399,6 +398,7 @@ export default function SigatokaPage() {
   }
 
   function editObservation(session: SigatokaSessionRecord) {
+    const detailedObservation = normalizeSigatokaAdvancedStageObservation(session.advancedStageObservation, session.plants);
     setEditingSessionId(session.id);
     setSectorName(session.sectorName);
     setPlotName(session.plotName);
@@ -415,9 +415,9 @@ export default function SigatokaPage() {
     setTreatmentActiveIngredient(session.treatment?.activeIngredient ?? '');
     setTreatmentDose(session.treatment?.dose ?? '');
     setTreatmentMethod(session.treatment?.method ?? '');
-    setRecordAdvancedStages(Boolean(session.advancedStageObservation));
-    setAdvancedStagePlantNumber(session.advancedStageObservation ? String(session.advancedStageObservation.plantNumber) : '');
-    setAdvancedStageLeafCounts(session.advancedStageObservation?.leafCounts ?? emptyAdvancedStageLeafCounts());
+    setRecordAdvancedStages(Boolean(detailedObservation));
+    setAdvancedStagePlantNumber(detailedObservation ? String(detailedObservation.plantNumber) : '');
+    setAdvancedStageLeafCounts(detailedObservation?.leafCounts ?? emptyAdvancedStageLeafCounts());
     setCurrentPlant(Math.max(0, session.plants.findIndex(plant => plant.previousLeafReading <= 0 || plant.currentLeafReading <= 0)));
     selectScoutingView('record');
     setShowObservation(true);
@@ -454,49 +454,58 @@ export default function SigatokaPage() {
 
   function exportReportCsv() {
     if (!reportSessions.length) return setMessage('There are no submitted observations to export.');
-    exportToCSV(reportSessions.flatMap(session => session.plants.map((plant, plantIndex) => ({
-      Year: session.monitoringYear,
-      Week: session.monitoringWeek,
-      Date: session.observedAt,
-      [config.sectorLabel]: session.sectorName,
-      [config.plotLabel]: session.plotName,
-      Status: session.status,
-      Observer: session.observerName,
-      [config.plantLabel]: plant.plantNumber,
-      [`${config.plantLabel} code`]: plant.sentinelPlantCode ?? '',
-      'OLN (Old Leaf Number)': plant.previousLeafReading,
-      'NLN (New Leaf Number)': plant.currentLeafReading,
-      'FER (Foliar Emission Rhythm)': Number((plant.currentLeafReading - plant.previousLeafReading).toFixed(4)),
-      'Leaf II': diseaseClassLabel(plant.leaf2),
-      'Leaf III': diseaseClassLabel(plant.leaf3),
-      'Leaf IV': diseaseClassLabel(plant.leaf4),
-      'Plant YIL': plant.youngestInfestedLeaf,
-      'Plant YNL': plant.youngestNecroticLeaf,
-      'Plant NLF': plant.leavesAtFlowering,
-      'Plant NLH': plant.leavesAtHarvest,
-      'SED': Number(session.metrics.sed.toFixed(4)),
-      'SED risk': riskLabel(session.metrics.sed),
-      'Final FER': Number(session.metrics.finalFer.toFixed(6)),
-      'Historical mean FER override': session.meanRawFerOverride ?? '',
-      'Gross coefficient': session.metrics.grossCoefficient,
-      'YIL': session.metrics.averageYil,
-      'YNL': session.metrics.averageYnl,
-      'NLF': session.metrics.averageNlf,
-      'NLH': session.metrics.averageNlh,
-      'D+': session.metrics.highDensityCount,
-      'D+ possible': session.plants.length * 3,
-      'Rainfall mm': session.rainfallMm,
-      'Treatment': session.treatment?.product ?? '',
-      'Active ingredient': session.treatment?.activeIngredient ?? '',
-      'Treatment dose': session.treatment?.dose ?? '',
-      [`Detailed stage ${config.plantLabel.toLowerCase()}`]: session.advancedStageObservation?.plantNumber ?? '',
-      'Detailed leaf number': session.advancedStageObservation?.leafCounts[plantIndex]?.leafNumber ?? '',
-      'Stage 4 count': session.advancedStageObservation?.leafCounts[plantIndex]?.stage4Count ?? '',
-      'Stage 5 count': session.advancedStageObservation?.leafCounts[plantIndex]?.stage5Count ?? '',
-      'Stage 6 count': session.advancedStageObservation?.leafCounts[plantIndex]?.stage6Count ?? '',
-      Notes: session.notes ?? '',
-      'Calculation version': session.metrics.calculationVersion,
-    }))), `sigatoka-report-${reportPlot}-${reportPeriod}-${new Date().toISOString().slice(0, 10)}.csv`);
+    exportToCSV(reportSessions.flatMap(session => {
+      const detailedObservation = normalizeSigatokaAdvancedStageObservation(session.advancedStageObservation, session.plants);
+      const rowCount = Math.max(session.plants.length, detailedObservation?.leafCounts.length ?? 0);
+      return Array.from({ length: rowCount }, (_, rowIndex) => {
+        const plant = session.plants[rowIndex];
+        const detailedRow = detailedObservation?.leafCounts[rowIndex];
+        return {
+          'Record type': plant && detailedRow ? 'Plant observation and detailed stage count' : plant ? 'Plant observation' : 'Detailed stage count',
+          Year: session.monitoringYear,
+          Week: session.monitoringWeek,
+          Date: session.observedAt,
+          [config.sectorLabel]: session.sectorName,
+          [config.plotLabel]: session.plotName,
+          Status: session.status,
+          Observer: session.observerName,
+          [config.plantLabel]: plant?.plantNumber ?? '',
+          [`${config.plantLabel} code`]: plant?.sentinelPlantCode ?? '',
+          'OLN (Old Leaf Number)': plant?.previousLeafReading ?? '',
+          'NLN (New Leaf Number)': plant?.currentLeafReading ?? '',
+          'FER (Foliar Emission Rhythm)': plant ? Number((plant.currentLeafReading - plant.previousLeafReading).toFixed(4)) : '',
+          'Leaf II': plant ? diseaseClassLabel(plant.leaf2) : '',
+          'Leaf III': plant ? diseaseClassLabel(plant.leaf3) : '',
+          'Leaf IV': plant ? diseaseClassLabel(plant.leaf4) : '',
+          'Plant YIL': plant?.youngestInfestedLeaf ?? '',
+          'Plant YNL': plant?.youngestNecroticLeaf ?? '',
+          'Plant NLF': plant?.leavesAtFlowering ?? '',
+          'Plant NLH': plant?.leavesAtHarvest ?? '',
+          'SED': Number(session.metrics.sed.toFixed(4)),
+          'SED risk': riskLabel(session.metrics.sed),
+          'Final FER': Number(session.metrics.finalFer.toFixed(6)),
+          'Historical mean FER override': session.meanRawFerOverride ?? '',
+          'Gross coefficient': session.metrics.grossCoefficient,
+          'YIL': session.metrics.averageYil,
+          'YNL': session.metrics.averageYnl,
+          'NLF': session.metrics.averageNlf,
+          'NLH': session.metrics.averageNlh,
+          'D+': session.metrics.highDensityCount,
+          'D+ possible': session.plants.length * 3,
+          'Rainfall mm': session.rainfallMm,
+          'Treatment': session.treatment?.product ?? '',
+          'Active ingredient': session.treatment?.activeIngredient ?? '',
+          'Treatment dose': session.treatment?.dose ?? '',
+          [`Detailed stage ${config.plantLabel.toLowerCase()}`]: detailedObservation?.plantNumber ?? '',
+          'Detailed leaf number': detailedRow?.leafNumber ?? '',
+          'Stage 4 count': detailedRow?.stage4Count ?? '',
+          'Stage 5 count': detailedRow?.stage5Count ?? '',
+          'Stage 6 count': detailedRow?.stage6Count ?? '',
+          Notes: session.notes ?? '',
+          'Calculation version': session.metrics.calculationVersion,
+        };
+      });
+    }), `sigatoka-report-${reportPlot}-${reportPeriod}-${new Date().toISOString().slice(0, 10)}.csv`);
   }
 
   function downloadImportTemplate() {
@@ -639,6 +648,11 @@ export default function SigatokaPage() {
 
   async function saveObservation(status: 'draft' | 'submitted') {
     if (!organization?.id || !user || !metrics || !plotName.trim() || !sectorName.trim()) return;
+    const advancedStageObservation = recordAdvancedStages && advancedStagePlant ? {
+      plantNumber: advancedStagePlant.plantNumber,
+      ...(advancedStagePlant.sentinelPlantId ? { sentinelPlantId: advancedStagePlant.sentinelPlantId } : {}),
+      leafCounts: advancedStageLeafCounts,
+    } : null;
     if (status === 'submitted' && (completedPlants !== plants.length || validation.some(issue => issue.severity === 'error'))) {
       setMessage('Complete every plant and correct blocking validation issues before submitting.');
       return;
@@ -656,10 +670,9 @@ export default function SigatokaPage() {
       return;
     }
     if (status === 'submitted' && recordAdvancedStages) {
-      const invalidCount = advancedStageLeafCounts.some(row => [row.stage4Count, row.stage5Count, row.stage6Count].some(value => value !== null && (!Number.isInteger(value) || value < 0)));
-      const hasCount = advancedStageLeafCounts.some(row => [row.stage4Count, row.stage5Count, row.stage6Count].some(value => value !== null));
-      if (!advancedStagePlant || invalidCount || !hasCount) {
-        setMessage(!advancedStagePlant ? `Select the ${config.plantLabel.toLowerCase()} used for the detailed stage 4-6 observation.` : invalidCount ? 'Detailed stage counts must be zero or positive whole numbers.' : 'Enter at least one detailed stage 4-6 count, or turn off the detailed observation.');
+      const stageIssues = validateSigatokaAdvancedStageObservation(advancedStageObservation, plants);
+      if (stageIssues.length) {
+        setMessage(stageIssues[0].replace('sampled plant', config.plantLabel.toLowerCase()));
         return;
       }
     }
@@ -690,11 +703,7 @@ export default function SigatokaPage() {
         meanRawFerOverride: optionalNumber(meanRawFerOverride),
         status,
         plants,
-        advancedStageObservation: recordAdvancedStages && advancedStagePlant ? {
-          plantNumber: advancedStagePlant.plantNumber,
-          ...(advancedStagePlant.sentinelPlantId ? { sentinelPlantId: advancedStagePlant.sentinelPlantId } : {}),
-          leafCounts: advancedStageLeafCounts,
-        } : null,
+        advancedStageObservation,
         metrics,
         rainfallMm: optionalNumber(rainfallMm),
         treatment: treatmentApplied ? {

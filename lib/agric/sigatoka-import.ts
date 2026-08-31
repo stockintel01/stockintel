@@ -1,11 +1,20 @@
 import { getFarmWeek } from './week';
-import { calculateSigatokaMetrics, type SigatokaAdvancedStageLeafCount, type SigatokaLeafScore, type SigatokaPlantObservation, type SigatokaSessionRecord } from './sigatoka';
+import { calculateSigatokaMetrics, createEmptySigatokaAdvancedStageLeafCounts, validateSigatokaAdvancedStageObservation, type SigatokaAdvancedStageLeafCount, type SigatokaLeafScore, type SigatokaPlantObservation, type SigatokaSessionRecord } from './sigatoka';
 
-export const SIGATOKA_IMPORT_HEADERS = ['Sector', 'Plot', 'Observation Date', 'Plant Number', 'Previous Leaf Reading', 'Current Leaf Reading', 'Leaf II Class', 'Leaf III Class', 'Leaf IV Class', 'YIL', 'YNL', 'NLF', 'NLH', 'Rainfall mm', 'Treatment Date', 'Treatment Product', 'Active Ingredient', 'Dose', 'Method', 'Mean FER Override', 'Interval Days Override', 'Previous Final FER Override', 'Monitoring Week Override', 'Detailed Stage Plant Number', 'Detailed Leaf Number', 'Stage 4 Count', 'Stage 5 Count', 'Stage 6 Count', 'Source Reference', 'Notes'] as const;
+export const SIGATOKA_IMPORT_HEADERS = ['Sector', 'Plot', 'Observation Date', 'Plant Number', 'Previous Leaf Reading', 'Current Leaf Reading', 'Leaf II Class', 'Leaf III Class', 'Leaf IV Class', 'YIL', 'YNL', 'NLF', 'NLH', 'Rainfall mm', 'Treatment Date', 'Treatment Product', 'Active Ingredient', 'Dose', 'Method', 'Mean FER Override', 'Interval Days Override', 'Previous Final FER Override', 'Monitoring Week Override', 'Detailed Stage Plant Number', 'Detailed Leaf Number', 'Stage 4 Count', 'Stage 5 Count', 'Stage 6 Count', 'Source Reference', 'Notes', 'Record Type'] as const;
 
+type ImportHeader = typeof SIGATOKA_IMPORT_HEADERS[number];
+const templateRow = (values: Partial<Record<ImportHeader, unknown>>) => SIGATOKA_IMPORT_HEADERS.map(header => values[header] ?? '');
 const exampleRows = [
-  ['Main Farm', 'A02', '2026-01-08', 1, 12.1, 13.2, '2-', '3+', '3-', 3, 6, 10, 5, 22, '', '', '', '', '', '', '', '', '', 1, 5, 0, 0, 0, '', 'Replace examples with farm records'],
-  ['Main Farm', 'A02', '2026-01-08', 2, 11.8, 12.9, '1+', '2-', '3+', 4, 6, 11, 4, 22, '', '', '', '', '', '', '', '', '', 1, 6, 4, 1, 0, '', 'Repeat the detailed plant number on rows used for leaf 5-13 counts'],
+  templateRow({ Sector: 'Main Farm', Plot: 'A02', 'Observation Date': '2026-01-08', 'Plant Number': 1, 'Previous Leaf Reading': 12.1, 'Current Leaf Reading': 13.2, 'Leaf II Class': '2-', 'Leaf III Class': '3+', 'Leaf IV Class': '3-', YIL: 3, YNL: 6, NLF: 10, NLH: 5, 'Rainfall mm': 22, Notes: 'Replace examples with farm records', 'Record Type': 'Plant observation' }),
+  templateRow({ Sector: 'Main Farm', Plot: 'A02', 'Observation Date': '2026-01-08', 'Plant Number': 2, 'Previous Leaf Reading': 11.8, 'Current Leaf Reading': 12.9, 'Leaf II Class': '1+', 'Leaf III Class': '2-', 'Leaf IV Class': '3+', YIL: 4, YNL: 6, NLF: 11, NLH: 4, 'Rainfall mm': 22, 'Record Type': 'Plant observation' }),
+  ...createEmptySigatokaAdvancedStageLeafCounts().map((row, index) => templateRow({
+    Sector: 'Main Farm', Plot: 'A02', 'Observation Date': '2026-01-08',
+    'Detailed Stage Plant Number': 1, 'Detailed Leaf Number': row.leafNumber,
+    'Stage 4 Count': index === 1 ? 4 : 0, 'Stage 5 Count': index === 1 ? 1 : 0, 'Stage 6 Count': 0,
+    Notes: index === 0 ? 'Use one detailed-count row for each leaf from 5 through 13' : '',
+    'Record Type': 'Detailed stage count',
+  })),
 ];
 
 const csvCell = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
@@ -128,7 +137,10 @@ function legacyWorkbookRows(workbook: import('exceljs').Workbook): unknown[][] {
         }
         if (normalize(row.getCell(6).value) === 'finalferw1') previousFinalFerOverride = asNumber(row.getCell(7).value, true);
       }
-      const normalizedRows = plantRows.map(row => [...row.values, meanFerOverride ?? '', intervalDaysOverride ?? '', previousFinalFerOverride ?? '', monitoringWeekOverride ?? '', advancedStagePlantNumber ?? '', advancedStagePlantNumber === null ? '' : row.advancedLeafNumber ?? '', advancedStagePlantNumber === null ? '' : row.stage4Count ?? '', advancedStagePlantNumber === null ? '' : row.stage5Count ?? '', advancedStagePlantNumber === null ? '' : row.stage6Count ?? '', row.sourceReference, `Imported from ${sheet.name}`]);
+      const normalizedRows = plantRows.map(row => {
+        const hasDetailedCount = [row.stage4Count, row.stage5Count, row.stage6Count].some(value => value !== null);
+        return [...row.values, meanFerOverride ?? '', intervalDaysOverride ?? '', previousFinalFerOverride ?? '', monitoringWeekOverride ?? '', hasDetailedCount ? advancedStagePlantNumber ?? '' : '', hasDetailedCount ? row.advancedLeafNumber ?? '' : '', hasDetailedCount ? row.stage4Count ?? '' : '', hasDetailedCount ? row.stage5Count ?? '' : '', hasDetailedCount ? row.stage6Count ?? '' : '', row.sourceReference, `Imported from ${sheet.name}`, 'Plant observation'];
+      });
       const quality = plantRows.reduce((total, row) => total + Number(asNumber(row.values[4], true) !== null && asNumber(row.values[5], true) !== null), 0);
       const blockKey = `${sector.toLowerCase()}|${plot.toLowerCase()}|${date}`;
       if (quality >= (blocks.get(blockKey)?.quality ?? -1)) blocks.set(blockKey, { rows: normalizedRows, quality });
@@ -158,7 +170,7 @@ async function readRows(file: File): Promise<unknown[][]> {
 }
 function parseScore(value: unknown): SigatokaLeafScore | null | 'invalid' {
   const raw = asText(value).replaceAll(' ', '');
-  if (!raw || raw === '0' || ['none', 'cut', 'n/a', 'na'].includes(raw.toLowerCase())) return null;
+  if (!raw || raw === '0' || ['-', 'none', 'cut', 'n/a', 'na'].includes(raw.toLowerCase())) return null;
   const match = raw.match(/^([1-6])([+-])$/);
   return match ? { stage: Number(match[1]) as SigatokaLeafScore['stage'], density: match[2] === '+' ? 'high' : 'low' } : 'invalid';
 }
@@ -196,7 +208,10 @@ export async function parseSigatokaImport(file: File, observer: { id: string; na
     const advancedStagePlantNumber = asNumber(get('Detailed Stage Plant Number'), true);
     const advancedLeafNumber = asNumber(get('Detailed Leaf Number'), true);
     const advancedCounts = [asNumber(get('Stage 4 Count'), true), asNumber(get('Stage 5 Count'), true), asNumber(get('Stage 6 Count'), true)];
-    const hasAdvancedStageData = advancedStagePlantNumber !== null || advancedCounts.some(value => value !== null);
+    const hasAdvancedStageData = advancedStagePlantNumber !== null || advancedLeafNumber !== null || advancedCounts.some(value => value !== null);
+    const recordType = normalize(get('Record Type'));
+    const isDetailedOnlyRow = recordType === 'detailedstagecount'
+      || (!asText(get('Plant Number')) && !asText(get('Previous Leaf Reading')) && !asText(get('Current Leaf Reading')) && hasAdvancedStageData);
     const scoreInputs = [
       { label: 'Leaf II', value: get('Leaf II Class') },
       { label: 'Leaf III', value: get('Leaf III Class') },
@@ -207,9 +222,10 @@ export async function parseSigatokaImport(file: File, observer: { id: string; na
     const sourceLabel = sourceReference || `Row ${offset + 2}`;
     const rowErrors: string[] = [];
     if (!row.some(value => asText(value))) return;
+    const key = `${sector.toLowerCase()}|${plot.toLowerCase()}|${date}`;
     if (!sector || !plot) rowErrors.push('sector and plot are required');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T12:00:00`).getTime())) rowErrors.push('date must be YYYY-MM-DD');
-    if (!plantNumber || plantNumber < 1 || !Number.isInteger(plantNumber)) rowErrors.push('plant number must be a positive whole number');
+    if (!isDetailedOnlyRow && (!plantNumber || plantNumber < 1 || !Number.isInteger(plantNumber))) rowErrors.push('plant number must be a positive whole number');
     if (meanRawFerOverride !== null && meanRawFerOverride < 0) rowErrors.push('mean FER override cannot be negative');
     if (intervalDaysOverride !== null && intervalDaysOverride <= 0) rowErrors.push('interval days override must be greater than zero');
     if (previousFinalFerOverride !== null && previousFinalFerOverride < 0) rowErrors.push('previous final FER override cannot be negative');
@@ -217,9 +233,20 @@ export async function parseSigatokaImport(file: File, observer: { id: string; na
     if (hasAdvancedStageData && (!advancedStagePlantNumber || !Number.isInteger(advancedStagePlantNumber) || advancedStagePlantNumber < 1)) rowErrors.push('detailed stage plant number must be a positive whole number');
     if (hasAdvancedStageData && (advancedLeafNumber === null || !Number.isInteger(advancedLeafNumber) || advancedLeafNumber < 5 || advancedLeafNumber > 13)) rowErrors.push('detailed leaf number must be a whole number from 5 to 13');
     if (advancedCounts.some(value => value !== null && (!Number.isInteger(value) || value < 0))) rowErrors.push('stage 4, 5 and 6 counts must be zero or positive whole numbers');
-    if (rowErrors.length) { errors.push(`${sourceLabel}: ${rowErrors.join('; ')}`); return; }
+    if (hasAdvancedStageData && !advancedCounts.some(value => value !== null)) rowErrors.push('enter at least one stage 4, 5 or 6 count; enter zero when none were observed');
+    if (rowErrors.length) { invalidGroups.add(key); errors.push(`${sourceLabel}: ${rowErrors.join('; ')}`); return; }
 
-    const key = `${sector.toLowerCase()}|${plot.toLowerCase()}|${date}`;
+    const createGroup = () => ({ sector, plot, date, plants: [] as SigatokaPlantObservation[], rainfall: asNumber(get('Rainfall mm'), true), treatment: null as SigatokaSessionRecord['treatment'], meanRawFerOverride, intervalDaysOverride, previousFinalFerOverride, monitoringWeekOverride, advancedStagePlantNumber: null as number | null, advancedStageLeafCounts: [] as SigatokaAdvancedStageLeafCount[], notes: [] as string[] });
+    if (isDetailedOnlyRow) {
+      const group = grouped.get(key) ?? createGroup();
+      if (group.advancedStagePlantNumber !== null && group.advancedStagePlantNumber !== advancedStagePlantNumber) { invalidGroups.add(key); errors.push(`${sourceLabel}: detailed stage plant number must be consistent for the observation`); return; }
+      if (group.advancedStageLeafCounts.some(item => item.leafNumber === advancedLeafNumber)) { invalidGroups.add(key); errors.push(`${sourceLabel}: duplicate detailed stage leaf number`); return; }
+      group.advancedStagePlantNumber = advancedStagePlantNumber;
+      group.advancedStageLeafCounts.push({ leafNumber: advancedLeafNumber!, stage4Count: advancedCounts[0], stage5Count: advancedCounts[1], stage6Count: advancedCounts[2] });
+      const note = asText(get('Notes')); if (note) group.notes.push(note);
+      grouped.set(key, group);
+      return;
+    }
     const readingsAreBlank = asText(get('Previous Leaf Reading')) === '' && asText(get('Current Leaf Reading')) === '';
     if (readingsAreBlank) {
       const existing = blankReadings.get(key);
@@ -235,7 +262,7 @@ export async function parseSigatokaImport(file: File, observer: { id: string; na
     }
     if (rowErrors.length) { invalidGroups.add(key); errors.push(`${sourceLabel}: ${rowErrors.join('; ')}`); return; }
 
-    const group = grouped.get(key) ?? { sector, plot, date, plants: [], rainfall: asNumber(get('Rainfall mm'), true), treatment: null, meanRawFerOverride, intervalDaysOverride, previousFinalFerOverride, monitoringWeekOverride, advancedStagePlantNumber, advancedStageLeafCounts: [], notes: [] };
+    const group = grouped.get(key) ?? createGroup();
     if (meanRawFerOverride !== null && group.meanRawFerOverride !== null && Math.abs(meanRawFerOverride - group.meanRawFerOverride) > 0.000001) {
       invalidGroups.add(key); errors.push(`${sourceLabel}: mean FER override must be consistent for every plant in the observation`); return;
     }
@@ -261,6 +288,19 @@ export async function parseSigatokaImport(file: File, observer: { id: string; na
       errors.push(`${blank.sector} / ${blank.plot}, ${blank.date}: observation is incomplete; ${blank.count} plant reading${blank.count === 1 ? ' is' : 's are'} blank (starting at ${blank.firstReference})`);
     } else {
       skippedRows += blank.count;
+    }
+  }
+  for (const [key, group] of grouped) {
+    if (group.advancedStagePlantNumber === null && group.advancedStageLeafCounts.length === 0) continue;
+    const advancedPlant = group.plants.find(plant => plant.plantNumber === group.advancedStagePlantNumber);
+    const observation = advancedPlant ? {
+      plantNumber: advancedPlant.plantNumber,
+      leafCounts: createEmptySigatokaAdvancedStageLeafCounts().map(emptyRow => group.advancedStageLeafCounts.find(item => item.leafNumber === emptyRow.leafNumber) ?? emptyRow),
+    } : null;
+    const stageIssues = observation ? validateSigatokaAdvancedStageObservation(observation, group.plants) : ['The detailed stage observation must reference a plant included in the same field sheet.'];
+    if (stageIssues.length) {
+      invalidGroups.add(key);
+      errors.push(`${group.sector} / ${group.plot}, ${group.date}: ${stageIssues.join(' ')}`);
     }
   }
   for (const key of invalidGroups) grouped.delete(key);

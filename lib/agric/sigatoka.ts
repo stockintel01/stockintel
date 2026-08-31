@@ -37,6 +37,68 @@ export interface SigatokaAdvancedStageObservation {
   leafCounts: SigatokaAdvancedStageLeafCount[];
 }
 
+export const SIGATOKA_ADVANCED_LEAF_NUMBERS = [5, 6, 7, 8, 9, 10, 11, 12, 13] as const;
+
+export function createEmptySigatokaAdvancedStageLeafCounts(): SigatokaAdvancedStageLeafCount[] {
+  return SIGATOKA_ADVANCED_LEAF_NUMBERS.map(leafNumber => ({ leafNumber, stage4Count: null, stage5Count: null, stage6Count: null }));
+}
+
+function validAdvancedStageCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+export function normalizeSigatokaAdvancedStageObservation(
+  observation: SigatokaAdvancedStageObservation | null | undefined,
+  plants: SigatokaPlantObservation[],
+): SigatokaAdvancedStageObservation | null {
+  if (!observation) return null;
+  const selectedPlant = plants.find(plant => Boolean(observation.sentinelPlantId) && plant.sentinelPlantId === observation.sentinelPlantId)
+    ?? plants.find(plant => plant.plantNumber === observation.plantNumber);
+  if (!selectedPlant) return null;
+  const sourceRows = Array.isArray(observation.leafCounts) ? observation.leafCounts : [];
+  const seen = new Set<number>();
+  const rowsByLeaf = new Map<number, SigatokaAdvancedStageLeafCount>();
+  sourceRows.forEach(row => {
+    if (!row || !SIGATOKA_ADVANCED_LEAF_NUMBERS.includes(row.leafNumber as typeof SIGATOKA_ADVANCED_LEAF_NUMBERS[number]) || seen.has(row.leafNumber)) return;
+    seen.add(row.leafNumber);
+    rowsByLeaf.set(row.leafNumber, {
+      leafNumber: row.leafNumber,
+      stage4Count: validAdvancedStageCount(row.stage4Count) ? row.stage4Count : null,
+      stage5Count: validAdvancedStageCount(row.stage5Count) ? row.stage5Count : null,
+      stage6Count: validAdvancedStageCount(row.stage6Count) ? row.stage6Count : null,
+    });
+  });
+  return {
+    plantNumber: selectedPlant.plantNumber,
+    ...(selectedPlant.sentinelPlantId ? { sentinelPlantId: selectedPlant.sentinelPlantId } : {}),
+    leafCounts: createEmptySigatokaAdvancedStageLeafCounts().map(emptyRow => rowsByLeaf.get(emptyRow.leafNumber) ?? emptyRow),
+  };
+}
+
+export function validateSigatokaAdvancedStageObservation(
+  observation: SigatokaAdvancedStageObservation | null | undefined,
+  plants: SigatokaPlantObservation[],
+): string[] {
+  if (!observation) return [];
+  const issues: string[] = [];
+  const selectedPlant = plants.find(plant => Boolean(observation.sentinelPlantId) && plant.sentinelPlantId === observation.sentinelPlantId)
+    ?? plants.find(plant => plant.plantNumber === observation.plantNumber);
+  if (!selectedPlant) issues.push('Select a sampled plant for the detailed stage 4-6 observation.');
+  const rows = Array.isArray(observation.leafCounts) ? observation.leafCounts : [];
+  const leafNumbers = rows.map(row => row?.leafNumber);
+  if (rows.length !== SIGATOKA_ADVANCED_LEAF_NUMBERS.length
+    || SIGATOKA_ADVANCED_LEAF_NUMBERS.some(leafNumber => leafNumbers.filter(value => value === leafNumber).length !== 1)) {
+    issues.push('Detailed observations must contain one row for every leaf from 5 through 13.');
+  }
+  if (rows.some(row => !row || [row.stage4Count, row.stage5Count, row.stage6Count].some(value => value !== null && !validAdvancedStageCount(value)))) {
+    issues.push('Detailed stage counts must be zero or positive whole numbers.');
+  }
+  if (!rows.some(row => row && [row.stage4Count, row.stage5Count, row.stage6Count].some(value => validAdvancedStageCount(value)))) {
+    issues.push('Enter at least one detailed stage 4-6 count, including zero when none were observed.');
+  }
+  return issues;
+}
+
 export interface SigatokaMetrics {
   meanRawFer: number;
   fer10d: number;

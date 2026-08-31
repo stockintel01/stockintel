@@ -12,7 +12,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { calculateSigatokaMetrics, type SigatokaSessionRecord } from './sigatoka';
+import { calculateSigatokaMetrics, normalizeSigatokaAdvancedStageObservation, type SigatokaSessionRecord } from './sigatoka';
 
 const collectionPath = (orgId: string) => collection(db, `organizations/${orgId}/agric_sigatoka_observations`);
 const auditCollectionPath = (orgId: string) => collection(db, `organizations/${orgId}/agric_deletion_log`);
@@ -23,6 +23,7 @@ function normalizeSession(documentId: string, data: Record<string, unknown>): Si
   try {
     return {
       ...session,
+      advancedStageObservation: normalizeSigatokaAdvancedStageObservation(session.advancedStageObservation, session.plants),
       metrics: calculateSigatokaMetrics(session.plants, session.intervalDays, session.metrics.previousFinalFer, session.meanRawFerOverride),
     };
   } catch {
