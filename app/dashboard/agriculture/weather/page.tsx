@@ -1,40 +1,39 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import {
   Cloud, CloudRain, CloudSnow, Sun, Wind, Droplets,
   Thermometer, Eye, Gauge, RefreshCw, MapPin, AlertTriangle,
   CheckCircle2, XCircle, Sprout, FlaskConical, Leaf,
-  ChevronRight, Clock, Sunrise, Sunset, CloudLightning,
+  Clock, Sunrise, Sunset, CloudLightning,
   CloudDrizzle, CloudFog, Snowflake, Bug
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/lib/store';
 import { getAgricultureProfile } from '@/lib/agric/config';
 
-// ── Farm locations (organization-configurable) ──────────────
-const FARM_LOCATIONS = [
-  { id: 'main', name: 'Main Farm — Accra', lat: 5.6037, lon: -0.1870, timezone: 'Africa/Accra' },
-  { id: 'north', name: 'North Block — Kumasi', lat: 6.6885, lon: -1.6244, timezone: 'Africa/Accra' },
-  { id: 'coast', name: 'Coastal Block — Takoradi', lat: 4.8845, lon: -1.7554, timezone: 'Africa/Accra' },
-];
-
-type WeatherLocation = (typeof FARM_LOCATIONS)[number];
+interface WeatherLocation { id: string; name: string; lat: number; lon: number; timezone: string }
+interface CurrentWeather { temperature_2m: number; relative_humidity_2m: number; apparent_temperature: number; precipitation?: number; weather_code: number; wind_speed_10m: number; wind_direction_10m: number; surface_pressure?: number; visibility?: number; uv_index?: number; is_day: number }
+interface HourlyWeather { time: string[]; temperature_2m: number[]; precipitation_probability: number[]; precipitation: number[]; wind_speed_10m: number[]; weather_code: number[]; relative_humidity_2m: number[]; uv_index: number[] }
+interface DailyWeather { time: string[]; weather_code: number[]; temperature_2m_max: number[]; temperature_2m_min: number[]; precipitation_sum: number[]; precipitation_probability_max: number[]; wind_speed_10m_max: number[]; sunrise: string[]; sunset: string[]; uv_index_max: number[]; et0_fao_evapotranspiration: number[] }
+interface WeatherResponse { current: CurrentWeather; hourly: HourlyWeather; daily: DailyWeather }
 
 // ── WMO weather code → label + icon mapping ──────────────────
-function decodeWMO(code: number): { label: string; icon: string; lucide: any; color: string } {
-  if (code === 0) return { label: 'Clear Sky', icon: '☀️', lucide: Sun, color: 'text-yellow-500' };
-  if (code <= 2) return { label: 'Partly Cloudy', icon: '⛅', lucide: Cloud, color: 'text-blue-400' };
-  if (code === 3) return { label: 'Overcast', icon: '☁️', lucide: Cloud, color: 'text-slate-500' };
-  if (code <= 49) return { label: 'Foggy', icon: '🌫️', lucide: CloudFog, color: 'text-slate-400' };
-  if (code <= 57) return { label: 'Drizzle', icon: '🌦️', lucide: CloudDrizzle, color: 'text-blue-400' };
-  if (code <= 67) return { label: 'Rain', icon: '🌧️', lucide: CloudRain, color: 'text-blue-600' };
-  if (code <= 77) return { label: 'Snow', icon: '❄️', lucide: Snowflake, color: 'text-sky-400' };
-  if (code <= 82) return { label: 'Rain Showers', icon: '🌦️', lucide: CloudRain, color: 'text-blue-500' };
-  if (code <= 86) return { label: 'Snow Showers', icon: '🌨️', lucide: CloudSnow, color: 'text-sky-400' };
-  if (code <= 99) return { label: 'Thunderstorm', icon: '⛈️', lucide: CloudLightning, color: 'text-purple-600' };
-  return { label: 'Unknown', icon: '🌡️', lucide: Thermometer, color: 'text-gray-400' };
+function decodeWMO(code: number): { label: string; lucide: LucideIcon; color: string } {
+  if (code === 0) return { label: 'Clear Sky', lucide: Sun, color: 'text-yellow-500' };
+  if (code <= 2) return { label: 'Partly Cloudy', lucide: Cloud, color: 'text-blue-400' };
+  if (code === 3) return { label: 'Overcast', lucide: Cloud, color: 'text-slate-500' };
+  if (code <= 49) return { label: 'Foggy', lucide: CloudFog, color: 'text-slate-400' };
+  if (code <= 57) return { label: 'Drizzle', lucide: CloudDrizzle, color: 'text-blue-400' };
+  if (code <= 67) return { label: 'Rain', lucide: CloudRain, color: 'text-blue-600' };
+  if (code <= 77) return { label: 'Snow', lucide: Snowflake, color: 'text-sky-400' };
+  if (code <= 82) return { label: 'Rain Showers', lucide: CloudRain, color: 'text-blue-500' };
+  if (code <= 86) return { label: 'Snow Showers', lucide: CloudSnow, color: 'text-sky-400' };
+  if (code <= 99) return { label: 'Thunderstorm', lucide: CloudLightning, color: 'text-purple-600' };
+  return { label: 'Unknown', lucide: Thermometer, color: 'text-gray-400' };
 }
 
 // ── Farm advisory engine ─────────────────────────────────────
@@ -43,17 +42,16 @@ interface FarmAdvisory {
   severity: 'good' | 'caution' | 'warning' | 'danger';
   title: string;
   message: string;
-  icon: any;
+  icon: LucideIcon;
 }
 
-function generateAdvisories(current: any, hourly: any, daily: any): FarmAdvisory[] {
+function generateAdvisories(current: CurrentWeather, hourly?: HourlyWeather): FarmAdvisory[] {
   const advisories: FarmAdvisory[] = [];
   if (!current) return advisories;
 
   const temp = current.temperature_2m;
   const humidity = current.relative_humidity_2m;
   const windSpeed = current.wind_speed_10m;
-  const rain = current.precipitation ?? 0;
   const wmoCode = current.weather_code;
   const isRaining = wmoCode >= 51;
   const isThunderstorm = wmoCode >= 95;
@@ -101,7 +99,7 @@ function generateAdvisories(current: any, hourly: any, daily: any): FarmAdvisory
 }
 
 // ── Hourly forecast card ──────────────────────────────────────
-function HourlyCard({ time, temp, precip, windspeed, code }: any) {
+function HourlyCard({ time, temp, precip, windspeed, code }: { time: string; temp: number; precip: number; windspeed: number; code: number }) {
   const wx = decodeWMO(code);
   const WxIcon = wx.lucide;
   const hour = new Date(time).getHours();
@@ -118,7 +116,7 @@ function HourlyCard({ time, temp, precip, windspeed, code }: any) {
 }
 
 // ── Daily forecast row ────────────────────────────────────────
-function DailyRow({ date, maxTemp, minTemp, precip, precipProb, code }: any) {
+function DailyRow({ date, maxTemp, minTemp, precipProb, code }: { date: string; maxTemp: number; minTemp: number; precipProb: number; code: number }) {
   const wx = decodeWMO(code);
   const WxIcon = wx.lucide;
   const day = new Date(date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -161,7 +159,7 @@ export default function WeatherPage() {
     lon: savedFarmLocation.longitude,
     timezone: savedFarmLocation.timezone ?? 'auto',
   } : { id: 'unset', name: 'Farm location not configured', lat: 5.6037, lon: -0.187, timezone: 'auto' });
-  const [weatherData, setWeatherData] = useState<any>(null);
+  const [weatherData, setWeatherData] = useState<WeatherResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -198,11 +196,11 @@ export default function WeatherPage() {
 
       const res = await fetch(url.toString());
       if (!res.ok) throw new Error(`API error: ${res.status}`);
-      const data = await res.json();
+      const data = await res.json() as WeatherResponse;
       setWeatherData(data);
       setLastUpdated(new Date());
-    } catch (e: any) {
-      setError(e.message || 'Failed to fetch weather data');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to fetch weather data');
     } finally {
       setLoading(false);
     }
@@ -254,7 +252,7 @@ export default function WeatherPage() {
 
   const wx = current ? decodeWMO(current.weather_code) : null;
   const WxIcon = wx?.lucide ?? Cloud;
-  const advisories = current ? generateAdvisories(current, hourly, daily) : [];
+  const advisories = current ? generateAdvisories(current, hourly) : [];
 
   // Get next 24 hours from now
   const nowHourIdx = hourly?.time?.findIndex((t: string) => new Date(t) >= new Date()) ?? 0;
@@ -301,6 +299,7 @@ export default function WeatherPage() {
           <p className="text-muted-foreground text-sm">Real-time conditions with farm-specific advisories — powered by Open-Meteo</p>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/dashboard/agriculture/weather/water-balance" className="inline-flex h-9 items-center justify-center rounded-md border bg-background px-3 text-sm font-medium shadow-sm hover:bg-accent"><Droplets className="mr-1 h-4 w-4" />Rainfall & irrigation</Link>
           {lastUpdated && (
             <p className="text-xs text-muted-foreground">
               <Clock className="w-3 h-3 inline mr-1" />Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -549,7 +548,6 @@ export default function WeatherPage() {
               <DailyRow key={date} date={date}
                 maxTemp={daily.temperature_2m_max[i]}
                 minTemp={daily.temperature_2m_min[i]}
-                precip={daily.precipitation_sum[i]}
                 precipProb={daily.precipitation_probability_max[i]}
                 code={daily.weather_code[i]}
               />

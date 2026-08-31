@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test:sigatoka": "node --no-warnings --experimental-strip-types scripts/verify-sigatoka.mjs",
+    "test:water": "node --no-warnings --experimental-strip-types scripts/verify-water-balance.mjs",
     "check:env": "node scripts/check-env.mjs",
     "verify": "npm run typecheck && npm run build"
   },

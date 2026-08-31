@@ -430,6 +430,25 @@ service cloud.firestore {
           );
         allow update, delete: if false;
       }
+      match /agric_water_records/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricWeather');
+        allow create: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
+          && hasAccess('agricWeather')
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
+          && hasAccess('agricWeather')
+          && request.resource.data.createdBy == resource.data.createdBy
+          && (isOwnerOrManager() || request.auth.uid == resource.data.createdBy);
+        allow delete: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
+          && hasAccess('agricWeather')
+          && (isOwnerOrManager() || request.auth.uid == resource.data.createdBy);
+      }
       match /agric_livestock/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricLivestock');
         allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricLivestock');

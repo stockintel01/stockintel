@@ -150,7 +150,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     label: 'Insights',
                     items: [
                         { name: 'Reports', href: '/dashboard/agriculture/reports', icon: BarChart3 },
-                        { name: 'Live Weather', href: '/dashboard/agriculture/weather', icon: Cloud },
+                        { name: 'Weather & Irrigation', href: '/dashboard/agriculture/weather', icon: Cloud },
                     ],
                 },
                 {
@@ -171,7 +171,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         items: group.items.filter(item => {
             if (!agricultureProfile.modules.crops && ['/dashboard/agriculture/crops', '/dashboard/agriculture/requests', '/dashboard/agriculture/usage-tracker', '/dashboard/agriculture/planner', '/dashboard/agriculture/packing-station'].includes(item.href)) return false;
             if (!agricultureProfile.modules.sigatoka && item.href === '/dashboard/agriculture/sigatoka') return false;
-            if (!agricultureProfile.modules.weather && item.href === '/dashboard/agriculture/weather') return false;
+            if (!agricultureProfile.modules.weather && item.href.startsWith('/dashboard/agriculture/weather')) return false;
             if (!agricultureProfile.modules.reports && item.href === '/dashboard/agriculture/reports') return false;
             return true;
         }),
