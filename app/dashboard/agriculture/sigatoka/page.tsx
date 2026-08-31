@@ -77,6 +77,10 @@ function optionalNumber(value: string): number | null {
   return value === '' ? null : Number(value);
 }
 
+function daysBetween(startDate: string, endDate: string): number {
+  return Math.max(1, Math.round((new Date(`${endDate}T12:00:00`).getTime() - new Date(`${startDate}T12:00:00`).getTime()) / 86400000));
+}
+
 function ScoreSelect({ value, onChange, label }: { value: SigatokaLeafScore | null; onChange: (score: SigatokaLeafScore | null) => void; label: string }) {
   const serialized = value ? `${value.stage}-${value.density}` : '';
   return <div className="space-y-1.5"><Label>{label}</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={serialized} onChange={event => {
@@ -141,7 +145,9 @@ export default function SigatokaPage() {
     return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); };
   }, []);
 
-  const previousSession = useMemo(() => sessions.find(session => session.plotName === plotName && session.status !== 'draft' && session.observedAt < observedAt), [observedAt, plotName, sessions]);
+  const previousSession = useMemo(() => sessions
+    .filter(session => session.plotName.toLowerCase() === plotName.trim().toLowerCase() && session.status !== 'draft' && session.observedAt < observedAt)
+    .sort((a, b) => b.observedAt.localeCompare(a.observedAt))[0], [observedAt, plotName, sessions]);
   const editingSession = sessions.find(session => session.id === editingSessionId);
   const previousFinalFer = editingSession?.metrics.previousFinalFer ?? previousSession?.metrics.finalFer ?? config.initialFerBaseline;
   const metrics = useMemo(() => {
@@ -172,6 +178,13 @@ export default function SigatokaPage() {
   const myDrafts = sessions.filter(session => session.status === 'draft' && session.observerId === user?.id);
   const recentWeeks = weeklySummaries.slice(-6);
   const activeMonitoringPlots = config.monitoringPlots.filter(plot => plot.status === 'active');
+  const selectedPlant = plants[currentPlant];
+  const selectedRegisteredPlot = activeMonitoringPlots.find(plot => plot.name.toLowerCase() === plotName.trim().toLowerCase());
+  const selectedSentinel = selectedRegisteredPlot?.sentinels.find(sentinel => sentinel.id === selectedPlant?.sentinelPlantId);
+  const carriedFromPlant = previousSession && selectedPlant
+    ? previousSession.plants.find(plant => plant.sentinelPlantId && plant.sentinelPlantId === selectedPlant.sentinelPlantId)
+      ?? (!selectedSentinel?.replacementOf ? previousSession.plants.find(plant => plant.plantNumber === selectedPlant.plantNumber) : undefined)
+    : undefined;
   const knownPlots = Array.from(new Set([...activeMonitoringPlots.map(plot => plot.name), ...profile.farmZones, ...sessions.map(session => session.plotName)].filter(Boolean))).sort();
   const reportPlots = reportPlot === 'all' ? knownPlots : knownPlots.filter(plot => plot === reportPlot);
   const currentFarmWeek = getFarmWeek(today, profile.weekStartsOn);
@@ -189,15 +202,41 @@ export default function SigatokaPage() {
   const areaLabel = config.areaUnit === 'custom' ? config.customAreaUnitName || 'custom unit' : config.areaUnit === 'square_metre' ? 'm2' : config.areaUnit === 'hectare' ? 'ha' : 'ac';
   const squareMetresPerUnit = config.areaUnit === 'custom' ? config.customAreaSquareMetres : AREA_FACTORS[config.areaUnit];
 
+  function plantsForObservation(name: string, date: string): SigatokaPlantObservation[] {
+    const registered = activeMonitoringPlots.find(plot => plot.name.toLowerCase() === name.trim().toLowerCase());
+    const activeSentinels = registered?.sentinels.filter(plant => plant.status === 'active') ?? [];
+    const freshPlants = emptyPlants(config.samplePlantCount, activeSentinels);
+    const prior = sessions
+      .filter(session => session.plotName.toLowerCase() === name.trim().toLowerCase() && session.status !== 'draft' && session.observedAt < date)
+      .sort((a, b) => b.observedAt.localeCompare(a.observedAt))[0];
+    if (!prior) return freshPlants;
+
+    return freshPlants.map(plant => {
+      const registeredSentinel = activeSentinels.find(sentinel => sentinel.id === plant.sentinelPlantId);
+      const byPermanentId = plant.sentinelPlantId ? prior.plants.find(previous => previous.sentinelPlantId === plant.sentinelPlantId) : undefined;
+      const byLegacyPosition = !registeredSentinel?.replacementOf ? prior.plants.find(previous => previous.plantNumber === plant.plantNumber) : undefined;
+      const previousPlant = byPermanentId ?? byLegacyPosition;
+      return previousPlant ? { ...plant, previousLeafReading: previousPlant.currentLeafReading } : plant;
+    });
+  }
+
+  function setObservationContext(name: string, date: string) {
+    const prior = sessions
+      .filter(session => session.plotName.toLowerCase() === name.trim().toLowerCase() && session.status !== 'draft' && session.observedAt < date)
+      .sort((a, b) => b.observedAt.localeCompare(a.observedAt))[0];
+    setPlants(plantsForObservation(name, date));
+    setIntervalDays(prior ? daysBetween(prior.observedAt, date) : 7);
+    setCurrentPlant(0);
+  }
+
   function updatePlant(fields: Partial<SigatokaPlantObservation>) {
     setPlants(current => current.map((plant, index) => index === currentPlant ? { ...plant, ...fields } : plant));
   }
 
   function resetObservationForm() {
     setEditingSessionId('');
-    const registered = activeMonitoringPlots.find(plot => plot.name.toLowerCase() === plotName.toLowerCase());
-    setPlants(emptyPlants(config.samplePlantCount, registered?.sentinels.filter(plant => plant.status === 'active') ?? []));
-    setCurrentPlant(0);
+    setObservedAt(today);
+    setObservationContext(plotName, today);
     setNotes('');
     setRainfallMm('');
     setTreatmentApplied(false);
@@ -210,11 +249,12 @@ export default function SigatokaPage() {
 
   function applyRegisteredPlot(name: string) {
     const registered = activeMonitoringPlots.find(plot => plot.name.toLowerCase() === name.trim().toLowerCase());
-    if (!registered || editingSessionId) return;
-    setSectorName(registered.sectorName);
-    setPlotArea(registered.area === null ? '' : String(registered.area));
-    setPlants(emptyPlants(config.samplePlantCount, registered.sentinels.filter(plant => plant.status === 'active')));
-    setCurrentPlant(0);
+    if (!name.trim() || editingSessionId) return;
+    if (registered) {
+      setSectorName(registered.sectorName);
+      setPlotArea(registered.area === null ? '' : String(registered.area));
+    }
+    setObservationContext(name, observedAt);
   }
 
   async function fillRainfallFromWeather() {
@@ -287,7 +327,6 @@ export default function SigatokaPage() {
       Observer: session.observerName,
       [config.plantLabel]: plant.plantNumber,
       [`${config.plantLabel} code`]: plant.sentinelPlantCode ?? '',
-      'BTN (Banana Tree Number)': plant.plantNumber,
       'OLN (Old Leaf Number)': plant.previousLeafReading,
       'NLN (New Leaf Number)': plant.currentLeafReading,
       'FER (Foliar Emission Rhythm)': Number((plant.currentLeafReading - plant.previousLeafReading).toFixed(4)),
@@ -423,14 +462,14 @@ export default function SigatokaPage() {
 
   return <div className="space-y-6">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div><div className="mb-1 flex items-center gap-2 text-sm font-medium text-green-700"><Bug className="h-4 w-4" /> Crop health intelligence</div><h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Sigatoka Monitoring</h1><p className="max-w-3xl text-sm text-muted-foreground sm:text-base">Mobile field observations, legacy SED parity, plot trends, and transparent quality checks.</p></div>
+      <div><div className="mb-1 flex items-center gap-2 text-sm font-medium text-green-700"><Bug className="h-4 w-4" /> Crop health intelligence</div><h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Sigatoka Monitoring</h1><p className="max-w-3xl text-sm text-muted-foreground sm:text-base">Mobile field observations, validated SED calculations, plot trends, and transparent quality checks.</p></div>
       <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={exportReportCsv}><Download className="mr-2 h-4 w-4" />Export CSV</Button><Button variant="outline" onClick={() => void printReport()}><Printer className="mr-2 h-4 w-4" />Print report</Button>{canManage && <Button variant="outline" onClick={downloadImportTemplate}><Download className="mr-2 h-4 w-4" />Import template</Button>}{canManage && <label className={`inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium shadow-sm hover:bg-accent ${importing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}><Upload className="mr-2 h-4 w-4" />{importing ? 'Importing...' : 'Import history'}<input className="sr-only" type="file" accept=".csv,.xlsx" disabled={importing} onChange={event => { const file = event.target.files?.[0]; if (file) void importObservations(file); event.target.value = ''; }} /></label>}{canRecord && <Button onClick={() => { resetObservationForm(); setShowObservation(true); }}><Plus className="mr-2 h-4 w-4" />New observation</Button>}</div>
     </div>
 
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <Badge variant="outline" className="gap-1.5">{online ? <Wifi className="h-3.5 w-3.5 text-green-600" /> : <CloudOff className="h-3.5 w-3.5 text-amber-600" />}{online ? 'Online' : 'Offline mode'}</Badge>
       {pendingWrites ? <Badge variant="outline" className="text-amber-700">Waiting to sync</Badge> : <Badge variant="outline" className="text-green-700">Records synced</Badge>}
-      <Badge variant="outline">Protocol: legacy SED v1</Badge>
+      <Badge variant="outline">Protocol: SED v1</Badge>
     </div>
 
     {message && <div className="rounded-lg border bg-muted/40 p-3 text-sm">{message}</div>}
@@ -447,7 +486,7 @@ export default function SigatokaPage() {
           <div className="space-y-1.5"><Label>{config.sectorLabel}</Label><Input value={sectorName} onChange={event => setSectorName(event.target.value)} /></div>
           <div className="space-y-1.5"><Label>{config.plotLabel}</Label><Input list="sigatoka-plots" value={plotName} onChange={event => setPlotName(event.target.value)} onBlur={event => applyRegisteredPlot(event.target.value)} placeholder={`Select or enter ${config.plotLabel.toLowerCase()}`} /><datalist id="sigatoka-plots">{knownPlots.map(zone => <option key={zone} value={zone} />)}</datalist></div>
           <div className="space-y-1.5"><Label>{config.plotLabel} area ({areaLabel})</Label><Input type="number" min={0} step="any" value={plotArea} onChange={event => setPlotArea(event.target.value)} /><p className="text-xs text-muted-foreground">1 {areaLabel} = {metric(squareMetresPerUnit, 4)} m2</p></div>
-          <div className="space-y-1.5"><Label>Observation date</Label><Input type="date" value={observedAt} onChange={event => setObservedAt(event.target.value)} /></div>
+          <div className="space-y-1.5"><Label>Observation date</Label><Input type="date" value={observedAt} onChange={event => { const date = event.target.value; setObservedAt(date); if (!editingSessionId) setObservationContext(plotName, date); }} /></div>
           <div className="space-y-1.5"><Label>Days since previous observation</Label><Input type="number" min={1} value={intervalDays} onChange={event => setIntervalDays(Math.max(1, Number(event.target.value) || 1))} /></div>
           <div className="space-y-1.5"><Label>Previous final FER</Label><Input value={metric(previousFinalFer, 4)} disabled /><p className="text-xs text-muted-foreground">From the latest submitted {config.plotLabel.toLowerCase()} record, or the configured initial baseline.</p></div>
         </div>
@@ -472,7 +511,7 @@ export default function SigatokaPage() {
           <div className="mb-4 flex items-center justify-between gap-3"><div><p className="font-semibold">{config.plantLabel} {currentPlant + 1}</p><p className="text-xs text-muted-foreground">{completedPlants}/{plants.length} leaf readings complete</p></div><div className="flex gap-2"><Button size="icon" variant="outline" disabled={currentPlant === 0} onClick={() => setCurrentPlant(index => index - 1)}><ChevronLeft className="h-4 w-4" /></Button><Button size="icon" variant="outline" disabled={currentPlant === plants.length - 1} onClick={() => setCurrentPlant(index => index + 1)}><ChevronRight className="h-4 w-4" /></Button></div></div>
           <div className="mb-5 flex gap-1 overflow-x-auto pb-1">{plants.map((plant, index) => <button type="button" key={plant.plantNumber} onClick={() => setCurrentPlant(index)} className={`h-9 min-w-9 rounded-full border text-xs font-semibold ${index === currentPlant ? 'border-green-600 bg-green-600 text-white' : plant.previousLeafReading > 0 && plant.currentLeafReading > 0 ? 'border-green-300 bg-green-50 text-green-800' : 'bg-background'}`}>{plant.plantNumber}</button>)}</div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1.5"><Label>Previous leaf reading (OLN)</Label><Input type="number" min={0} step="0.1" value={plants[currentPlant].previousLeafReading || ''} onChange={event => updatePlant({ previousLeafReading: Number(event.target.value) })} /></div>
+            <div className="space-y-1.5"><Label>Previous leaf number (OLN)</Label><Input type="number" min={0} step="0.1" value={plants[currentPlant].previousLeafReading || ''} onChange={event => updatePlant({ previousLeafReading: Number(event.target.value) })} />{carriedFromPlant ? <p className="text-xs text-green-700">Carried forward from the new leaf number recorded on {previousSession?.observedAt}.{selectedPlant.previousLeafReading !== carriedFromPlant.currentLeafReading ? ' This value has been adjusted.' : ''}</p> : <p className="text-xs text-muted-foreground">No earlier reading is available for this plant. Enter its starting leaf number.</p>}</div>
             <div className="space-y-1.5"><Label>Current leaf reading (NLN)</Label><Input type="number" min={0} step="0.1" value={plants[currentPlant].currentLeafReading || ''} onChange={event => updatePlant({ currentLeafReading: Number(event.target.value) })} /></div>
             <div className="rounded-lg border bg-background p-3"><p className="text-xs text-muted-foreground">Plant FER</p><p className="mt-1 text-xl font-bold">{metric(plants[currentPlant].currentLeafReading - plants[currentPlant].previousLeafReading, 2)}</p></div>
           </div>
@@ -527,7 +566,7 @@ export default function SigatokaPage() {
     </div>
 
     <Card><CardHeader><CardTitle>Metric guide</CardTitle></CardHeader><CardContent className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">{[
-      ['BTN', 'Banana Tree Number', `Legacy workbook name for the numbered ${config.plantLabel.toLowerCase()} being observed.`],
+      ['BTN', 'Banana Tree Number', `Identifier assigned to each monitored banana plant. Daily screens use your organization’s chosen label: ${config.plantLabel}.`],
       ['OLN', 'Old Leaf Number', 'Leaf-emission reading carried forward from the previous observation.'],
       ['NLN', 'New Leaf Number', 'Leaf-emission reading recorded during the current observation.'],
       ['FER', 'Foliar Emission Rhythm', 'Difference between new and old leaf readings, standardized across the observation interval.'],
@@ -539,6 +578,6 @@ export default function SigatokaPage() {
       ['D+', 'High-density Disease Count', 'Number of leaf observations with approximately more than 50 lesions.'],
     ].map(([short, full, meaning]) => <div key={short} className="rounded-lg border p-3"><p className="font-semibold"><abbr className="no-underline" title={full}>{short}</abbr> · {full}</p><p className="mt-1 text-xs text-muted-foreground">{meaning}</p></div>)}</CardContent></Card>
 
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="h-5 w-5" />Protocol reference</CardTitle></CardHeader><CardContent className="grid gap-4 text-sm md:grid-cols-3"><div><p className="font-semibold">Disease class</p><p className="text-muted-foreground">Stages 1-6 describe symptom development. Minus means lower lesion density; plus means over approximately 50 lesions.</p></div><div><p className="font-semibold">Leaf position</p><p className="text-muted-foreground">The same class carries more weight on leaf II than leaf III or IV because symptoms are appearing on a younger leaf.</p></div><div><p className="font-semibold">SED calculation</p><p className="text-muted-foreground">Weighted disease coefficient × smoothed ten-day foliar emission rate. Raw plant records and the calculation version are stored together.</p></div><div className="md:col-span-3 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">Example selector output: {diseaseClassLabel({ stage: 3, density: 'high' })}. This module reproduces the workbook’s coefficient matrix and smoothing logic, while farm labels, area conversion, sampling count, weeks, and attention thresholds remain configurable.</div></CardContent></Card>
+    <Card><CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="h-5 w-5" />Protocol reference</CardTitle></CardHeader><CardContent className="grid gap-4 text-sm md:grid-cols-3"><div><p className="font-semibold">Disease class</p><p className="text-muted-foreground">Stages 1-6 describe symptom development. Minus means lower lesion density; plus means over approximately 50 lesions.</p></div><div><p className="font-semibold">Leaf position</p><p className="text-muted-foreground">The same class carries more weight on leaf II than leaf III or IV because symptoms are appearing on a younger leaf.</p></div><div><p className="font-semibold">SED calculation</p><p className="text-muted-foreground">Weighted disease coefficient × smoothed ten-day foliar emission rate. Raw plant records and the calculation version are stored together.</p></div><div className="md:col-span-3 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">Example selector output: {diseaseClassLabel({ stage: 3, density: 'high' })}. The configured coefficient matrix and smoothing logic are versioned, while farm labels, area conversion, sampling count, weeks, and attention thresholds remain organization-specific.</div></CardContent></Card>
   </div>;
 }
