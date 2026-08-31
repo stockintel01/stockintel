@@ -55,6 +55,19 @@ const asNumber = (value: unknown, optional = false): number | null => {
 
 function legacyWorkbookRows(workbook: import('exceljs').Workbook): unknown[][] {
   const blocks = new Map<string, { rows: unknown[][]; quality: number }>();
+  const rainfallByWeek = new Map<string, number>();
+  const synthesisSheet = workbook.worksheets.find(sheet => normalize(sheet.name) === 'synth');
+  if (synthesisSheet) {
+    for (let rowIndex = 1; rowIndex <= synthesisSheet.rowCount; rowIndex++) {
+      const row = synthesisSheet.getRow(rowIndex);
+      const year = asNumber(row.getCell(2).value, true);
+      const week = asNumber(row.getCell(3).value, true);
+      const rainfall = asNumber(row.getCell(4).value, true);
+      if (year !== null && week !== null && rainfall !== null) {
+        rainfallByWeek.set(`${Math.trunc(year)}|${Math.trunc(week)}`, rainfall);
+      }
+    }
+  }
   for (const sheet of workbook.worksheets) {
     const nameMatch = sheet.name.trim().match(/^(\S+)\s+(.+)$/);
     if (!nameMatch || ['leaves', 'synth', 'graphes', 'coeff'].includes(sheet.name.toLowerCase())) continue;
@@ -65,6 +78,7 @@ function legacyWorkbookRows(workbook: import('exceljs').Workbook): unknown[][] {
       const workbookWeek = asNumber(sheet.getRow(rowIndex).getCell(6).value, true);
       const monitoringWeekOverride = workbookWeek !== null && workbookWeek >= 1 ? Math.min(52, Math.trunc(workbookWeek)) : null;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      const rainfall = workbookWeek === null ? null : rainfallByWeek.get(`${date.slice(0, 4)}|${Math.trunc(workbookWeek)}`) ?? null;
       let headerRow = 0;
       for (let candidate = rowIndex + 1; candidate <= Math.min(rowIndex + 5, sheet.rowCount); candidate++) {
         if (normalize(sheet.getRow(candidate).getCell(2).value) === 'btn') { headerRow = candidate; break; }
@@ -86,7 +100,7 @@ function legacyWorkbookRows(workbook: import('exceljs').Workbook): unknown[][] {
             unwrap(row.getCell(3).value), unwrap(row.getCell(4).value),
             unwrap(row.getCell(6).value), unwrap(row.getCell(7).value), unwrap(row.getCell(8).value),
             unwrap(row.getCell(9).value), unwrap(row.getCell(11).value),
-            '', '', '', '', '', '', '', '',
+            unwrap(row.getCell(21).value), unwrap(row.getCell(22).value), rainfall ?? '', '', '', '', '', '',
           ],
           sourceReference: `${sheet.name}!${plantRow}`,
         });
