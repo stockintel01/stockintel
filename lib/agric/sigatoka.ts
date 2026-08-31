@@ -91,6 +91,12 @@ export interface SigatokaSessionRecord {
   notes?: string;
   verifiedBy?: string;
   verifiedAt?: unknown;
+  archivedAt?: unknown;
+  archivedAtIso?: string;
+  archivedBy?: string;
+  archiveReason?: string;
+  archiveBatchId?: string;
+  expireAt?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -189,12 +195,13 @@ export function calculateSigatokaMetrics(
   };
 }
 
-export function validateSigatokaPlants(plants: SigatokaPlantObservation[], previousPlants: SigatokaPlantObservation[] = []): SigatokaValidationIssue[] {
+export function validateSigatokaPlants(plants: SigatokaPlantObservation[], previousPlants: SigatokaPlantObservation[] = [], meanRawFerOverride?: number | null): SigatokaValidationIssue[] {
   const previousByNumber = new Map(previousPlants.map(plant => [plant.plantNumber, plant]));
   return plants.flatMap(plant => {
     const issues: SigatokaValidationIssue[] = [];
     const fer = plant.currentLeafReading - plant.previousLeafReading;
-    if (fer < 0) issues.push({ plantNumber: plant.plantNumber, severity: 'error', message: 'Current leaf reading cannot be below the previous reading.' });
+    if (fer < 0 && (meanRawFerOverride === null || meanRawFerOverride === undefined)) issues.push({ plantNumber: plant.plantNumber, severity: 'error', message: 'Current leaf reading cannot be below the previous reading.' });
+    if (fer < 0 && meanRawFerOverride !== null && meanRawFerOverride !== undefined) issues.push({ plantNumber: plant.plantNumber, severity: 'warning', message: 'A verified historical mean FER override is being used for this plant-number reset.' });
     if (fer > 3) issues.push({ plantNumber: plant.plantNumber, severity: 'warning', message: 'Leaf emission exceeds 3.0; verify the readings or observation interval.' });
     if (plant.youngestInfestedLeaf !== null && plant.youngestNecroticLeaf !== null && plant.youngestInfestedLeaf > plant.youngestNecroticLeaf) {
       issues.push({ plantNumber: plant.plantNumber, severity: 'error', message: 'Youngest infested leaf cannot be older than the youngest necrotic leaf.' });

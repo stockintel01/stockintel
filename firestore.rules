@@ -408,8 +408,19 @@ service cloud.firestore {
         allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
       }
       match /agric_deletion_log/{id} {
-        allow read: if isSignedIn() && isSameOrg(orgId) && isOwnerOrManager();
-        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && isOwnerOrManager();
+        allow read: if isSignedIn() && isSameOrg(orgId) && (isOwnerOrManager() || isSuperAdmin());
+        allow create: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
+          && (
+            isOwnerOrManager()
+            || isSuperAdmin()
+            || (
+              hasAccess('agricSigatoka')
+              && request.resource.data.performedBy == request.auth.uid
+              && request.resource.data.action in ['sigatoka_archive', 'sigatoka_restore']
+            )
+          );
         allow update, delete: if false;
       }
       match /agric_livestock/{id} {
@@ -438,19 +449,22 @@ service cloud.firestore {
           && request.resource.data.observerId == resource.data.observerId
           && (
             (
-              request.auth.uid == resource.data.observerId
-              && resource.data.status == 'draft'
-              && request.resource.data.status in ['draft', 'submitted']
+              (isOwnerOrManager() || isSuperAdmin())
+              && request.resource.data.status in ['draft', 'submitted', 'verified']
             ) ||
             (
-              isOwnerOrManager()
-              && resource.data.status == 'submitted'
-              && request.resource.data.status == 'verified'
-              && request.resource.data.verifiedBy == request.auth.uid
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'metrics', 'verifiedBy', 'verifiedAt', 'updatedAt'])
+              request.auth.uid == resource.data.observerId
+              && resource.data.status in ['draft', 'submitted']
+              && request.resource.data.status in ['draft', 'submitted']
             )
           );
-        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricSigatoka') && isOwnerOrManager();
+        allow delete: if isSignedIn()
+          && isSameOrg(orgId)
+          && hasActiveSubscription(orgId)
+          && hasAccess('agricSigatoka')
+          && (isOwnerOrManager() || isSuperAdmin())
+          && ('expireAt' in resource.data)
+          && resource.data.expireAt <= request.time;
       }
     }
 

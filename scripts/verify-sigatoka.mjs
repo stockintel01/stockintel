@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { aggregateSigatokaSessions, calculateSigatokaMetrics, convertArea, generateSigatokaDecisionAlerts, sigatokaCoefficient } from '../lib/agric/sigatoka.ts';
+import { aggregateSigatokaSessions, calculateSigatokaMetrics, convertArea, generateSigatokaDecisionAlerts, sigatokaCoefficient, validateSigatokaPlants } from '../lib/agric/sigatoka.ts';
 
 const score = value => value ? {
   stage: Number(value[0]),
@@ -45,6 +45,9 @@ assert.ok(Math.abs(metrics.sed - 3547.133333333333) < 1e-9);
 const resetMetrics = calculateSigatokaMetrics(plants.map(plant => ({ ...plant, previousLeafReading: 29, currentLeafReading: 7 })), 7, 1.17, 0.8);
 assert.equal(resetMetrics.meanRawFer, 0.8);
 assert.ok(resetMetrics.sed > 0);
+const resetValidation = validateSigatokaPlants(plants.map(plant => ({ ...plant, previousLeafReading: 29, currentLeafReading: 7 })), [], 0.8);
+assert.equal(resetValidation.some(issue => issue.severity === 'error'), false);
+assert.equal(resetValidation.every(issue => issue.severity === 'warning'), true);
 assert.ok(Math.abs(convertArea(1, 10000, 4046.8564224) - 2.471053814671653) < 1e-12);
 
 const weekly = aggregateSigatokaSessions([
