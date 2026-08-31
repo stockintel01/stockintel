@@ -287,9 +287,10 @@ export default function SigatokaPage() {
       Observer: session.observerName,
       [config.plantLabel]: plant.plantNumber,
       [`${config.plantLabel} code`]: plant.sentinelPlantCode ?? '',
-      'Previous leaf reading': plant.previousLeafReading,
-      'Current leaf reading': plant.currentLeafReading,
-      'Plant FER': Number((plant.currentLeafReading - plant.previousLeafReading).toFixed(4)),
+      'BTN (Banana Tree Number)': plant.plantNumber,
+      'OLN (Old Leaf Number)': plant.previousLeafReading,
+      'NLN (New Leaf Number)': plant.currentLeafReading,
+      'FER (Foliar Emission Rhythm)': Number((plant.currentLeafReading - plant.previousLeafReading).toFixed(4)),
       'Leaf II': diseaseClassLabel(plant.leaf2),
       'Leaf III': diseaseClassLabel(plant.leaf3),
       'Leaf IV': diseaseClassLabel(plant.leaf4),
@@ -509,7 +510,7 @@ export default function SigatokaPage() {
     </div>
 
     <div className="grid gap-5 xl:grid-cols-[2fr_1fr]">
-      <Card><CardHeader><CardTitle>Disease evolution and rainfall</CardTitle></CardHeader><CardContent>{chartData.length > 1 ? <div className="h-80 w-full"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData} margin={{ left: 4, right: 8 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="week" tick={{ fontSize: 11 }} /><YAxis yAxisId="sed" tick={{ fontSize: 11 }} width={56} /><YAxis yAxisId="rain" orientation="right" tick={{ fontSize: 11 }} width={42} /><Tooltip /><Legend /><Bar yAxisId="rain" dataKey="rainfall" fill="#93c5fd" opacity={0.65} name="Rainfall (mm)" /><Line yAxisId="sed" type="monotone" dataKey="sedMin" stroke="#86efac" strokeDasharray="4 4" dot={false} name="State of Disease Evolution (SED) minimum" /><Line yAxisId="sed" type="monotone" dataKey="sedMax" stroke="#fca5a5" strokeDasharray="4 4" dot={false} name="State of Disease Evolution (SED) maximum" /><Line yAxisId="sed" type="monotone" dataKey="sed" stroke="#15803d" strokeWidth={3} dot={{ r: 3 }} name="State of Disease Evolution (SED) mean" /></ComposedChart></ResponsiveContainer></div> : <div className="py-16 text-center text-sm text-muted-foreground">Submit observations across two farm weeks to see sector SED, range, and rainfall.</div>}</CardContent></Card>
+      <Card><CardHeader><CardTitle>Disease evolution and rainfall</CardTitle></CardHeader><CardContent>{chartData.length > 1 ? <div className="h-80 w-full"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData} margin={{ left: 4, right: 8 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="week" tick={{ fontSize: 11 }} /><YAxis yAxisId="sed" tick={{ fontSize: 11 }} width={56} /><YAxis yAxisId="rain" orientation="right" tick={{ fontSize: 11 }} width={42} /><Tooltip /><Legend /><Bar yAxisId="rain" dataKey="rainfall" fill="#93c5fd" opacity={0.65} name="Rainfall (mm)" /><Line yAxisId="sed" type="monotone" dataKey="sedMin" stroke="#86efac" strokeDasharray="4 4" dot={false} name="Stage of Evolution of Disease (SED) minimum" /><Line yAxisId="sed" type="monotone" dataKey="sedMax" stroke="#fca5a5" strokeDasharray="4 4" dot={false} name="Stage of Evolution of Disease (SED) maximum" /><Line yAxisId="sed" type="monotone" dataKey="sed" stroke="#15803d" strokeWidth={3} dot={{ r: 3 }} name="Stage of Evolution of Disease (SED) mean" /></ComposedChart></ResponsiveContainer></div> : <div className="py-16 text-center text-sm text-muted-foreground">Submit observations across two farm weeks to see sector SED, range, and rainfall.</div>}</CardContent></Card>
       <Card><CardHeader><CardTitle>Treatment timeline</CardTitle></CardHeader><CardContent className="space-y-3">{weeklySummaries.flatMap(summary => summary.treatments.map(treatment => ({ ...treatment, week: summary.week }))).slice(-8).reverse().map((treatment, index) => <div key={`${treatment.appliedAt}-${treatment.product}-${index}`} className="rounded-lg border p-3"><div className="flex items-center justify-between gap-2"><p className="font-semibold">{treatment.product}</p><Badge variant="outline">W{treatment.week}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{treatment.appliedAt}{treatment.activeIngredient ? ` · ${treatment.activeIngredient}` : ''}</p>{treatment.dose && <p className="mt-1 text-xs">Dose: {treatment.dose}</p>}</div>)}{weeklySummaries.every(summary => summary.treatments.length === 0) && <div className="py-10 text-center text-sm text-muted-foreground">No treatment events recorded for this report view.</div>}</CardContent></Card>
     </div>
 
@@ -526,8 +527,11 @@ export default function SigatokaPage() {
     </div>
 
     <Card><CardHeader><CardTitle>Metric guide</CardTitle></CardHeader><CardContent className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">{[
-      ['SED', 'State of Disease Evolution', 'Overall disease pressure calculated from weighted symptoms and foliar emission.'],
-      ['FER', 'Foliar Emission Rate', 'Rate at which the plant produces new leaves, standardized for comparison.'],
+      ['BTN', 'Banana Tree Number', `Legacy workbook name for the numbered ${config.plantLabel.toLowerCase()} being observed.`],
+      ['OLN', 'Old Leaf Number', 'Leaf-emission reading carried forward from the previous observation.'],
+      ['NLN', 'New Leaf Number', 'Leaf-emission reading recorded during the current observation.'],
+      ['FER', 'Foliar Emission Rhythm', 'Difference between new and old leaf readings, standardized across the observation interval.'],
+      ['SED', 'Stage of Evolution of Disease', 'Overall disease pressure calculated from weighted symptoms and foliar emission.'],
       ['YIL', 'Youngest Infested Leaf', 'Youngest leaf showing early disease symptoms. Lower values indicate disease on younger leaves.'],
       ['YNL', 'Youngest Necrotic Leaf', 'Youngest leaf showing necrotic or dead disease tissue. Lower values are more concerning.'],
       ['NLF', 'Number of Leaves at Flowering', 'Functional leaf count when the plant flowers.'],
