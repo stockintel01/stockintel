@@ -14,6 +14,7 @@ import { auth, db } from '@/lib/firebase';
 import {
     agricultureProfileLabel,
     buildAgricultureProfile,
+    DEFAULT_SIGATOKA_CONFIGURATION,
     getAgricultureProfile,
     parseAgricultureList,
     type AgricultureOperation,
@@ -300,12 +301,11 @@ export default function SettingsPage() {
                                     {agricultureProfile.sigatoka.enabled && (
                                         <>
                                             <div>
-                                                <Label className="text-base">Your farm terminology</Label>
-                                                <p className="mb-3 text-sm text-muted-foreground">Use the names your organization already uses. These labels appear throughout scouting and reports.</p>
+                                                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><Label className="text-base">Your farm terminology</Label><p className="text-sm text-muted-foreground">Use familiar organization names. The standard meaning remains visible so customized labels do not become confusing.</p></div><Button type="button" size="sm" variant="outline" onClick={() => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, sectorLabel: DEFAULT_SIGATOKA_CONFIGURATION.sectorLabel, plotLabel: DEFAULT_SIGATOKA_CONFIGURATION.plotLabel, plantLabel: DEFAULT_SIGATOKA_CONFIGURATION.plantLabel } }))}>Restore standard labels</Button></div>
                                                 <div className="grid gap-3 md:grid-cols-3">
-                                                    <div className="space-y-2"><Label>Sector label</Label><Input value={agricultureProfile.sigatoka.sectorLabel} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, sectorLabel: event.target.value } }))} placeholder="Sector, Estate, Farm" /></div>
-                                                    <div className="space-y-2"><Label>Plot area label</Label><Input value={agricultureProfile.sigatoka.plotLabel} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, plotLabel: event.target.value } }))} placeholder="Plot, Block, Field" /></div>
-                                                    <div className="space-y-2"><Label>Plant label</Label><Input value={agricultureProfile.sigatoka.plantLabel} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, plantLabel: event.target.value } }))} placeholder="Sentinel plant" /></div>
+                                                    <div className="space-y-2"><Label>Sector label</Label><Input value={agricultureProfile.sigatoka.sectorLabel} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, sectorLabel: event.target.value } }))} placeholder="Sector, Estate, Farm" /><p className="text-xs text-muted-foreground">Standard meaning: Sector or farm division</p></div>
+                                                    <div className="space-y-2"><Label>Plot area label</Label><Input value={agricultureProfile.sigatoka.plotLabel} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, plotLabel: event.target.value } }))} placeholder="Plot, Block, Field" /><p className="text-xs text-muted-foreground">Standard meaning: Monitoring plot or field block</p></div>
+                                                    <div className="space-y-2"><Label>Plant label</Label><Input value={agricultureProfile.sigatoka.plantLabel} onChange={event => setAgricultureProfile(profile => ({ ...profile, sigatoka: { ...profile.sigatoka, plantLabel: event.target.value } }))} placeholder="Sentinel plant" /><p className="text-xs text-muted-foreground">Standard meaning: Sentinel plant being observed</p></div>
                                                 </div>
                                             </div>
 
