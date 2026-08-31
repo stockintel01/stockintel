@@ -183,7 +183,12 @@ export async function parseSigatokaImport(file: File, observer: { id: string; na
     const intervalDaysOverride = asNumber(get('Interval Days Override'), true);
     const previousFinalFerOverride = asNumber(get('Previous Final FER Override'), true);
     const monitoringWeekOverride = asNumber(get('Monitoring Week Override'), true);
-    const scores = [parseScore(get('Leaf II Class')), parseScore(get('Leaf III Class')), parseScore(get('Leaf IV Class'))];
+    const scoreInputs = [
+      { label: 'Leaf II', value: get('Leaf II Class') },
+      { label: 'Leaf III', value: get('Leaf III Class') },
+      { label: 'Leaf IV', value: get('Leaf IV Class') },
+    ];
+    const scores = scoreInputs.map(input => parseScore(input.value));
     const sourceReference = asText(get('Source Reference'));
     const sourceLabel = sourceReference || `Row ${offset + 2}`;
     const rowErrors: string[] = [];
@@ -206,7 +211,11 @@ export async function parseSigatokaImport(file: File, observer: { id: string; na
     }
     if (previous === null || current === null) rowErrors.push('both old and new leaf numbers are required');
     else if (current < previous && meanRawFerOverride === null) rowErrors.push(`new leaf number (${current}) cannot be below old leaf number (${previous}) unless a verified mean FER override is supplied for a plant-number reset`);
-    if (scores.includes('invalid')) rowErrors.push('leaf classes must be blank or 1-/1+ through 6-/6+');
+    const invalidScores = scoreInputs.filter((_, index) => scores[index] === 'invalid');
+    if (invalidScores.length) {
+      const values = invalidScores.map(input => `${input.label} value "${asText(input.value)}"`).join(', ');
+      rowErrors.push(`${values} ${invalidScores.length === 1 ? 'is' : 'are'} invalid; use blank or a disease class from 1-/1+ through 6-/6+`);
+    }
     if (rowErrors.length) { invalidGroups.add(key); errors.push(`${sourceLabel}: ${rowErrors.join('; ')}`); return; }
 
     const group = grouped.get(key) ?? { sector, plot, date, plants: [], rainfall: asNumber(get('Rainfall mm'), true), treatment: null, meanRawFerOverride, intervalDaysOverride, previousFinalFerOverride, monitoringWeekOverride, notes: [] };

@@ -65,6 +65,19 @@ import { userHasAccess } from '@/lib/access-permissions';
 const AREA_FACTORS = { hectare: 10000, acre: 4046.8564224, square_metre: 1 } as const;
 type ReportPeriod = 'all' | 'week' | 'month' | 'year' | 'custom';
 type DataRemovalAction = 'archive' | 'delete';
+type ImportIssueStatus = 'Blocked' | 'Already exists';
+
+interface ImportIssue {
+  status: ImportIssueStatus;
+  details: string;
+}
+
+function describeImportIssue(issue: ImportIssue): { category: string; action: string } {
+  if (issue.status === 'Already exists') return { category: 'Duplicate observation', action: 'No correction is required. Edit, archive, or delete the existing observation before importing a replacement.' };
+  if (issue.details.includes('invalid; use blank or a disease class')) return { category: 'Invalid disease class', action: 'Correct the listed workbook cell to blank or 1-/1+ through 6-/6+, then import again.' };
+  if (issue.details.includes('observation is incomplete')) return { category: 'Missing plant reading', action: 'Enter both old and new leaf readings for the listed plant, or remove that plant row intentionally before importing again.' };
+  return { category: 'Validation error', action: 'Correct the source value described here, then import the affected observation again.' };
+}
 
 function emptyPlants(count: number, sentinels: Array<{ id: string; code: string }> = []): SigatokaPlantObservation[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -174,7 +187,7 @@ export default function SigatokaPage() {
   const [pendingWrites, setPendingWrites] = useState(false);
   const [importing, setImporting] = useState(false);
   const [loadingRainfall, setLoadingRainfall] = useState(false);
-  const [importIssues, setImportIssues] = useState<string[]>([]);
+  const [importIssues, setImportIssues] = useState<ImportIssue[]>([]);
 
   useEffect(() => {
     if (!organization?.id) return;
@@ -433,7 +446,10 @@ export default function SigatokaPage() {
   }
 
   function downloadImportIssues() {
-    exportToCSV(importIssues.map((issue, index) => ({ Issue: index + 1, Details: issue })), `sigatoka-import-issues-${new Date().toISOString().slice(0, 10)}.csv`);
+    exportToCSV(importIssues.map((issue, index) => {
+      const guidance = describeImportIssue(issue);
+      return { Item: index + 1, Status: issue.status, Category: guidance.category, Details: issue.details, 'Recommended action': guidance.action };
+    }), `sigatoka-import-report-${new Date().toISOString().slice(0, 10)}.csv`);
   }
 
   async function importObservations(file: File) {
@@ -444,21 +460,30 @@ export default function SigatokaPage() {
     try {
       const result = await parseSigatokaImport(file, { id: user.id, name: user.name }, profile.weekStartsOn, config.initialFerBaseline);
       const existingKeys = new Set(sessions.filter(session => session.status !== 'draft').map(session => `${session.plotName.toLowerCase()}|${session.monitoringYear}|${session.monitoringWeek}`));
+      const alreadyExisting: ImportIssue[] = [];
       const accepted = result.sessions.filter(session => {
         const key = `${session.plotName.toLowerCase()}|${session.monitoringYear}|${session.monitoringWeek}`;
-        if (existingKeys.has(key)) { result.errors.push(`${session.plotName}, ${session.observedAt}: that farm week already has an observation`); return false; }
+        if (existingKeys.has(key)) {
+          alreadyExisting.push({ status: 'Already exists', details: `${session.plotName}, ${session.observedAt}: this plot already has an observation for farm week ${session.monitoringWeek}, ${session.monitoringYear}` });
+          return false;
+        }
         existingKeys.add(key);
         return true;
       });
-      setImportIssues(result.errors);
+      const blockedIssues: ImportIssue[] = result.errors.map(details => ({ status: 'Blocked', details }));
+      setImportIssues([...blockedIssues, ...alreadyExisting]);
       if (!accepted.length) {
-        setMessage(`No observations were imported. ${result.errors.length} issue${result.errors.length === 1 ? '' : 's'} require attention; download the issue report for exact locations.`);
+        const blockedSummary = blockedIssues.length ? `${blockedIssues.length} validation finding${blockedIssues.length === 1 ? '' : 's'} blocked affected observations.` : '';
+        const existingSummary = alreadyExisting.length ? `${alreadyExisting.length} observation${alreadyExisting.length === 1 ? '' : 's'} already exist${alreadyExisting.length === 1 ? 's' : ''} and were safely skipped.` : '';
+        setMessage(`No new observations were imported. ${blockedSummary} ${existingSummary} Download the import report for exact locations and recommended actions.`.replace(/\s+/g, ' ').trim());
         return;
       }
       await addSigatokaSessions(organization.id, accepted);
       const skipped = result.skippedRows ? ` ${result.skippedRows} empty future-template row${result.skippedRows === 1 ? ' was' : 's were'} ignored.` : '';
-      const issues = result.errors.length ? ` ${result.errors.length} issue${result.errors.length === 1 ? '' : 's'} in affected observations were quarantined; download the issue report to correct them.` : '';
-      setMessage(`${accepted.length} historical observation${accepted.length === 1 ? '' : 's'} imported from ${result.totalRows} plant rows.${skipped}${issues} Calculations were rebuilt by the verified engine.`);
+      const blocked = blockedIssues.length ? ` ${blockedIssues.length} validation finding${blockedIssues.length === 1 ? '' : 's'} blocked affected observations.` : '';
+      const existing = alreadyExisting.length ? ` ${alreadyExisting.length} observation${alreadyExisting.length === 1 ? '' : 's'} already exist${alreadyExisting.length === 1 ? 's' : ''} and were skipped without changing stored data.` : '';
+      const report = blockedIssues.length || alreadyExisting.length ? ' Download the import report for exact locations and recommended actions.' : '';
+      setMessage(`${accepted.length} historical observation${accepted.length === 1 ? '' : 's'} imported from ${result.totalRows} plant rows.${skipped}${blocked}${existing}${report} Calculations were rebuilt by the verified engine.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'The observation import failed.');
     } finally { setImporting(false); }
@@ -618,7 +643,7 @@ export default function SigatokaPage() {
   return <div className="space-y-6">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div><div className="mb-1 flex items-center gap-2 text-sm font-medium text-green-700"><Bug className="h-4 w-4" /> Crop health intelligence</div><h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Sigatoka Monitoring</h1><p className="max-w-3xl text-sm text-muted-foreground sm:text-base">Mobile field observations, validated SED calculations, plot trends, and transparent quality checks.</p></div>
-      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={exportReportCsv}><Download className="mr-2 h-4 w-4" />Export CSV</Button><Button variant="outline" onClick={() => void printReport()}><Printer className="mr-2 h-4 w-4" />Print dashboard</Button>{latestReport && <Button variant="outline" onClick={() => printFieldReport(latestReport)}><FileSpreadsheet className="mr-2 h-4 w-4" />Latest field sheet</Button>}{latestReport && <Button variant="outline" onClick={() => void downloadFieldReport(latestReport)}><Download className="mr-2 h-4 w-4" />Latest Excel</Button>}{canManage && <Button variant="outline" onClick={downloadImportTemplate}><Download className="mr-2 h-4 w-4" />Import template</Button>}{canManage && importIssues.length > 0 && <Button variant="outline" onClick={downloadImportIssues}><AlertTriangle className="mr-2 h-4 w-4" />Import issues ({importIssues.length})</Button>}{canManage && <label className={`inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium shadow-sm hover:bg-accent ${importing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}><Upload className="mr-2 h-4 w-4" />{importing ? 'Importing...' : 'Import history'}<input className="sr-only" type="file" accept=".csv,.xlsx" disabled={importing} onChange={event => { const file = event.target.files?.[0]; if (file) void importObservations(file); event.target.value = ''; }} /></label>}{canRecord && <Button onClick={() => { resetObservationForm(); setShowObservation(true); }}><Plus className="mr-2 h-4 w-4" />New observation</Button>}</div>
+      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={exportReportCsv}><Download className="mr-2 h-4 w-4" />Export CSV</Button><Button variant="outline" onClick={() => void printReport()}><Printer className="mr-2 h-4 w-4" />Print dashboard</Button>{latestReport && <Button variant="outline" onClick={() => printFieldReport(latestReport)}><FileSpreadsheet className="mr-2 h-4 w-4" />Latest field sheet</Button>}{latestReport && <Button variant="outline" onClick={() => void downloadFieldReport(latestReport)}><Download className="mr-2 h-4 w-4" />Latest Excel</Button>}{canManage && <Button variant="outline" onClick={downloadImportTemplate}><Download className="mr-2 h-4 w-4" />Import template</Button>}{canManage && importIssues.length > 0 && <Button variant="outline" onClick={downloadImportIssues}><AlertTriangle className="mr-2 h-4 w-4" />Import report ({importIssues.length})</Button>}{canManage && <label className={`inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium shadow-sm hover:bg-accent ${importing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}><Upload className="mr-2 h-4 w-4" />{importing ? 'Importing...' : 'Import history'}<input className="sr-only" type="file" accept=".csv,.xlsx" disabled={importing} onChange={event => { const file = event.target.files?.[0]; if (file) void importObservations(file); event.target.value = ''; }} /></label>}{canRecord && <Button onClick={() => { resetObservationForm(); setShowObservation(true); }}><Plus className="mr-2 h-4 w-4" />New observation</Button>}</div>
     </div>
 
     <div className="flex flex-wrap items-center gap-2 text-xs">

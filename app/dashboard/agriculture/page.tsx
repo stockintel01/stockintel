@@ -2,48 +2,45 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Package, AlertTriangle, CheckCircle2, Clock, TrendingUp,
+  Package, AlertTriangle, CheckCircle2, TrendingUp,
   Leaf, FlaskConical, Bug, Sprout, Tractor, ArrowRight,
-  Bell, ChevronRight, BarChart3, ShoppingCart, Users,
-  AlertCircle, RefreshCw, Boxes, Cloud, CloudRain, Sun, Wind, Droplets, CloudLightning
+  Bell, ChevronRight, BarChart3, ShoppingCart,
+  Boxes, Cloud, CloudRain, Sun, Wind, Droplets, CloudLightning
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { useAgric } from '@/lib/agric/useAgric';
 import { useAppStore } from '@/lib/store';
 import { getAgricultureProfile, type FarmLocation } from '@/lib/agric/config';
 import { getRecentFarmWeeks } from '@/lib/agric/week';
+import { CriticalAlertPanel } from '@/components/agriculture/CriticalAlertPanel';
 
-const CATEGORY_LABELS: Record<string, string> = {
-  fungicide: 'Fungicides', insecticide: 'Insecticides', herbicide: 'Herbicides',
-  fertilizer: 'Fertilizers', equipment: 'Equipment', seed: 'Seeds',
-};
-
-function getStockStatus(item: { currentStock: number; minimumStock: number; isActive: boolean }) {
-  if (!item.isActive) return { label: 'Deleted', dot: 'bg-gray-400' };
-  if (item.currentStock === 0) return { label: 'Out of Stock', dot: 'bg-red-500' };
-  if (item.currentStock <= item.minimumStock * 0.5) return { label: 'Critical', dot: 'bg-red-500' };
-  if (item.currentStock <= item.minimumStock) return { label: 'Low Stock', dot: 'bg-amber-500' };
-  return { label: 'In Stock', dot: 'bg-green-500' };
+interface CurrentWeather {
+  temperature_2m: number;
+  weather_code: number;
+  wind_speed_10m: number;
+  precipitation: number;
+  relative_humidity_2m: number;
 }
 
 // ── Mini Weather Banner ───────────────────────────────────────
 function WeatherBanner({ location }: { location?: FarmLocation }) {
-  const [wx, setWx] = useState<any>(null);
+  const [wx, setWx] = useState<CurrentWeather | null>(null);
   useEffect(() => {
     fetch(`https://api.open-meteo.com/v1/forecast?latitude=${location?.latitude ?? 5.6037}&longitude=${location?.longitude ?? -0.187}&current=temperature_2m,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&timezone=auto`)
-      .then(r => r.json()).then(d => setWx(d.current)).catch(() => {});
+      .then(response => response.json() as Promise<{ current?: CurrentWeather }>)
+      .then(data => { if (data.current) setWx(data.current); })
+      .catch(() => {});
   }, [location?.latitude, location?.longitude]);
   if (!wx) return null;
   const code = wx.weather_code;
   const isRaining = code >= 51, isStorm = code >= 95, windHigh = wx.wind_speed_10m > 20;
   let spray: { label: string; color: string; bg: string };
-  if (isStorm) spray = { label: '⛈ Thunderstorm — DO NOT SPRAY', color: 'text-red-700', bg: 'bg-red-50 border-red-200' };
-  else if (isRaining) spray = { label: '🌧 Raining — Hold spray operations', color: 'text-red-600', bg: 'bg-red-50 border-red-200' };
-  else if (windHigh) spray = { label: '💨 High wind — Avoid spraying', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' };
-  else spray = { label: '✓ Good spray window right now', color: 'text-green-700', bg: 'bg-green-50 border-green-200' };
+  if (isStorm) spray = { label: 'Thunderstorm: do not spray', color: 'text-red-700', bg: 'bg-red-50 border-red-200' };
+  else if (isRaining) spray = { label: 'Rain detected: hold spray operations', color: 'text-red-600', bg: 'bg-red-50 border-red-200' };
+  else if (windHigh) spray = { label: 'High wind: avoid spraying', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' };
+  else spray = { label: 'Conditions currently support spraying', color: 'text-green-700', bg: 'bg-green-50 border-green-200' };
   const WxIcon = isStorm ? CloudLightning : isRaining ? CloudRain : code <= 1 ? Sun : Cloud;
   return (
     <Link href="/dashboard/agriculture/weather">
@@ -51,7 +48,7 @@ function WeatherBanner({ location }: { location?: FarmLocation }) {
         <div className="flex items-center gap-3">
           <WxIcon className="w-6 h-6 text-blue-500" />
           <div>
-            <p className="text-sm font-semibold">{wx.temperature_2m.toFixed(1)}°C — Farm Weather</p>
+            <p className="text-sm font-semibold">{wx.temperature_2m.toFixed(1)}°C | Farm weather</p>
             <p className={`text-xs font-medium ${spray.color}`}>{spray.label}</p>
           </div>
         </div>
@@ -79,13 +76,12 @@ export default function AgricOverviewPage() {
   });
 
   const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
-
   const activeAlerts = alerts.filter(a => !dismissedAlerts.includes(a.id));
   const unreadAlerts = activeAlerts.filter(a => !a.isRead);
+  const criticalAlerts = unreadAlerts.filter(alert => alert.severity === 'critical');
   const criticalItems = inventory.filter(i => i.isActive && i.currentStock <= i.minimumStock * 0.5);
   const lowItems = inventory.filter(i => i.isActive && i.currentStock > i.minimumStock * 0.5 && i.currentStock <= i.minimumStock);
   const pendingRequests = requests.filter(r => r.status === 'pending');
-  const overdueEquipment = checkouts.filter(e => e.isOverdue && !e.isReturned);
   const today = new Date().toISOString().slice(0, 10);
   const todayPacking = packingRecords.filter(r => r.date === today);
   const totalPackedToday = todayPacking.reduce((s, r) => s + r.packedBoxes, 0);
@@ -146,20 +142,7 @@ export default function AgricOverviewPage() {
       <WeatherBanner location={profile.location} />
 
       {/* Critical Alerts */}
-      {unreadAlerts.filter(a => a.severity === 'critical').length > 0 && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-          <div className="flex-1">
-            <p className="font-semibold text-red-800">{unreadAlerts.filter(a => a.severity === 'critical').length} Critical Alert(s)</p>
-            {unreadAlerts.filter(a => a.severity === 'critical').map(a => (
-              <p key={a.id} className="text-sm text-red-700 mt-0.5">{a.message}</p>
-            ))}
-          </div>
-          <Link href="/dashboard/agriculture/stock-management">
-            <Button size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-100">View</Button>
-          </Link>
-        </div>
-      )}
+      <CriticalAlertPanel alerts={criticalAlerts} onMarkReviewed={handleDismiss} />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
