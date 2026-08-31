@@ -44,6 +44,7 @@ import { createSigatokaImportTemplateCsv, parseSigatokaImport } from '@/lib/agri
 import { useAgric } from '@/lib/agric/useAgric';
 import {
   addSigatokaSession,
+  addSigatokaSessions,
   deleteSigatokaSession,
   subscribeSigatokaSessions,
   updateSigatokaSession,
@@ -128,6 +129,7 @@ export default function SigatokaPage() {
   const [pendingWrites, setPendingWrites] = useState(false);
   const [importing, setImporting] = useState(false);
   const [loadingRainfall, setLoadingRainfall] = useState(false);
+  const [importIssues, setImportIssues] = useState<string[]>([]);
 
   useEffect(() => {
     if (!organization?.id) return;
@@ -340,6 +342,7 @@ export default function SigatokaPage() {
       'SED': Number(session.metrics.sed.toFixed(4)),
       'SED risk': riskLabel(session.metrics.sed),
       'Final FER': Number(session.metrics.finalFer.toFixed(6)),
+      'Historical mean FER override': session.meanRawFerOverride ?? '',
       'Gross coefficient': session.metrics.grossCoefficient,
       'YIL': session.metrics.averageYil,
       'YNL': session.metrics.averageYnl,
@@ -365,9 +368,14 @@ export default function SigatokaPage() {
     URL.revokeObjectURL(url);
   }
 
+  function downloadImportIssues() {
+    exportToCSV(importIssues.map((issue, index) => ({ Issue: index + 1, Details: issue })), `sigatoka-import-issues-${new Date().toISOString().slice(0, 10)}.csv`);
+  }
+
   async function importObservations(file: File) {
     if (!organization?.id || !user || !canManage) return;
     setImporting(true);
+    setImportIssues([]);
     setMessage('Checking import file...');
     try {
       const result = await parseSigatokaImport(file, { id: user.id, name: user.name }, profile.weekStartsOn, config.initialFerBaseline);
@@ -378,12 +386,15 @@ export default function SigatokaPage() {
         existingKeys.add(key);
         return true;
       });
-      if (result.errors.length) {
-        setMessage(`Import stopped: ${result.errors.length} issue(s). ${result.errors.slice(0, 4).join(' | ')}${result.errors.length > 4 ? ' | Fix the file and try again.' : ''}`);
+      setImportIssues(result.errors);
+      if (!accepted.length) {
+        setMessage(`No observations were imported. ${result.errors.length} issue${result.errors.length === 1 ? '' : 's'} require attention; download the issue report for exact locations.`);
         return;
       }
-      for (const session of accepted) await addSigatokaSession(organization.id, session);
-      setMessage(`${accepted.length} historical observation${accepted.length === 1 ? '' : 's'} imported from ${result.totalRows} plant rows. Calculations were rebuilt by the verified engine.`);
+      await addSigatokaSessions(organization.id, accepted);
+      const skipped = result.skippedRows ? ` ${result.skippedRows} empty future-template row${result.skippedRows === 1 ? ' was' : 's were'} ignored.` : '';
+      const issues = result.errors.length ? ` ${result.errors.length} issue${result.errors.length === 1 ? '' : 's'} in affected observations were quarantined; download the issue report to correct them.` : '';
+      setMessage(`${accepted.length} historical observation${accepted.length === 1 ? '' : 's'} imported from ${result.totalRows} plant rows.${skipped}${issues} Calculations were rebuilt by the verified engine.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'The observation import failed.');
     } finally { setImporting(false); }
@@ -463,7 +474,7 @@ export default function SigatokaPage() {
   return <div className="space-y-6">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div><div className="mb-1 flex items-center gap-2 text-sm font-medium text-green-700"><Bug className="h-4 w-4" /> Crop health intelligence</div><h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Sigatoka Monitoring</h1><p className="max-w-3xl text-sm text-muted-foreground sm:text-base">Mobile field observations, validated SED calculations, plot trends, and transparent quality checks.</p></div>
-      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={exportReportCsv}><Download className="mr-2 h-4 w-4" />Export CSV</Button><Button variant="outline" onClick={() => void printReport()}><Printer className="mr-2 h-4 w-4" />Print report</Button>{canManage && <Button variant="outline" onClick={downloadImportTemplate}><Download className="mr-2 h-4 w-4" />Import template</Button>}{canManage && <label className={`inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium shadow-sm hover:bg-accent ${importing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}><Upload className="mr-2 h-4 w-4" />{importing ? 'Importing...' : 'Import history'}<input className="sr-only" type="file" accept=".csv,.xlsx" disabled={importing} onChange={event => { const file = event.target.files?.[0]; if (file) void importObservations(file); event.target.value = ''; }} /></label>}{canRecord && <Button onClick={() => { resetObservationForm(); setShowObservation(true); }}><Plus className="mr-2 h-4 w-4" />New observation</Button>}</div>
+      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={exportReportCsv}><Download className="mr-2 h-4 w-4" />Export CSV</Button><Button variant="outline" onClick={() => void printReport()}><Printer className="mr-2 h-4 w-4" />Print report</Button>{canManage && <Button variant="outline" onClick={downloadImportTemplate}><Download className="mr-2 h-4 w-4" />Import template</Button>}{canManage && importIssues.length > 0 && <Button variant="outline" onClick={downloadImportIssues}><AlertTriangle className="mr-2 h-4 w-4" />Import issues ({importIssues.length})</Button>}{canManage && <label className={`inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium shadow-sm hover:bg-accent ${importing ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}><Upload className="mr-2 h-4 w-4" />{importing ? 'Importing...' : 'Import history'}<input className="sr-only" type="file" accept=".csv,.xlsx" disabled={importing} onChange={event => { const file = event.target.files?.[0]; if (file) void importObservations(file); event.target.value = ''; }} /></label>}{canRecord && <Button onClick={() => { resetObservationForm(); setShowObservation(true); }}><Plus className="mr-2 h-4 w-4" />New observation</Button>}</div>
     </div>
 
     <div className="flex flex-wrap items-center gap-2 text-xs">

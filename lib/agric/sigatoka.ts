@@ -76,6 +76,7 @@ export interface SigatokaSessionRecord {
   observerId: string;
   observerName: string;
   intervalDays: number;
+  meanRawFerOverride?: number | null;
   status: 'draft' | 'submitted' | 'verified';
   plants: SigatokaPlantObservation[];
   metrics: SigatokaMetrics;
@@ -144,13 +145,17 @@ export function calculateSigatokaMetrics(
   plants: SigatokaPlantObservation[],
   intervalDays: number,
   previousFinalFer: number,
+  meanRawFerOverride?: number | null,
 ): SigatokaMetrics {
   if (!plants.length) throw new Error('At least one plant observation is required.');
   if (!Number.isFinite(intervalDays) || intervalDays <= 0) throw new Error('Observation interval must be greater than zero.');
   if (!Number.isFinite(previousFinalFer) || previousFinalFer < 0) throw new Error('Previous final FER must be zero or greater.');
 
   const rawFer = plants.map(plant => plant.currentLeafReading - plant.previousLeafReading);
-  const meanRawFer = rawFer.reduce((total, value) => total + value, 0) / plants.length;
+  const calculatedMeanRawFer = rawFer.reduce((total, value) => total + value, 0) / plants.length;
+  const meanRawFer = meanRawFerOverride !== null && meanRawFerOverride !== undefined && Number.isFinite(meanRawFerOverride) && meanRawFerOverride >= 0
+    ? meanRawFerOverride
+    : calculatedMeanRawFer;
   const fer10d = meanRawFer / intervalDays * 10;
   const finalFer = (previousFinalFer + fer10d) / 2;
   const coefficientLeaf2 = plants.reduce((total, plant) => total + sigatokaCoefficient(plant.leaf2, 2), 0);

@@ -8,6 +8,7 @@ import {
   query,
   serverTimestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { calculateSigatokaMetrics, type SigatokaSessionRecord } from './sigatoka';
@@ -19,7 +20,7 @@ function normalizeSession(documentId: string, data: Record<string, unknown>): Si
   try {
     return {
       ...session,
-      metrics: calculateSigatokaMetrics(session.plants, session.intervalDays, session.metrics.previousFinalFer),
+      metrics: calculateSigatokaMetrics(session.plants, session.intervalDays, session.metrics.previousFinalFer, session.meanRawFerOverride),
     };
   } catch {
     return session;
@@ -52,6 +53,19 @@ export async function addSigatokaSession(
     updatedAt: serverTimestamp(),
   });
   return result.id;
+}
+
+export async function addSigatokaSessions(
+  orgId: string,
+  sessions: Array<Omit<SigatokaSessionRecord, 'id' | 'createdAt' | 'updatedAt'>>,
+): Promise<void> {
+  for (let start = 0; start < sessions.length; start += 400) {
+    const batch = writeBatch(db);
+    for (const session of sessions.slice(start, start + 400)) {
+      batch.set(doc(collectionPath(orgId)), { ...session, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    }
+    await batch.commit();
+  }
 }
 
 export async function updateSigatokaSessionStatus(

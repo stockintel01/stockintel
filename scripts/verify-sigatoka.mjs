@@ -42,6 +42,9 @@ assert.ok(Math.abs(metrics.meanRawFer - 1.02) < 1e-12);
 assert.ok(Math.abs(metrics.fer10d - 1.1333333333333333) < 1e-12);
 assert.ok(Math.abs(metrics.finalFer - 1.1516666666666666) < 1e-12);
 assert.ok(Math.abs(metrics.sed - 3547.133333333333) < 1e-9);
+const resetMetrics = calculateSigatokaMetrics(plants.map(plant => ({ ...plant, previousLeafReading: 29, currentLeafReading: 7 })), 7, 1.17, 0.8);
+assert.equal(resetMetrics.meanRawFer, 0.8);
+assert.ok(resetMetrics.sed > 0);
 assert.ok(Math.abs(convertArea(1, 10000, 4046.8564224) - 2.471053814671653) < 1e-12);
 
 const weekly = aggregateSigatokaSessions([
