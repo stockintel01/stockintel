@@ -15,7 +15,7 @@ import { useAppStore } from '@/lib/store';
 import { getAgricultureProfile, type FarmLocation } from '@/lib/agric/config';
 import { getRecentFarmWeeks } from '@/lib/agric/week';
 import { CriticalAlertPanel } from '@/components/agriculture/CriticalAlertPanel';
-import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics } from '@/lib/agric/packing';
+import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics, packingCalendarDate } from '@/lib/agric/packing';
 
 interface CurrentWeather {
   temperature_2m: number;
@@ -83,7 +83,7 @@ export default function AgricOverviewPage() {
   const criticalItems = inventory.filter(i => i.isActive && i.currentStock <= i.minimumStock * 0.5);
   const lowItems = inventory.filter(i => i.isActive && i.currentStock > i.minimumStock * 0.5 && i.currentStock <= i.minimumStock);
   const pendingRequests = requests.filter(r => r.status === 'pending');
-  const today = new Date().toISOString().slice(0, 10);
+  const today = packingCalendarDate();
   const todayPacking = packingRecords.filter(r => r.date === today);
   const packingOccurrences = buildPackingFulfilmentOccurrences(packingPlans, packingRecords, shippingRecords, today, today, today);
   const packingMetrics = calculatePackingDailyMetrics(today, packingOccurrences, packingRecords, shippingRecords);

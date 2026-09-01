@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics, packingPlanOccurrenceDates } from '../lib/agric/packing.ts';
+import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics, packingCalendarDate, packingPlanOccurrenceDates, packingPlanOperationalFieldsChanged } from '../lib/agric/packing.ts';
+
+assert.equal(packingCalendarDate(new Date(2026, 1, 3, 23, 45)), '2026-02-03');
 
 const plan = {
   id: 'plan-1', activityName: 'Weekly customer order', customerName: 'Customer A', destinationName: 'Depot',
@@ -8,6 +10,8 @@ const plan = {
 };
 
 assert.deepEqual(packingPlanOccurrenceDates(plan, '2026-01-01', '2026-04-30'), ['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30']);
+assert.equal(packingPlanOperationalFieldsChanged(plan, { ...plan, customerName: 'Renamed customer' }), false);
+assert.equal(packingPlanOperationalFieldsChanged(plan, { ...plan, targetBoxes: 120 }), true);
 
 const weekly = { ...plan, recurrence: 'weekly', startDate: '2026-02-01', endDate: '2026-02-20' };
 assert.deepEqual(packingPlanOccurrenceDates(weekly, '2026-02-01', '2026-02-28'), ['2026-02-01', '2026-02-08', '2026-02-15']);

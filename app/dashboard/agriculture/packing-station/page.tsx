@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { db } from '@/lib/firebase';
 import { getAgricultureProfile } from '@/lib/agric/config';
-import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics, packingDateOffset, type PackingFulfilmentOccurrence, type PackingOccurrenceStatus } from '@/lib/agric/packing';
+import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics, packingCalendarDate, packingDateOffset, packingPlanOperationalFieldsChanged, type PackingFulfilmentOccurrence, type PackingOccurrenceStatus } from '@/lib/agric/packing';
 import type { FarmZone, PackingFulfilmentPlan, PackingRecord, PackingStation, ShippingRecord } from '@/lib/agric/types';
 import { useAgric } from '@/lib/agric/useAgric';
 import { useAppStore } from '@/lib/store';
@@ -41,7 +41,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 export default function PackingStationPage() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = packingCalendarDate();
   const agric = useAgric();
   const { user, organization } = useAppStore();
   const canManage = ['owner', 'manager', 'super_admin'].includes(user?.role ?? '');
@@ -132,6 +132,11 @@ export default function PackingStationPage() {
     const seen = new Set<string>();
     return packingRecords.filter(item => item.workers.length).filter(item => { const key = [...item.workers].sort().join('|').toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, 4);
   }, [packingRecords]);
+  const editedPlan = plan.id ? agric.packingPlans.find(item => item.id === plan.id) : undefined;
+  const planHasRecordedWork = Boolean(plan.id && (
+    packingRecords.some(item => item.fulfilmentPlanId === plan.id)
+    || shippingRecords.some(item => item.fulfilmentPlanId === plan.id)
+  ));
 
   function notify(nextMessage = '') { setError(''); setMessage(nextMessage); }
   function openPacking(item?: PackingFulfilmentOccurrence, copy?: PackingRecord) {
@@ -175,6 +180,9 @@ export default function PackingStationPage() {
     const configured = activeStations.find(item => item.id === plan.stationId);
     if (!configured || !plan.activityName.trim() || !plan.customerName.trim() || !plan.startDate || plan.targetBoxes <= 0) return setError('Activity, customer, station, date and a target above zero are required.');
     if (plan.endDate && plan.endDate < plan.startDate) return setError('The end date cannot be before the start date.');
+    if (planHasRecordedWork && editedPlan && packingPlanOperationalFieldsChanged(editedPlan, plan)) {
+      return setError('Operational terms are locked because work is already recorded. Duplicate this schedule to create new terms without changing historical results.');
+    }
     notify();
     try {
       await agric.savePackingPlan({ activityName: plan.activityName.trim(), customerName: plan.customerName.trim(), destinationName: plan.destinationName.trim() || undefined, stationId: configured.id, stationName: configured.name, farmZone: plan.farmZone as FarmZone, produce: plan.produce, targetBoxes: plan.targetBoxes, startDate: plan.startDate, dueTime: plan.dueTime || undefined, recurrence: plan.recurrence, endDate: plan.recurrence === 'none' ? undefined : plan.endDate || undefined, shipmentRequired: plan.shipmentRequired, crewProfileId: plan.crewProfileId || undefined, transportProfileId: plan.transportProfileId || undefined, status: 'active', notes: plan.notes.trim() || undefined, createdBy: userId }, plan.id || undefined);

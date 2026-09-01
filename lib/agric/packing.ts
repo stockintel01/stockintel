@@ -22,7 +22,36 @@ export interface PackingDailyMetrics {
   efficiencyPercent: number | null;
 }
 
+interface PackingPlanOperationalFields {
+  stationId: string;
+  farmZone: string;
+  produce: string;
+  targetBoxes: number;
+  startDate: string;
+  recurrence: PackingFulfilmentPlan['recurrence'];
+  endDate?: string;
+  shipmentRequired: boolean;
+}
+
+export function packingPlanOperationalFieldsChanged(current: PackingPlanOperationalFields, next: PackingPlanOperationalFields): boolean {
+  return current.stationId !== next.stationId
+    || current.farmZone !== next.farmZone
+    || current.produce !== next.produce
+    || current.targetBoxes !== next.targetBoxes
+    || current.startDate !== next.startDate
+    || current.recurrence !== next.recurrence
+    || (current.endDate || '') !== (next.endDate || '')
+    || current.shipmentRequired !== next.shipmentRequired;
+}
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+export function packingCalendarDate(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 function parseDate(value: string): Date {
   if (!DATE_PATTERN.test(value)) throw new Error(`Invalid packing schedule date: ${value}`);

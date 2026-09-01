@@ -682,7 +682,9 @@ export function subscribeShipping(
   onData: (records: ShippingRecord[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
-  const q = query(col(orgId, 'agric_shipping'), orderBy('dispatchDate', 'desc'), limit(100));
+  // Keep the same history window as packing so stock is not overstated merely
+  // because older dispatches disappeared from the client-side balance.
+  const q = query(col(orgId, 'agric_shipping'), orderBy('dispatchDate', 'desc'), limit(1000));
   return onSnapshot(q,
     snap => onData(snap.docs.map(d => ({ ...d.data(), id: d.id } as ShippingRecord))),
     err => { console.error('[agric] shipping:', err); onErr?.(err); },

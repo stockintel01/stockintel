@@ -13,7 +13,7 @@ import { useAppStore } from '@/lib/store';
 import { getAgricultureProfile } from '@/lib/agric/config';
 import { getFarmWeek, getRecentFarmWeeks } from '@/lib/agric/week';
 import { convertItemQuantity } from '@/lib/agric/units';
-import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics } from '@/lib/agric/packing';
+import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics, packingCalendarDate } from '@/lib/agric/packing';
 
 type ReportPeriod = 'daily' | 'weekly' | 'monthly';
 type ReportType = 'stock' | 'usage' | 'packing' | 'equipment' | 'full';
@@ -71,7 +71,7 @@ export default function ReportsPage() {
   });
 
   // Packing summary
-  const packingDate = new Date().toISOString().slice(0, 10);
+  const packingDate = packingCalendarDate();
   const packingOccurrences = buildPackingFulfilmentOccurrences(packingPlans, livePacking, liveShipping, packingDate, packingDate, packingDate);
   const packingMetrics = calculatePackingDailyMetrics(packingDate, packingOccurrences, livePacking, liveShipping);
   const totalPacked = packingMetrics.acceptedPackedBoxes;
