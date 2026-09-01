@@ -250,10 +250,62 @@ export interface PackingRecord {
   totalWeight?: number;        // kg
   shift: 'morning' | 'afternoon' | 'evening';
   workers: string[];
+  packageType?: string;
+  packageSize?: string;
+  qualityGrade?: string;
+  lotNumber?: string;
+  palletId?: string;
+  storageLocation?: string;
+  inspectionStatus?: PackingInspectionStatus;
+  inspectedBoxes?: number;
+  acceptedBoxes?: number;
+  reworkBoxes?: number;
+  inspectorId?: string;
+  inspectorName?: string;
+  inspectedAt?: string;
+  inspectionNotes?: string;
+  lastQualityEventId?: string;
   fulfilmentPlanId?: string;
   fulfilmentOccurrenceDate?: string;
   customerName?: string;
   notes?: string;
+}
+
+export type PackingInspectionStatus = 'awaiting_inspection' | 'partially_accepted' | 'accepted' | 'rework' | 'rejected';
+export type PackingQualityEventType = 'inspection' | 'rework_resolution' | 'correction';
+
+export interface PackingQualityEvent {
+  id: string;
+  packingRecordId: string;
+  eventType: PackingQualityEventType;
+  stationId: string;
+  stationName: string;
+  produce: string;
+  packageType: string;
+  packageSize?: string;
+  qualityGrade: string;
+  lotNumber: string;
+  palletId?: string;
+  storageLocation?: string;
+  inspectedDelta: number;
+  acceptedDelta: number;
+  rejectedDelta: number;
+  reworkDelta: number;
+  reason?: string;
+  notes?: string;
+  inspectorId: string;
+  inspectorName: string;
+  inspectedAt: string;
+  createdAt?: unknown;
+}
+
+export interface PackingQualityConfig {
+  id: string;
+  packageTypes: string[];
+  packageSizes: string[];
+  qualityGrades: string[];
+  rejectionReasons: string[];
+  updatedAt?: unknown;
 }
 
 export type PackingRecurrence = 'none' | 'weekly' | 'biweekly' | 'monthly';
@@ -313,6 +365,14 @@ export interface PackingStation {
 }
 
 // ── Shipping / Dispatch Record ────────────────────────────────
+export interface ShippingAllocation {
+  packingRecordId: string;
+  lotNumber: string;
+  qualityGrade?: string;
+  palletId?: string;
+  boxes: number;
+}
+
 export interface ShippingRecord {
   id: string;
   dispatchDate: string;
@@ -330,6 +390,7 @@ export interface ShippingRecord {
   invoiceNumber?: string;
   fulfilmentPlanId?: string;
   fulfilmentOccurrenceDate?: string;
+  allocations?: ShippingAllocation[];
   notes?: string;
 }
 

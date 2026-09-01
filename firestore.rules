@@ -123,6 +123,28 @@ service cloud.firestore {
       );
     }
 
+    function validPackingQualityState(data) {
+      return !data.keys().hasAny(['inspectionStatus']) || (
+        data.keys().hasAll(['packedBoxes', 'inspectedBoxes', 'acceptedBoxes', 'rejectedBoxes', 'reworkBoxes'])
+        && data.inspectionStatus in ['awaiting_inspection', 'partially_accepted', 'accepted', 'rework', 'rejected']
+        && data.inspectedBoxes >= 0
+        && data.inspectedBoxes <= data.packedBoxes
+        && data.acceptedBoxes >= 0
+        && data.rejectedBoxes >= 0
+        && data.reworkBoxes >= 0
+        && data.acceptedBoxes + data.rejectedBoxes + data.reworkBoxes == data.inspectedBoxes
+      );
+    }
+
+    function packingQualityCountersUnchanged(before, after) {
+      return before.inspectionStatus == after.inspectionStatus
+        && before.inspectedBoxes == after.inspectedBoxes
+        && before.acceptedBoxes == after.acceptedBoxes
+        && before.rejectedBoxes == after.rejectedBoxes
+        && before.reworkBoxes == after.reworkBoxes
+        && before.get('lastQualityEventId', '') == after.get('lastQualityEventId', '');
+    }
+
     // ── Super Admin — full access to everything ──────────────────
     match /{document=**} {
       allow read, write: if isSuperAdmin();
@@ -384,8 +406,37 @@ service cloud.firestore {
       }
       match /agric_packing/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricPacking') || hasAccess('agricReports'));
-        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking');
-        allow update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking');
+        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && validPackingQualityState(request.resource.data);
+        allow update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking')
+          && validPackingQualityState(request.resource.data)
+          && (
+            (
+              !('inspectionStatus' in resource.data)
+              && !('inspectionStatus' in request.resource.data)
+            )
+            || (
+              'inspectionStatus' in resource.data
+              && (
+                packingQualityCountersUnchanged(resource.data, request.resource.data)
+                || (
+                  request.resource.data.get('lastQualityEventId', '') != resource.data.get('lastQualityEventId', '')
+                  && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing_inspections/$(request.resource.data.lastQualityEventId)).data.packingRecordId == id
+                )
+              )
+            )
+          )
+          && (
+            !('inspectionStatus' in resource.data)
+            || resource.data.inspectedBoxes == 0
+            || (
+              request.resource.data.packageType == resource.data.packageType
+              && request.resource.data.packageSize == resource.data.packageSize
+              && request.resource.data.qualityGrade == resource.data.qualityGrade
+              && request.resource.data.lotNumber == resource.data.lotNumber
+              && request.resource.data.palletId == resource.data.palletId
+              && request.resource.data.storageLocation == resource.data.storageLocation
+            )
+          );
         allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager();
       }
       match /agric_packing_stations/{id} {
@@ -403,6 +454,56 @@ service cloud.firestore {
       match /agric_packing_transport/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricPacking');
         allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager();
+      }
+      match /agric_packing_inspections/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricPacking') || hasAccess('agricReports'));
+        allow create: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking')
+          && request.resource.data.inspectorId == request.auth.uid
+          && request.resource.data.packingRecordId is string
+          && request.resource.data.eventType in ['inspection', 'rework_resolution', 'correction']
+          && request.resource.data.inspectedDelta is number
+          && request.resource.data.acceptedDelta is number
+          && request.resource.data.rejectedDelta is number
+          && request.resource.data.reworkDelta is number
+          && (
+            (
+              request.resource.data.eventType == 'inspection'
+              && request.resource.data.inspectedDelta > 0
+              && request.resource.data.acceptedDelta >= 0
+              && request.resource.data.rejectedDelta >= 0
+              && request.resource.data.reworkDelta >= 0
+              && request.resource.data.inspectedDelta == request.resource.data.acceptedDelta + request.resource.data.rejectedDelta + request.resource.data.reworkDelta
+            )
+            || (
+              request.resource.data.eventType == 'rework_resolution'
+              && request.resource.data.inspectedDelta == 0
+              && request.resource.data.acceptedDelta >= 0
+              && request.resource.data.rejectedDelta >= 0
+              && request.resource.data.reworkDelta == -(request.resource.data.acceptedDelta + request.resource.data.rejectedDelta)
+            )
+            || (request.resource.data.eventType == 'correction' && isOwnerOrManager())
+          )
+          && (
+            (request.resource.data.rejectedDelta <= 0 && request.resource.data.reworkDelta <= 0 && request.resource.data.eventType != 'correction')
+            || (request.resource.data.reason is string && request.resource.data.reason.size() >= 3)
+          )
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.lastQualityEventId == id
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.inspectorId == request.auth.uid
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.stationId == request.resource.data.stationId
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.produce == request.resource.data.produce
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.packageType == request.resource.data.packageType
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.qualityGrade == request.resource.data.qualityGrade
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.lotNumber == request.resource.data.lotNumber
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.inspectedBoxes == get(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.inspectedBoxes + request.resource.data.inspectedDelta
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.acceptedBoxes == get(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.acceptedBoxes + request.resource.data.acceptedDelta
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.rejectedBoxes == get(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.rejectedBoxes + request.resource.data.rejectedDelta
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.reworkBoxes == get(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.reworkBoxes + request.resource.data.reworkDelta;
+        allow update, delete: if false;
+      }
+      match /agric_packing_quality_config/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricPacking');
+        allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager();
+        allow delete: if false;
       }
       match /agric_shipping/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricPacking') || hasAccess('agricReports'));

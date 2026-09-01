@@ -87,7 +87,7 @@ export default function AgricOverviewPage() {
   const todayPacking = packingRecords.filter(r => r.date === today);
   const packingOccurrences = buildPackingFulfilmentOccurrences(packingPlans, packingRecords, shippingRecords, today, today, today);
   const packingMetrics = calculatePackingDailyMetrics(today, packingOccurrences, packingRecords, shippingRecords);
-  const totalPackedToday = packingMetrics.acceptedPackedBoxes;
+  const totalPackedToday = packingMetrics.packedBoxes;
   const totalTargetToday = packingMetrics.targetBoxes;
   const activePlans = plans.filter(p => p.status === 'active');
   const plansWithShortfall = plans.filter(p => p.items.some(i => !i.isStockSufficient));

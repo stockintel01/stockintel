@@ -16,6 +16,7 @@ import type {
   AgricInventoryItem, UsageLog, StockRequest, EquipmentCheckout,
   SprayPlan, PackingRecord, ShippingRecord, AgricAlert, StockAdjustment,
   RequestReturnCondition, PackingFulfilmentPlan, PackingCrewProfile, PackingTransportProfile,
+  PackingQualityConfig, PackingQualityEvent, PackingInspectionStatus,
 } from './types';
 import {
   subscribeInventory, subscribeUsageLogs, subscribeRequests,
@@ -31,8 +32,9 @@ import {
 } from './agric-service';
 import {
   deletePackingCrewProfile, deletePackingTransportProfile, savePackingCrewProfile,
-  savePackingFulfilmentPlan, savePackingTransportProfile, setPackingPlanStatus,
-  subscribePackingCrewProfiles, subscribePackingFulfilmentPlans, subscribePackingTransportProfiles,
+  savePackingFulfilmentPlan, savePackingQualityConfig, savePackingTransportProfile, setPackingPlanStatus,
+  recordPackingQualityEvent, subscribePackingCrewProfiles, subscribePackingFulfilmentPlans,
+  subscribePackingQualityConfig, subscribePackingQualityEvents, subscribePackingTransportProfiles,
 } from './packing-service';
 
 // ─────────────────────────────────────────────────────────────
@@ -50,6 +52,8 @@ export interface AgricState {
   packingPlans: PackingFulfilmentPlan[];
   packingCrews: PackingCrewProfile[];
   packingTransportProfiles: PackingTransportProfile[];
+  packingQualityEvents: PackingQualityEvent[];
+  packingQualityConfig: PackingQualityConfig | null;
   alerts: AgricAlert[];
   loading: boolean;
   error: string | null;
@@ -97,6 +101,8 @@ export interface AgricActions {
   deletePackingCrew: (id: string) => Promise<void>;
   savePackingTransport: (profile: Omit<PackingTransportProfile, 'id' | 'createdAt' | 'updatedAt'>, id?: string) => Promise<void>;
   deletePackingTransport: (id: string) => Promise<void>;
+  recordPackingQuality: (event: Omit<PackingQualityEvent, 'id' | 'createdAt'>, status: PackingInspectionStatus) => Promise<void>;
+  savePackingQualitySettings: (config: Omit<PackingQualityConfig, 'id' | 'updatedAt'>) => Promise<void>;
   // Alerts
   readAlert: (alertId: string) => Promise<void>;
 }
@@ -129,6 +135,8 @@ export function useAgric(): AgricState & AgricActions {
     packingPlans: [],
     packingCrews: [],
     packingTransportProfiles: [],
+    packingQualityEvents: [],
+    packingQualityConfig: null,
     alerts: [],
     loading: isLive,
     error: null,
@@ -153,7 +161,7 @@ export function useAgric(): AgricState & AgricActions {
         plans: [],
         packingRecords: [],
         shippingRecords: [],
-        packingPlans: [], packingCrews: [], packingTransportProfiles: [],
+        packingPlans: [], packingCrews: [], packingTransportProfiles: [], packingQualityEvents: [], packingQualityConfig: null,
         alerts: [],
         loading: false, isLive: false, error: 'An authenticated organization is required.',
       }));
@@ -163,11 +171,11 @@ export function useAgric(): AgricState & AgricActions {
     setState(s => ({
       ...s,
       inventory: [], usageLogs: [], requests: [], checkouts: [], plans: [],
-      packingRecords: [], shippingRecords: [], packingPlans: [], packingCrews: [], packingTransportProfiles: [], alerts: [],
+      packingRecords: [], shippingRecords: [], packingPlans: [], packingCrews: [], packingTransportProfiles: [], packingQualityEvents: [], packingQualityConfig: null, alerts: [],
       loading: true, error: null, isLive: true,
     }));
     let loaded = 0;
-    const totalSubscriptions = Number(canInventory) + Number(canUsage) + Number(canRequests) + Number(canEquipment) + Number(canPlans) + Number(canPacking) * 5 + 1;
+    const totalSubscriptions = Number(canInventory) + Number(canUsage) + Number(canRequests) + Number(canEquipment) + Number(canPlans) + Number(canPacking) * 7 + 1;
     const onLoad = () => { loaded++; if (loaded >= totalSubscriptions) setState(s => ({ ...s, loading: false })); };
     const onErr = (e: Error) => setState(s => ({ ...s, error: e.message, loading: false }));
 
@@ -183,6 +191,8 @@ export function useAgric(): AgricState & AgricActions {
       subscriptions.push(subscribePackingFulfilmentPlans(orgId, plans => { setState(s => ({ ...s, packingPlans: plans })); onLoad(); }, onErr));
       subscriptions.push(subscribePackingCrewProfiles(orgId, crews => { setState(s => ({ ...s, packingCrews: crews })); onLoad(); }, onErr));
       subscriptions.push(subscribePackingTransportProfiles(orgId, profiles => { setState(s => ({ ...s, packingTransportProfiles: profiles })); onLoad(); }, onErr));
+      subscriptions.push(subscribePackingQualityEvents(orgId, events => { setState(s => ({ ...s, packingQualityEvents: events })); onLoad(); }, onErr));
+      subscriptions.push(subscribePackingQualityConfig(orgId, config => { setState(s => ({ ...s, packingQualityConfig: config })); onLoad(); }, onErr));
     }
     subscriptions.push(subscribeAlerts(orgId, al => { setState(s => ({ ...s, alerts: al })); onLoad(); }, onErr));
     unsubsRef.current = subscriptions;
@@ -343,6 +353,16 @@ export function useAgric(): AgricState & AgricActions {
     deletePackingTransport: useCallback(async (id) => {
       const ctx = requireLiveContext();
       await deletePackingTransportProfile(ctx.orgId, id);
+    }, [requireLiveContext]),
+
+    recordPackingQuality: useCallback(async (event, status) => {
+      const ctx = requireLiveContext();
+      await recordPackingQualityEvent(ctx.orgId, event, status);
+    }, [requireLiveContext]),
+
+    savePackingQualitySettings: useCallback(async (config) => {
+      const ctx = requireLiveContext();
+      await savePackingQualityConfig(ctx.orgId, config);
     }, [requireLiveContext]),
 
     // Alerts

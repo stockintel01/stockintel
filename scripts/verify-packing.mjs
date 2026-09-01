@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics, packingCalendarDate, packingPlanOccurrenceDates, packingPlanOperationalFieldsChanged } from '../lib/agric/packing.ts';
+import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics, packingCalendarDate, packingInspectionStatus, packingPlanOccurrenceDates, packingPlanOperationalFieldsChanged, planPackingShipmentAllocations } from '../lib/agric/packing.ts';
 
 assert.equal(packingCalendarDate(new Date(2026, 1, 3, 23, 45)), '2026-02-03');
 
@@ -12,6 +12,11 @@ const plan = {
 assert.deepEqual(packingPlanOccurrenceDates(plan, '2026-01-01', '2026-04-30'), ['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30']);
 assert.equal(packingPlanOperationalFieldsChanged(plan, { ...plan, customerName: 'Renamed customer' }), false);
 assert.equal(packingPlanOperationalFieldsChanged(plan, { ...plan, targetBoxes: 120 }), true);
+assert.equal(packingInspectionStatus({ packedBoxes: 100, inspectedBoxes: 0, acceptedBoxes: 0, rejectedBoxes: 0, reworkBoxes: 0 }), 'awaiting_inspection');
+assert.equal(packingInspectionStatus({ packedBoxes: 100, inspectedBoxes: 60, acceptedBoxes: 50, rejectedBoxes: 5, reworkBoxes: 5 }), 'partially_accepted');
+assert.equal(packingInspectionStatus({ packedBoxes: 100, inspectedBoxes: 100, acceptedBoxes: 90, rejectedBoxes: 5, reworkBoxes: 5 }), 'rework');
+assert.equal(packingInspectionStatus({ packedBoxes: 100, inspectedBoxes: 100, acceptedBoxes: 95, rejectedBoxes: 5, reworkBoxes: 0 }), 'partially_accepted');
+assert.equal(packingInspectionStatus({ packedBoxes: 100, inspectedBoxes: 100, acceptedBoxes: 100, rejectedBoxes: 0, reworkBoxes: 0 }), 'accepted');
 
 const weekly = { ...plan, recurrence: 'weekly', startDate: '2026-02-01', endDate: '2026-02-20' };
 assert.deepEqual(packingPlanOccurrenceDates(weekly, '2026-02-01', '2026-02-28'), ['2026-02-01', '2026-02-08', '2026-02-15']);
@@ -33,9 +38,27 @@ const todayPlan = { ...plan, id: 'today', startDate: '2026-02-01', recurrence: '
 const todayOccurrences = buildPackingFulfilmentOccurrences([todayPlan], packing, shipping, '2026-02-01', '2026-02-01', '2026-02-01');
 const metrics = calculatePackingDailyMetrics('2026-02-01', todayOccurrences, packing, shipping);
 assert.equal(metrics.acceptedPackedBoxes, 100);
+assert.equal(metrics.packedBoxes, 105);
 assert.equal(metrics.rejectedBoxes, 5);
 assert.equal(metrics.targetBoxes, 100);
 assert.equal(metrics.shippedBoxes, 60);
-assert.equal(metrics.efficiencyPercent, 100);
+assert.equal(metrics.efficiencyPercent, 105);
+
+const awaitingPacking = [{ ...packing[0], id: 'awaiting', fulfilmentPlanId: 'today', fulfilmentOccurrenceDate: '2026-02-01', packedBoxes: 100, rejectedBoxes: 0, inspectedBoxes: 0, acceptedBoxes: 0, reworkBoxes: 0, inspectionStatus: 'awaiting_inspection' }];
+const awaitingOccurrence = buildPackingFulfilmentOccurrences([todayPlan], awaitingPacking, [], '2026-02-01', '2026-02-01', '2026-02-01')[0];
+assert.equal(awaitingOccurrence.awaitingInspectionBoxes, 100);
+assert.equal(awaitingOccurrence.remainingToPack, 0);
+assert.equal(awaitingOccurrence.status, 'in_progress');
+
+const acceptedLots = [
+  { ...packing[0], id: 'lot-a', date: '2026-02-01', fulfilmentPlanId: undefined, inspectionStatus: 'accepted', inspectedBoxes: 40, acceptedBoxes: 40, rejectedBoxes: 0, reworkBoxes: 0, lotNumber: 'LOT-A', qualityGrade: 'Grade A' },
+  { ...packing[0], id: 'lot-b', date: '2026-02-02', fulfilmentPlanId: undefined, inspectionStatus: 'accepted', inspectedBoxes: 50, acceptedBoxes: 50, rejectedBoxes: 0, reworkBoxes: 0, lotNumber: 'LOT-B', qualityGrade: 'Grade B' },
+];
+const priorLotShipping = [{ ...shipping[0], id: 'prior-lot-shipping', fulfilmentPlanId: undefined, allocations: [{ packingRecordId: 'lot-a', lotNumber: 'LOT-A', qualityGrade: 'Grade A', boxes: 15 }] }];
+const allocationPlan = planPackingShipmentAllocations(acceptedLots, priorLotShipping, 'station-1', 'Banana', 60);
+assert.deepEqual(allocationPlan.allocations.map(item => [item.lotNumber, item.boxes]), [['LOT-A', 25], ['LOT-B', 35]]);
+assert.equal(allocationPlan.untraceableBoxes, 0);
+const legacyAllocationPlan = planPackingShipmentAllocations(acceptedLots, priorLotShipping, 'station-1', 'Banana', 100);
+assert.equal(legacyAllocationPlan.untraceableBoxes, 25);
 
 console.log('Packing recurrence, fulfilment rollup, and daily KPI checks passed.');

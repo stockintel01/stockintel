@@ -74,7 +74,7 @@ export default function ReportsPage() {
   const packingDate = packingCalendarDate();
   const packingOccurrences = buildPackingFulfilmentOccurrences(packingPlans, livePacking, liveShipping, packingDate, packingDate, packingDate);
   const packingMetrics = calculatePackingDailyMetrics(packingDate, packingOccurrences, livePacking, liveShipping);
-  const totalPacked = packingMetrics.acceptedPackedBoxes;
+  const totalPacked = packingMetrics.packedBoxes;
   const totalTarget = packingMetrics.targetBoxes;
   const totalRejected = packingMetrics.rejectedBoxes;
   const totalShipped = packingMetrics.shippedBoxes;

@@ -1,4 +1,4 @@
-import type { PackingFulfilmentPlan, PackingRecord, ShippingRecord } from './types';
+import type { PackingFulfilmentPlan, PackingInspectionStatus, PackingRecord, ShippingAllocation, ShippingRecord } from './types';
 
 export type PackingOccurrenceStatus = 'pending' | 'in_progress' | 'ready_to_ship' | 'overdue' | 'completed';
 
@@ -8,6 +8,8 @@ export interface PackingFulfilmentOccurrence {
   occurrenceDate: string;
   acceptedPackedBoxes: number;
   rejectedBoxes: number;
+  awaitingInspectionBoxes: number;
+  reworkBoxes: number;
   shippedBoxes: number;
   remainingToPack: number;
   remainingToShip: number;
@@ -15,6 +17,7 @@ export interface PackingFulfilmentOccurrence {
 }
 
 export interface PackingDailyMetrics {
+  packedBoxes: number;
   acceptedPackedBoxes: number;
   rejectedBoxes: number;
   targetBoxes: number;
@@ -45,6 +48,69 @@ export function packingPlanOperationalFieldsChanged(current: PackingPlanOperatio
 }
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+export function acceptedPackingBoxes(record: PackingRecord): number {
+  return record.inspectionStatus
+    ? Math.max(0, record.acceptedBoxes ?? 0)
+    : Math.max(0, record.packedBoxes - record.rejectedBoxes);
+}
+
+export function packingInspectionStatus(record: Pick<PackingRecord, 'packedBoxes' | 'inspectedBoxes' | 'acceptedBoxes' | 'rejectedBoxes' | 'reworkBoxes'>): PackingInspectionStatus {
+  const inspected = Math.max(0, record.inspectedBoxes ?? 0);
+  const accepted = Math.max(0, record.acceptedBoxes ?? 0);
+  const rejected = Math.max(0, record.rejectedBoxes ?? 0);
+  const rework = Math.max(0, record.reworkBoxes ?? 0);
+  if (inspected === 0) return 'awaiting_inspection';
+  if (inspected < record.packedBoxes) return 'partially_accepted';
+  if (rework > 0) return 'rework';
+  if (accepted === record.packedBoxes) return 'accepted';
+  if (accepted > 0) return 'partially_accepted';
+  if (rejected >= record.packedBoxes) return 'rejected';
+  return 'partially_accepted';
+}
+
+export interface PackingShipmentAllocationPlan {
+  allocations: ShippingAllocation[];
+  untraceableBoxes: number;
+}
+
+export function planPackingShipmentAllocations(
+  packingRecords: PackingRecord[],
+  shippingRecords: ShippingRecord[],
+  stationId: string,
+  produce: string,
+  requestedBoxes: number,
+): PackingShipmentAllocationPlan {
+  const previouslyAllocated = new Map<string, number>();
+  shippingRecords.forEach(record => record.allocations?.forEach(allocation => {
+    previouslyAllocated.set(
+      allocation.packingRecordId,
+      (previouslyAllocated.get(allocation.packingRecordId) ?? 0) + Math.max(0, allocation.boxes),
+    );
+  }));
+
+  let remaining = Math.max(0, requestedBoxes);
+  const allocations: ShippingAllocation[] = [];
+  packingRecords
+    .filter(record => record.inspectionStatus && record.stationId === stationId && record.produce === produce && record.lotNumber)
+    .sort((left, right) => left.date.localeCompare(right.date) || String(left.inspectedAt ?? '').localeCompare(String(right.inspectedAt ?? '')) || left.id.localeCompare(right.id))
+    .forEach(record => {
+      if (remaining <= 0) return;
+      const available = Math.max(0, acceptedPackingBoxes(record) - (previouslyAllocated.get(record.id) ?? 0));
+      const boxes = Math.min(available, remaining);
+      if (boxes <= 0) return;
+      allocations.push({
+        packingRecordId: record.id,
+        lotNumber: record.lotNumber!,
+        ...(record.qualityGrade ? { qualityGrade: record.qualityGrade } : {}),
+        ...(record.palletId ? { palletId: record.palletId } : {}),
+        boxes,
+      });
+      remaining -= boxes;
+    });
+
+  return { allocations, untraceableBoxes: remaining };
+}
 
 export function packingCalendarDate(date = new Date()): string {
   const year = date.getFullYear();
@@ -103,17 +169,20 @@ export function buildPackingFulfilmentOccurrences(
   return plans.flatMap(plan => packingPlanOccurrenceDates(plan, fromDate, toDate).map(occurrenceDate => {
     const linkedPacking = packingRecords.filter(record => record.fulfilmentPlanId === plan.id && record.fulfilmentOccurrenceDate === occurrenceDate);
     const linkedShipping = shippingRecords.filter(record => record.fulfilmentPlanId === plan.id && record.fulfilmentOccurrenceDate === occurrenceDate);
-    const acceptedPackedBoxes = linkedPacking.reduce((total, record) => total + Math.max(0, record.packedBoxes - record.rejectedBoxes), 0);
+    const acceptedPackedBoxes = linkedPacking.reduce((total, record) => total + acceptedPackingBoxes(record), 0);
     const rejectedBoxes = linkedPacking.reduce((total, record) => total + Math.max(0, record.rejectedBoxes), 0);
+    const awaitingInspectionBoxes = linkedPacking.reduce((total, record) => total + (record.inspectionStatus ? Math.max(0, record.packedBoxes - (record.inspectedBoxes ?? 0)) : 0), 0);
+    const reworkBoxes = linkedPacking.reduce((total, record) => total + Math.max(0, record.reworkBoxes ?? 0), 0);
     const shippedBoxes = linkedShipping.reduce((total, record) => total + Math.max(0, record.boxesShipped), 0);
-    const remainingToPack = Math.max(0, plan.targetBoxes - acceptedPackedBoxes);
+    const remainingToAccept = Math.max(0, plan.targetBoxes - acceptedPackedBoxes);
+    const remainingToPack = Math.max(0, plan.targetBoxes - acceptedPackedBoxes - awaitingInspectionBoxes - reworkBoxes);
     const remainingToShip = plan.shipmentRequired ? Math.max(0, plan.targetBoxes - shippedBoxes) : 0;
-    const complete = remainingToPack === 0 && (!plan.shipmentRequired || remainingToShip === 0);
+    const complete = remainingToAccept === 0 && (!plan.shipmentRequired || remainingToShip === 0);
     const status: PackingOccurrenceStatus = complete
       ? 'completed'
-      : plan.shipmentRequired && remainingToPack === 0
+      : plan.shipmentRequired && remainingToAccept === 0
         ? 'ready_to_ship'
-        : acceptedPackedBoxes > 0 || shippedBoxes > 0
+        : acceptedPackedBoxes > 0 || awaitingInspectionBoxes > 0 || reworkBoxes > 0 || shippedBoxes > 0
           ? 'in_progress'
           : occurrenceDate < today ? 'overdue' : 'pending';
     return {
@@ -122,6 +191,8 @@ export function buildPackingFulfilmentOccurrences(
       occurrenceDate,
       acceptedPackedBoxes,
       rejectedBoxes,
+      awaitingInspectionBoxes,
+      reworkBoxes,
       shippedBoxes,
       remainingToPack,
       remainingToShip,
@@ -137,17 +208,19 @@ export function calculatePackingDailyMetrics(
   shippingRecords: ShippingRecord[],
 ): PackingDailyMetrics {
   const dailyPacking = packingRecords.filter(record => record.date === date);
-  const acceptedPackedBoxes = dailyPacking.reduce((total, record) => total + Math.max(0, record.packedBoxes - record.rejectedBoxes), 0);
+  const packedBoxes = dailyPacking.reduce((total, record) => total + Math.max(0, record.packedBoxes), 0);
+  const acceptedPackedBoxes = dailyPacking.reduce((total, record) => total + acceptedPackingBoxes(record), 0);
   const rejectedBoxes = dailyPacking.reduce((total, record) => total + Math.max(0, record.rejectedBoxes), 0);
   const plannedTarget = occurrences.filter(occurrence => occurrence.occurrenceDate === date).reduce((total, occurrence) => total + occurrence.plan.targetBoxes, 0);
   const manualTarget = dailyPacking.filter(record => !record.fulfilmentPlanId).reduce((total, record) => total + Math.max(0, record.targetBoxes), 0);
   const targetBoxes = plannedTarget + manualTarget;
   const shippedBoxes = shippingRecords.filter(record => record.dispatchDate === date).reduce((total, record) => total + Math.max(0, record.boxesShipped), 0);
   return {
+    packedBoxes,
     acceptedPackedBoxes,
     rejectedBoxes,
     targetBoxes,
     shippedBoxes,
-    efficiencyPercent: targetBoxes > 0 ? Math.round(acceptedPackedBoxes / targetBoxes * 100) : null,
+    efficiencyPercent: targetBoxes > 0 ? Math.round(packedBoxes / targetBoxes * 100) : null,
   };
 }
