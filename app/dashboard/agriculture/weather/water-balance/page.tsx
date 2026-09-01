@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, CalendarClock, Download, Droplets, FileSpreadsheet, Pencil, Plus, Save, Upload, Wifi, CloudOff } from 'lucide-react';
+import { CalendarClock, Download, Droplets, FileSpreadsheet, Pencil, Plus, Save, Upload, Wifi, CloudOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +12,7 @@ import { getAgricultureProfile } from '@/lib/agric/config';
 import { addWaterRecord, addWaterRecords, subscribeWaterRecords, updateWaterRecord } from '@/lib/agric/water-service';
 import { calculateWaterBalance, createWaterImportTemplateCsv, parseWaterImport, projectNextIrrigation, type WaterForecastDay, type WaterRecord, type WaterRecordInput } from '@/lib/agric/water-balance';
 import { useAppStore } from '@/lib/store';
+import { WeatherWorkspaceNav } from '@/components/agriculture/WeatherWorkspaceNav';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const emptyForm = (sectorName = '', plotName = '', cropName = ''): WaterRecordInput => ({ date: today(), sectorName, plotName, cropName, rainfallMm: 0, et0Mm: 0, cropCoefficient: 1, irrigationMm: 0, effectiveRainfallPercent: 80, irrigationEfficiencyPercent: 85, triggerDeficitMm: 25, notes: '' });
@@ -106,7 +106,8 @@ export default function WaterBalancePage() {
   }
 
   return <div className="space-y-6">
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><Link href="/dashboard/agriculture/weather" className="mb-2 inline-flex items-center text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="mr-1 h-4 w-4" />Weather forecast</Link><h1 className="text-2xl font-bold sm:text-3xl">Rainfall & Irrigation</h1><p className="max-w-3xl text-sm text-muted-foreground">Record measured rainfall and crop water demand, carry deficits forward, and identify when irrigation is likely to be needed.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={downloadTemplate}><Download className="mr-2 h-4 w-4" />Import template</Button>{canImport && <label className="inline-flex h-10 cursor-pointer items-center rounded-md border bg-background px-4 text-sm font-medium hover:bg-accent"><Upload className="mr-2 h-4 w-4" />Import CSV/XLSX<input type="file" accept=".csv,.xlsx" className="sr-only" onChange={event => { const file = event.target.files?.[0]; if (file) void importRecords(file); event.target.value = ''; }} /></label>}{canRecord && <Button onClick={() => { setEditingId(''); setForm(emptyForm(profile.location?.name ?? 'Main Farm', plots[0] ?? '', profile.cropTypes[0] ?? '')); setShowForm(true); }}><Plus className="mr-2 h-4 w-4" />Daily record</Button>}</div></div>
+    <WeatherWorkspaceNav active="water" />
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h1 className="text-2xl font-bold sm:text-3xl">Rainfall & Irrigation</h1><p className="max-w-3xl text-sm text-muted-foreground">Record measured rainfall and crop water demand, carry deficits forward, and identify when irrigation is likely to be needed.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={downloadTemplate}><Download className="mr-2 h-4 w-4" />Import template</Button>{canImport && <label className="inline-flex h-10 cursor-pointer items-center rounded-md border bg-background px-4 text-sm font-medium hover:bg-accent"><Upload className="mr-2 h-4 w-4" />Import CSV/XLSX<input type="file" accept=".csv,.xlsx" className="sr-only" onChange={event => { const file = event.target.files?.[0]; if (file) void importRecords(file); event.target.value = ''; }} /></label>}{canRecord && <Button onClick={() => { setEditingId(''); setForm(emptyForm(profile.location?.name ?? 'Main Farm', plots[0] ?? '', profile.cropTypes[0] ?? '')); setShowForm(true); }}><Plus className="mr-2 h-4 w-4" />Daily record</Button>}</div></div>
     <div className="flex gap-2 text-xs"><Badge variant="outline">{online ? <Wifi className="mr-1 h-3 w-3 text-green-600" /> : <CloudOff className="mr-1 h-3 w-3 text-amber-600" />}{online ? 'Online' : 'Offline'}</Badge>{pending && <Badge variant="outline">Waiting to sync</Badge>}</div>
     {message && <div className="rounded-lg border bg-muted/40 p-3 text-sm">{message}</div>}
 

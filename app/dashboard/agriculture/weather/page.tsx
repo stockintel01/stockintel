@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
 import {
   Cloud, CloudRain, CloudSnow, Sun, Wind, Droplets,
   Thermometer, Eye, Gauge, RefreshCw, MapPin, AlertTriangle,
@@ -14,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/lib/store';
 import { getAgricultureProfile } from '@/lib/agric/config';
+import { WeatherWorkspaceNav } from '@/components/agriculture/WeatherWorkspaceNav';
 
 interface WeatherLocation { id: string; name: string; lat: number; lon: number; timezone: string }
 interface CurrentWeather { temperature_2m: number; relative_humidity_2m: number; apparent_temperature: number; precipitation?: number; weather_code: number; wind_speed_10m: number; wind_direction_10m: number; surface_pressure?: number; visibility?: number; uv_index?: number; is_day: number }
@@ -290,6 +290,7 @@ export default function WeatherPage() {
 
   return (
     <div className="space-y-6">
+      <WeatherWorkspaceNav active="forecast" />
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -299,7 +300,6 @@ export default function WeatherPage() {
           <p className="text-muted-foreground text-sm">Real-time conditions with farm-specific advisories — powered by Open-Meteo</p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/dashboard/agriculture/weather/water-balance" className="inline-flex h-9 items-center justify-center rounded-md border bg-background px-3 text-sm font-medium shadow-sm hover:bg-accent"><Droplets className="mr-1 h-4 w-4" />Rainfall & irrigation</Link>
           {lastUpdated && (
             <p className="text-xs text-muted-foreground">
               <Clock className="w-3 h-3 inline mr-1" />Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

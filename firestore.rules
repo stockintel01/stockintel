@@ -392,6 +392,18 @@ service cloud.firestore {
         allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricPacking');
         allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager();
       }
+      match /agric_packing_plans/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricPacking') || hasAccess('agricReports'));
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager();
+      }
+      match /agric_packing_crews/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricPacking');
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager();
+      }
+      match /agric_packing_transport/{id} {
+        allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricPacking');
+        allow create, update, delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager();
+      }
       match /agric_shipping/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && (hasAccess('agricPacking') || hasAccess('agricReports'));
         allow create, update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking');

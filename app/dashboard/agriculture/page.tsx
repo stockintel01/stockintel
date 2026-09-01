@@ -15,6 +15,7 @@ import { useAppStore } from '@/lib/store';
 import { getAgricultureProfile, type FarmLocation } from '@/lib/agric/config';
 import { getRecentFarmWeeks } from '@/lib/agric/week';
 import { CriticalAlertPanel } from '@/components/agriculture/CriticalAlertPanel';
+import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics } from '@/lib/agric/packing';
 
 interface CurrentWeather {
   temperature_2m: number;
@@ -64,7 +65,7 @@ function WeatherBanner({ location }: { location?: FarmLocation }) {
 
 export default function AgricOverviewPage() {
   const {
-    inventory, usageLogs, alerts, requests, checkouts, packingRecords, plans,
+    inventory, usageLogs, alerts, requests, checkouts, packingRecords, shippingRecords, packingPlans, plans,
     loading, isLive, readAlert,
   } = useAgric();
   const { organization } = useAppStore();
@@ -84,8 +85,10 @@ export default function AgricOverviewPage() {
   const pendingRequests = requests.filter(r => r.status === 'pending');
   const today = new Date().toISOString().slice(0, 10);
   const todayPacking = packingRecords.filter(r => r.date === today);
-  const totalPackedToday = todayPacking.reduce((s, r) => s + r.packedBoxes, 0);
-  const totalTargetToday = todayPacking.reduce((s, r) => s + r.targetBoxes, 0);
+  const packingOccurrences = buildPackingFulfilmentOccurrences(packingPlans, packingRecords, shippingRecords, today, today, today);
+  const packingMetrics = calculatePackingDailyMetrics(today, packingOccurrences, packingRecords, shippingRecords);
+  const totalPackedToday = packingMetrics.acceptedPackedBoxes;
+  const totalTargetToday = packingMetrics.targetBoxes;
   const activePlans = plans.filter(p => p.status === 'active');
   const plansWithShortfall = plans.filter(p => p.items.some(i => !i.isStockSufficient));
 
@@ -150,7 +153,7 @@ export default function AgricOverviewPage() {
           { label: 'Total Items', value: inventory.filter(i => i.isActive).length, sub: 'Active SKUs', color: 'border-l-green-500 text-green-700' },
           { label: 'Low / Critical', value: criticalItems.length + lowItems.length, sub: `${criticalItems.length} critical, ${lowItems.length} low`, color: 'border-l-red-500 text-red-600' },
           { label: 'Pending Requests', value: pendingRequests.length, sub: 'Awaiting dispatch', color: 'border-l-amber-500 text-amber-600' },
-          { label: 'Packed Today', value: totalPackedToday, sub: `of ${totalTargetToday} target boxes`, color: 'border-l-blue-500 text-blue-600' },
+          { label: 'Packed Today', value: totalPackedToday, sub: totalTargetToday ? `of ${totalTargetToday} scheduled boxes` : 'No target scheduled', color: 'border-l-blue-500 text-blue-600' },
         ].map(s => (
           <Card key={s.label} className={`border-l-4 ${s.color}`}>
             <CardContent className="pt-4">

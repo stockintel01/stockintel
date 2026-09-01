@@ -250,7 +250,55 @@ export interface PackingRecord {
   totalWeight?: number;        // kg
   shift: 'morning' | 'afternoon' | 'evening';
   workers: string[];
+  fulfilmentPlanId?: string;
+  fulfilmentOccurrenceDate?: string;
+  customerName?: string;
   notes?: string;
+}
+
+export type PackingRecurrence = 'none' | 'weekly' | 'biweekly' | 'monthly';
+
+export interface PackingFulfilmentPlan {
+  id: string;
+  activityName: string;
+  customerName: string;
+  destinationName?: string;
+  stationId: string;
+  stationName: string;
+  farmZone: FarmZone;
+  produce: string;
+  targetBoxes: number;
+  startDate: string;
+  dueTime?: string;
+  recurrence: PackingRecurrence;
+  endDate?: string;
+  shipmentRequired: boolean;
+  crewProfileId?: string;
+  transportProfileId?: string;
+  status: 'active' | 'paused' | 'archived';
+  notes?: string;
+  createdBy: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface PackingCrewProfile {
+  id: string;
+  name: string;
+  workers: string[];
+  isActive: boolean;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface PackingTransportProfile {
+  id: string;
+  label: string;
+  vehicleId: string;
+  driverName: string;
+  isActive: boolean;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 }
 
 export interface PackingStation {
@@ -280,6 +328,8 @@ export interface ShippingRecord {
   vehicleId?: string;
   driverName?: string;
   invoiceNumber?: string;
+  fulfilmentPlanId?: string;
+  fulfilmentOccurrenceDate?: string;
   notes?: string;
 }
 

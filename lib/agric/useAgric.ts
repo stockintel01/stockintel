@@ -15,7 +15,7 @@ import { userHasAccess } from '@/lib/access-permissions';
 import type {
   AgricInventoryItem, UsageLog, StockRequest, EquipmentCheckout,
   SprayPlan, PackingRecord, ShippingRecord, AgricAlert, StockAdjustment,
-  RequestReturnCondition,
+  RequestReturnCondition, PackingFulfilmentPlan, PackingCrewProfile, PackingTransportProfile,
 } from './types';
 import {
   subscribeInventory, subscribeUsageLogs, subscribeRequests,
@@ -29,6 +29,11 @@ import {
   addPackingRecord, addShippingRecord, markAlertRead,
   checkAndFireLowStockAlerts,
 } from './agric-service';
+import {
+  deletePackingCrewProfile, deletePackingTransportProfile, savePackingCrewProfile,
+  savePackingFulfilmentPlan, savePackingTransportProfile, setPackingPlanStatus,
+  subscribePackingCrewProfiles, subscribePackingFulfilmentPlans, subscribePackingTransportProfiles,
+} from './packing-service';
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -42,6 +47,9 @@ export interface AgricState {
   plans: SprayPlan[];
   packingRecords: PackingRecord[];
   shippingRecords: ShippingRecord[];
+  packingPlans: PackingFulfilmentPlan[];
+  packingCrews: PackingCrewProfile[];
+  packingTransportProfiles: PackingTransportProfile[];
   alerts: AgricAlert[];
   loading: boolean;
   error: string | null;
@@ -83,6 +91,12 @@ export interface AgricActions {
   // Packing
   addPacking: (record: Omit<PackingRecord, 'id'>) => Promise<void>;
   addShipping: (record: Omit<ShippingRecord, 'id'>) => Promise<void>;
+  savePackingPlan: (plan: Omit<PackingFulfilmentPlan, 'id' | 'createdAt' | 'updatedAt'>, id?: string) => Promise<void>;
+  setPackingPlanStatus: (id: string, status: PackingFulfilmentPlan['status']) => Promise<void>;
+  savePackingCrew: (profile: Omit<PackingCrewProfile, 'id' | 'createdAt' | 'updatedAt'>, id?: string) => Promise<void>;
+  deletePackingCrew: (id: string) => Promise<void>;
+  savePackingTransport: (profile: Omit<PackingTransportProfile, 'id' | 'createdAt' | 'updatedAt'>, id?: string) => Promise<void>;
+  deletePackingTransport: (id: string) => Promise<void>;
   // Alerts
   readAlert: (alertId: string) => Promise<void>;
 }
@@ -112,6 +126,9 @@ export function useAgric(): AgricState & AgricActions {
     plans: [],
     packingRecords: [],
     shippingRecords: [],
+    packingPlans: [],
+    packingCrews: [],
+    packingTransportProfiles: [],
     alerts: [],
     loading: isLive,
     error: null,
@@ -136,6 +153,7 @@ export function useAgric(): AgricState & AgricActions {
         plans: [],
         packingRecords: [],
         shippingRecords: [],
+        packingPlans: [], packingCrews: [], packingTransportProfiles: [],
         alerts: [],
         loading: false, isLive: false, error: 'An authenticated organization is required.',
       }));
@@ -145,11 +163,11 @@ export function useAgric(): AgricState & AgricActions {
     setState(s => ({
       ...s,
       inventory: [], usageLogs: [], requests: [], checkouts: [], plans: [],
-      packingRecords: [], shippingRecords: [], alerts: [],
+      packingRecords: [], shippingRecords: [], packingPlans: [], packingCrews: [], packingTransportProfiles: [], alerts: [],
       loading: true, error: null, isLive: true,
     }));
     let loaded = 0;
-    const totalSubscriptions = Number(canInventory) + Number(canUsage) + Number(canRequests) + Number(canEquipment) + Number(canPlans) + Number(canPacking) * 2 + 1;
+    const totalSubscriptions = Number(canInventory) + Number(canUsage) + Number(canRequests) + Number(canEquipment) + Number(canPlans) + Number(canPacking) * 5 + 1;
     const onLoad = () => { loaded++; if (loaded >= totalSubscriptions) setState(s => ({ ...s, loading: false })); };
     const onErr = (e: Error) => setState(s => ({ ...s, error: e.message, loading: false }));
 
@@ -162,6 +180,9 @@ export function useAgric(): AgricState & AgricActions {
     if (canPacking) {
       subscriptions.push(subscribePackingToday(orgId, pr => { setState(s => ({ ...s, packingRecords: pr })); onLoad(); }, onErr));
       subscriptions.push(subscribeShipping(orgId, sr => { setState(s => ({ ...s, shippingRecords: sr })); onLoad(); }, onErr));
+      subscriptions.push(subscribePackingFulfilmentPlans(orgId, plans => { setState(s => ({ ...s, packingPlans: plans })); onLoad(); }, onErr));
+      subscriptions.push(subscribePackingCrewProfiles(orgId, crews => { setState(s => ({ ...s, packingCrews: crews })); onLoad(); }, onErr));
+      subscriptions.push(subscribePackingTransportProfiles(orgId, profiles => { setState(s => ({ ...s, packingTransportProfiles: profiles })); onLoad(); }, onErr));
     }
     subscriptions.push(subscribeAlerts(orgId, al => { setState(s => ({ ...s, alerts: al })); onLoad(); }, onErr));
     unsubsRef.current = subscriptions;
@@ -292,6 +313,36 @@ export function useAgric(): AgricState & AgricActions {
     addShipping: useCallback(async (record) => {
       const ctx = requireLiveContext();
       await addShippingRecord(ctx.orgId, record);
+    }, [requireLiveContext]),
+
+    savePackingPlan: useCallback(async (plan, id) => {
+      const ctx = requireLiveContext();
+      await savePackingFulfilmentPlan(ctx.orgId, plan, id);
+    }, [requireLiveContext]),
+
+    setPackingPlanStatus: useCallback(async (id, status) => {
+      const ctx = requireLiveContext();
+      await setPackingPlanStatus(ctx.orgId, id, status);
+    }, [requireLiveContext]),
+
+    savePackingCrew: useCallback(async (profile, id) => {
+      const ctx = requireLiveContext();
+      await savePackingCrewProfile(ctx.orgId, profile, id);
+    }, [requireLiveContext]),
+
+    deletePackingCrew: useCallback(async (id) => {
+      const ctx = requireLiveContext();
+      await deletePackingCrewProfile(ctx.orgId, id);
+    }, [requireLiveContext]),
+
+    savePackingTransport: useCallback(async (profile, id) => {
+      const ctx = requireLiveContext();
+      await savePackingTransportProfile(ctx.orgId, profile, id);
+    }, [requireLiveContext]),
+
+    deletePackingTransport: useCallback(async (id) => {
+      const ctx = requireLiveContext();
+      await deletePackingTransportProfile(ctx.orgId, id);
     }, [requireLiveContext]),
 
     // Alerts

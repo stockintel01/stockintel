@@ -13,6 +13,7 @@ import { useAppStore } from '@/lib/store';
 import { getAgricultureProfile } from '@/lib/agric/config';
 import { getFarmWeek, getRecentFarmWeeks } from '@/lib/agric/week';
 import { convertItemQuantity } from '@/lib/agric/units';
+import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics } from '@/lib/agric/packing';
 
 type ReportPeriod = 'daily' | 'weekly' | 'monthly';
 type ReportType = 'stock' | 'usage' | 'packing' | 'equipment' | 'full';
@@ -31,7 +32,7 @@ function csvCell(value: string | number): string {
 }
 
 export default function ReportsPage() {
-  const { inventory: liveInv, usageLogs, packingRecords: livePacking, shippingRecords: liveShipping, checkouts: liveCheckouts } = useAgric();
+  const { inventory: liveInv, usageLogs, packingRecords: livePacking, shippingRecords: liveShipping, packingPlans, checkouts: liveCheckouts } = useAgric();
   const { organization } = useAppStore();
   const weekStartsOn = getAgricultureProfile(organization?.settings).weekStartsOn;
   const [period, setPeriod] = useState<ReportPeriod>('weekly');
@@ -70,11 +71,13 @@ export default function ReportsPage() {
   });
 
   // Packing summary
-  const packingToday = livePacking.filter(r => r.date === new Date().toISOString().slice(0, 10));
-  const totalPacked = packingToday.reduce((s, r) => s + r.packedBoxes, 0);
-  const totalTarget = packingToday.reduce((s, r) => s + r.targetBoxes, 0);
-  const totalRejected = packingToday.reduce((s, r) => s + r.rejectedBoxes, 0);
-  const totalShipped = liveShipping.reduce((s, r) => s + r.boxesShipped, 0);
+  const packingDate = new Date().toISOString().slice(0, 10);
+  const packingOccurrences = buildPackingFulfilmentOccurrences(packingPlans, livePacking, liveShipping, packingDate, packingDate, packingDate);
+  const packingMetrics = calculatePackingDailyMetrics(packingDate, packingOccurrences, livePacking, liveShipping);
+  const totalPacked = packingMetrics.acceptedPackedBoxes;
+  const totalTarget = packingMetrics.targetBoxes;
+  const totalRejected = packingMetrics.rejectedBoxes;
+  const totalShipped = packingMetrics.shippedBoxes;
 
   // Equipment stats
   const overdueEquip = liveCheckouts.filter(e => e.isOverdue && !e.isReturned).length;
