@@ -27,7 +27,7 @@ import {
   addUsageLog, createStockRequest, updateRequestStatus, dispatchRequest,
   recordRequestIssueUsage, returnRequestIssue,
   checkoutEquipment, returnEquipment, createSprayPlan, logApplicationComplete, confirmRequestReceipt,
-  addPackingRecord, addShippingRecord, markAlertRead,
+  addPackingRecord, updatePackingRecord, deletePackingRecord, addShippingRecord, markAlertRead,
   checkAndFireLowStockAlerts,
 } from './agric-service';
 import {
@@ -94,6 +94,8 @@ export interface AgricActions {
   markApplication: (planId: string, appliedAt?: string, notes?: string) => Promise<void>;
   // Packing
   addPacking: (record: Omit<PackingRecord, 'id'>) => Promise<void>;
+  updatePacking: (id: string, changes: Partial<Omit<PackingRecord, 'id'>>) => Promise<void>;
+  deletePacking: (id: string) => Promise<void>;
   addShipping: (record: Omit<ShippingRecord, 'id'>) => Promise<void>;
   savePackingPlan: (plan: Omit<PackingFulfilmentPlan, 'id' | 'createdAt' | 'updatedAt'>, id?: string) => Promise<void>;
   setPackingPlanStatus: (id: string, status: PackingFulfilmentPlan['status']) => Promise<void>;
@@ -318,6 +320,16 @@ export function useAgric(): AgricState & AgricActions {
     addPacking: useCallback(async (record) => {
       const ctx = requireLiveContext();
       await addPackingRecord(ctx.orgId, record);
+    }, [requireLiveContext]),
+
+    updatePacking: useCallback(async (id, changes) => {
+      const ctx = requireLiveContext();
+      await updatePackingRecord(ctx.orgId, id, changes);
+    }, [requireLiveContext]),
+
+    deletePacking: useCallback(async (id) => {
+      const ctx = requireLiveContext();
+      await deletePackingRecord(ctx.orgId, id);
     }, [requireLiveContext]),
 
     addShipping: useCallback(async (record) => {

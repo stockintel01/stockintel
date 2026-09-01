@@ -77,6 +77,7 @@ export async function recordPackingQualityEvent(
     palletId: event.palletId || '',
     storageLocation: event.storageLocation || '',
     inspectionStatus: status,
+    packedBoxes: increment(event.packedDelta),
     inspectedBoxes: increment(event.inspectedDelta),
     acceptedBoxes: increment(event.acceptedDelta),
     rejectedBoxes: increment(event.rejectedDelta),

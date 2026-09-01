@@ -16,7 +16,7 @@
  */
 
 import {
-  collection, doc, onSnapshot, addDoc, updateDoc, setDoc,
+  collection, doc, onSnapshot, addDoc, updateDoc, setDoc, deleteDoc,
   getDocs, query, orderBy, where, serverTimestamp,
   runTransaction, writeBatch, increment, limit,
 } from 'firebase/firestore';
@@ -671,6 +671,21 @@ export async function addPackingRecord(
     createdAt: serverTimestamp(),
   });
   return r.id;
+}
+
+export async function updatePackingRecord(
+  orgId: string,
+  recordId: string,
+  changes: Partial<Omit<PackingRecord, 'id'>>,
+): Promise<void> {
+  await updateDoc(ref(orgId, 'agric_packing', recordId), {
+    ...clean(changes),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deletePackingRecord(orgId: string, recordId: string): Promise<void> {
+  await deleteDoc(ref(orgId, 'agric_packing', recordId));
 }
 
 // -------------------------------------------------------------

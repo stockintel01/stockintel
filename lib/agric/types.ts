@@ -287,6 +287,7 @@ export interface PackingQualityEvent {
   lotNumber: string;
   palletId?: string;
   storageLocation?: string;
+  packedDelta: number;
   inspectedDelta: number;
   acceptedDelta: number;
   rejectedDelta: number;

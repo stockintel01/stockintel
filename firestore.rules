@@ -410,6 +410,13 @@ service cloud.firestore {
         allow update: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking')
           && validPackingQualityState(request.resource.data)
           && (
+            isOwnerOrManager()
+            || (
+              request.resource.data.get('lastQualityEventId', '') != resource.data.get('lastQualityEventId', '')
+              && request.resource.data.inspectorId == request.auth.uid
+            )
+          )
+          && (
             (
               !('inspectionStatus' in resource.data)
               && !('inspectionStatus' in request.resource.data)
@@ -437,7 +444,10 @@ service cloud.firestore {
               && request.resource.data.storageLocation == resource.data.storageLocation
             )
           );
-        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager();
+        allow delete: if isSignedIn() && isSameOrg(orgId) && hasActiveSubscription(orgId) && hasAccess('agricPacking') && isOwnerOrManager()
+          && 'inspectionStatus' in resource.data
+          && resource.data.inspectedBoxes == 0
+          && resource.data.acceptedBoxes == 0;
       }
       match /agric_packing_stations/{id} {
         allow read: if isSignedIn() && isSameOrg(orgId) && hasAccess('agricPacking');
@@ -461,6 +471,7 @@ service cloud.firestore {
           && request.resource.data.inspectorId == request.auth.uid
           && request.resource.data.packingRecordId is string
           && request.resource.data.eventType in ['inspection', 'rework_resolution', 'correction']
+          && request.resource.data.packedDelta is number
           && request.resource.data.inspectedDelta is number
           && request.resource.data.acceptedDelta is number
           && request.resource.data.rejectedDelta is number
@@ -468,6 +479,7 @@ service cloud.firestore {
           && (
             (
               request.resource.data.eventType == 'inspection'
+              && request.resource.data.packedDelta == 0
               && request.resource.data.inspectedDelta > 0
               && request.resource.data.acceptedDelta >= 0
               && request.resource.data.rejectedDelta >= 0
@@ -476,6 +488,7 @@ service cloud.firestore {
             )
             || (
               request.resource.data.eventType == 'rework_resolution'
+              && request.resource.data.packedDelta == 0
               && request.resource.data.inspectedDelta == 0
               && request.resource.data.acceptedDelta >= 0
               && request.resource.data.rejectedDelta >= 0
@@ -494,6 +507,7 @@ service cloud.firestore {
           && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.packageType == request.resource.data.packageType
           && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.qualityGrade == request.resource.data.qualityGrade
           && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.lotNumber == request.resource.data.lotNumber
+          && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.packedBoxes == get(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.packedBoxes + request.resource.data.packedDelta
           && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.inspectedBoxes == get(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.inspectedBoxes + request.resource.data.inspectedDelta
           && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.acceptedBoxes == get(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.acceptedBoxes + request.resource.data.acceptedDelta
           && getAfter(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.rejectedBoxes == get(/databases/$(database)/documents/organizations/$(orgId)/agric_packing/$(request.resource.data.packingRecordId)).data.rejectedBoxes + request.resource.data.rejectedDelta
