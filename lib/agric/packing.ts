@@ -1,4 +1,4 @@
-import type { PackingFulfilmentPlan, PackingInspectionStatus, PackingRecord, ShippingAllocation, ShippingRecord } from './types';
+import type { PackingFulfilmentPlan, PackingInspectionStatus, PackingMarket, PackingRecord, ShippingAllocation, ShippingRecord } from './types';
 
 export type PackingOccurrenceStatus = 'pending' | 'in_progress' | 'ready_to_ship' | 'overdue' | 'completed';
 
@@ -34,6 +34,8 @@ interface PackingPlanOperationalFields {
   recurrence: PackingFulfilmentPlan['recurrence'];
   endDate?: string;
   shipmentRequired: boolean;
+  market?: PackingMarket;
+  destinationCountry?: string;
 }
 
 export function packingPlanOperationalFieldsChanged(current: PackingPlanOperationalFields, next: PackingPlanOperationalFields): boolean {
@@ -44,10 +46,13 @@ export function packingPlanOperationalFieldsChanged(current: PackingPlanOperatio
     || current.startDate !== next.startDate
     || current.recurrence !== next.recurrence
     || (current.endDate || '') !== (next.endDate || '')
-    || current.shipmentRequired !== next.shipmentRequired;
+    || current.shipmentRequired !== next.shipmentRequired
+    || (current.market || 'local') !== (next.market || 'local')
+    || (current.destinationCountry || '') !== (next.destinationCountry || '');
 }
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const normalizedMarketText = (value?: string) => (value ?? '').trim().toLocaleLowerCase();
 
 export function acceptedPackingBoxes(record: PackingRecord): number {
   return record.inspectionStatus
@@ -80,6 +85,8 @@ export function planPackingShipmentAllocations(
   stationId: string,
   produce: string,
   requestedBoxes: number,
+  market?: PackingMarket,
+  destinationCountry?: string,
 ): PackingShipmentAllocationPlan {
   const previouslyAllocated = new Map<string, number>();
   shippingRecords.forEach(record => record.allocations?.forEach(allocation => {
@@ -93,6 +100,8 @@ export function planPackingShipmentAllocations(
   const allocations: ShippingAllocation[] = [];
   packingRecords
     .filter(record => record.inspectionStatus && record.stationId === stationId && record.produce === produce && record.lotNumber)
+    .filter(record => !market || (record.market || 'local') === market)
+    .filter(record => market !== 'export' || !destinationCountry || normalizedMarketText(record.destinationCountry) === normalizedMarketText(destinationCountry))
     .sort((left, right) => left.date.localeCompare(right.date) || String(left.inspectedAt ?? '').localeCompare(String(right.inspectedAt ?? '')) || left.id.localeCompare(right.id))
     .forEach(record => {
       if (remaining <= 0) return;

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { buildPackingFulfilmentOccurrences, calculatePackingDailyMetrics, packingCalendarDate, packingInspectionStatus, packingPlanOccurrenceDates, packingPlanOperationalFieldsChanged, planPackingShipmentAllocations } from '../lib/agric/packing.ts';
+import { matchingPackingStandards } from '../lib/agric/packing-standards.ts';
 
 assert.equal(packingCalendarDate(new Date(2026, 1, 3, 23, 45)), '2026-02-03');
 
@@ -12,6 +13,7 @@ const plan = {
 assert.deepEqual(packingPlanOccurrenceDates(plan, '2026-01-01', '2026-04-30'), ['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30']);
 assert.equal(packingPlanOperationalFieldsChanged(plan, { ...plan, customerName: 'Renamed customer' }), false);
 assert.equal(packingPlanOperationalFieldsChanged(plan, { ...plan, targetBoxes: 120 }), true);
+assert.equal(packingPlanOperationalFieldsChanged({ ...plan, market: 'local' }, { ...plan, market: 'export', destinationCountry: 'United Kingdom' }), true);
 assert.equal(packingInspectionStatus({ packedBoxes: 100, inspectedBoxes: 0, acceptedBoxes: 0, rejectedBoxes: 0, reworkBoxes: 0 }), 'awaiting_inspection');
 assert.equal(packingInspectionStatus({ packedBoxes: 100, inspectedBoxes: 60, acceptedBoxes: 50, rejectedBoxes: 5, reworkBoxes: 5 }), 'partially_accepted');
 assert.equal(packingInspectionStatus({ packedBoxes: 100, inspectedBoxes: 100, acceptedBoxes: 90, rejectedBoxes: 5, reworkBoxes: 5 }), 'rework');
@@ -61,4 +63,22 @@ assert.equal(allocationPlan.untraceableBoxes, 0);
 const legacyAllocationPlan = planPackingShipmentAllocations(acceptedLots, priorLotShipping, 'station-1', 'Banana', 100);
 assert.equal(legacyAllocationPlan.untraceableBoxes, 25);
 
-console.log('Packing recurrence, fulfilment rollup, and daily KPI checks passed.');
+const marketLots = [
+  { ...acceptedLots[0], id: 'local-lot', market: 'local', lotNumber: 'LOCAL' },
+  { ...acceptedLots[0], id: 'uk-lot', market: 'export', destinationCountry: 'United Kingdom', lotNumber: 'UK' },
+  { ...acceptedLots[0], id: 'de-lot', market: 'export', destinationCountry: 'Germany', lotNumber: 'DE' },
+];
+const ukAllocation = planPackingShipmentAllocations(marketLots, [], 'station-1', 'Banana', 40, 'export', 'United Kingdom');
+assert.deepEqual(ukAllocation.allocations.map(item => item.lotNumber), ['UK']);
+assert.equal(ukAllocation.untraceableBoxes, 0);
+const localAllocation = planPackingShipmentAllocations(marketLots, [], 'station-1', 'Banana', 40, 'local');
+assert.deepEqual(localAllocation.allocations.map(item => item.lotNumber), ['LOCAL']);
+
+const bananaStandards = matchingPackingStandards(null, 'banana', 'export', 'United Kingdom');
+assert.equal(bananaStandards[0].reference, 'CXS 205-1997');
+assert.equal(matchingPackingStandards(null, 'Banana', 'local').length, 0);
+const customUk = { ...bananaStandards[0], id: 'customer-uk', name: 'UK customer standard', destinationCountries: ['United Kingdom'] };
+const matched = matchingPackingStandards({ id: 'main', packageTypes: [], packageSizes: [], qualityGrades: [], rejectionReasons: [], commodityStandards: [customUk] }, 'Banana', 'export', 'United Kingdom');
+assert.equal(matched[0].id, 'customer-uk');
+
+console.log('Packing recurrence, market standards, stock segregation, fulfilment rollup, and daily KPI checks passed.');

@@ -235,6 +235,32 @@ export interface SprayPlanItem {
 }
 
 // ── Packing Station Record ────────────────────────────────────
+export type PackingMarket = 'local' | 'export';
+
+export interface PackingGradeRule {
+  name: string;
+  description: string;
+  acceptanceCriteria: string[];
+}
+
+export interface PackingCommodityStandard {
+  id: string;
+  name: string;
+  commodity: string;
+  market: PackingMarket;
+  destinationCountries: string[];
+  authority: string;
+  reference: string;
+  version: string;
+  sourceUrl?: string;
+  packageTypes: string[];
+  packageSizes: string[];
+  grades: PackingGradeRule[];
+  rejectionReasons: string[];
+  requiredChecks: string[];
+  isActive: boolean;
+}
+
 export interface PackingRecord {
   id: string;
   date: string;
@@ -244,6 +270,8 @@ export interface PackingRecord {
   supervisorName: string;
   farmZone: FarmZone;
   produce: string;             // e.g. "Banana", "Okra"
+  market?: PackingMarket;      // absent only on records created before market controls
+  destinationCountry?: string;
   targetBoxes: number;
   packedBoxes: number;
   rejectedBoxes: number;
@@ -265,6 +293,12 @@ export interface PackingRecord {
   inspectedAt?: string;
   inspectionNotes?: string;
   lastQualityEventId?: string;
+  qualityStandardId?: string;
+  qualityStandardName?: string;
+  qualityStandardAuthority?: string;
+  qualityStandardReference?: string;
+  qualityStandardVersion?: string;
+  qualityStandardSourceUrl?: string;
   fulfilmentPlanId?: string;
   fulfilmentOccurrenceDate?: string;
   customerName?: string;
@@ -281,6 +315,15 @@ export interface PackingQualityEvent {
   stationId: string;
   stationName: string;
   produce: string;
+  market?: PackingMarket;
+  destinationCountry?: string;
+  qualityStandardId?: string;
+  qualityStandardName?: string;
+  qualityStandardAuthority?: string;
+  qualityStandardReference?: string;
+  qualityStandardVersion?: string;
+  qualityStandardSourceUrl?: string;
+  confirmedChecks?: string[];
   packageType: string;
   packageSize?: string;
   qualityGrade: string;
@@ -306,6 +349,7 @@ export interface PackingQualityConfig {
   packageSizes: string[];
   qualityGrades: string[];
   rejectionReasons: string[];
+  commodityStandards?: PackingCommodityStandard[];
   updatedAt?: unknown;
 }
 
@@ -320,6 +364,8 @@ export interface PackingFulfilmentPlan {
   stationName: string;
   farmZone: FarmZone;
   produce: string;
+  market?: PackingMarket;
+  destinationCountry?: string;
   targetBoxes: number;
   startDate: string;
   dueTime?: string;
@@ -384,6 +430,11 @@ export interface ShippingRecord {
   stationName?: string;
   storageName?: string;
   produce: string;
+  market?: PackingMarket;
+  destinationCountry?: string;
+  qualityStandardId?: string;
+  qualityStandardName?: string;
+  qualityStandardReference?: string;
   boxesShipped: number;        // auto-reduces packed stock
   weightShipped?: number;
   vehicleId?: string;

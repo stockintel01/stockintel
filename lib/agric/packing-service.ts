@@ -69,13 +69,21 @@ export async function recordPackingQualityEvent(
   const batch = writeBatch(db);
   const eventRef = doc(collectionFor(orgId, 'agric_packing_inspections'));
   batch.set(eventRef, { ...clean(event), createdAt: serverTimestamp() });
-  batch.update(documentFor(orgId, 'agric_packing', event.packingRecordId), {
+  batch.update(documentFor(orgId, 'agric_packing', event.packingRecordId), clean({
     packageType: event.packageType,
     packageSize: event.packageSize || '',
     qualityGrade: event.qualityGrade,
     lotNumber: event.lotNumber,
     palletId: event.palletId || '',
     storageLocation: event.storageLocation || '',
+    market: event.market,
+    destinationCountry: event.destinationCountry,
+    qualityStandardId: event.qualityStandardId,
+    qualityStandardName: event.qualityStandardName,
+    qualityStandardAuthority: event.qualityStandardAuthority,
+    qualityStandardReference: event.qualityStandardReference,
+    qualityStandardVersion: event.qualityStandardVersion,
+    qualityStandardSourceUrl: event.qualityStandardSourceUrl,
     inspectionStatus: status,
     packedBoxes: increment(event.packedDelta),
     inspectedBoxes: increment(event.inspectedDelta),
@@ -87,7 +95,7 @@ export async function recordPackingQualityEvent(
     inspectedAt: event.inspectedAt,
     inspectionNotes: event.notes || '',
     lastQualityEventId: eventRef.id,
-  });
+  }));
   await batch.commit();
 }
 
