@@ -53,6 +53,7 @@ export async function exportToPDF(
             h1 { font-size: 20px; margin-bottom: 4px; }
             h2 { font-size: 15px; margin: 16px 0 6px; color: #444; }
             .meta { color: #888; font-size: 11px; margin-bottom: 16px; }
+            .print-report-section { display: block !important; max-height: none !important; overflow: visible !important; opacity: 1 !important; pointer-events: auto !important; }
             @media print { @page { size: landscape; margin: 10mm; } button { display: none !important; } body { padding: 0; } }
         </style>
         </head><body>
