@@ -12,6 +12,7 @@ import {
 import { auth, googleProvider, db } from "@/lib/firebase";
 import { useAppStore, User as StoreUser, Organization, TenantMembership } from "@/lib/store";
 import { isSuperAdminEmail } from "@/lib/access-control";
+import { authenticatedFetch } from "@/lib/api-client";
 import {
     getUserProfile,
     createUserProfile,
@@ -57,19 +58,30 @@ async function getTenantMemberships(
 ) {
     const memberships: TenantMembership[] = [];
     try {
-        const membershipSnap = await getDocs(collection(db, 'users', uid, 'memberships'));
-        membershipSnap.forEach(item => {
-            const data = item.data();
-            memberships.push({
-                organizationId: String(data.organizationId ?? item.id),
-                organizationName: data.organizationName,
-                industry: data.industry,
-                role: data.role,
-                access: Array.isArray(data.access) ? data.access : [],
-            } as TenantMembership);
-        });
+        const response = await authenticatedFetch('/api/organizations', { cache: 'no-store' });
+        if (response.ok) {
+            const data = await response.json() as { memberships?: TenantMembership[] };
+            if (Array.isArray(data.memberships)) memberships.push(...data.memberships);
+        }
     } catch {
-        // Older accounts may only have the legacy top-level organization fields.
+        // Fall back to the client-readable membership collection below.
+    }
+    if (memberships.length === 0) {
+        try {
+            const membershipSnap = await getDocs(collection(db, 'users', uid, 'memberships'));
+            membershipSnap.forEach(item => {
+                const data = item.data();
+                memberships.push({
+                    organizationId: String(data.organizationId ?? item.id),
+                    organizationName: data.organizationName,
+                    industry: data.industry,
+                    role: data.role,
+                    access: Array.isArray(data.access) ? data.access : [],
+                } as TenantMembership);
+            });
+        } catch {
+            // Older accounts may only have the legacy top-level organization fields.
+        }
     }
     if (profile?.organizationId && !memberships.some(item => item.organizationId === profile.organizationId)) {
         memberships.push({

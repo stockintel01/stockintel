@@ -40,19 +40,70 @@ export async function POST(request: NextRequest, context: { params: Promise<{ in
                 throw new ApiError('Sign in with the invited email address', 403);
             }
             if (!['manager', 'worker'].includes(invite.role)) throw new ApiError('Invalid invitation role', 400);
+            const userSnapshot = await transaction.get(userRef);
+            const existingProfile = userSnapshot.data() ?? {};
             const orgSnapshot = await transaction.get(adminDb.collection('organizations').doc(String(invite.organizationId)));
             if (!orgSnapshot.exists) throw new ApiError('Inviting organization not found', 404);
             const org = orgSnapshot.data() ?? {};
+            const previousOrganizationId = String(existingProfile.organizationId ?? '');
+            const previousOrganizationSnapshot = previousOrganizationId && previousOrganizationId !== invite.organizationId
+                ? await transaction.get(adminDb.collection('organizations').doc(previousOrganizationId))
+                : null;
             const industry = 'agriculture' as IndustryType;
             const access = normalizeAccess(invite.access ?? [], industry);
+
+            if (previousOrganizationSnapshot?.exists) {
+                const previousOrganization = previousOrganizationSnapshot.data() ?? {};
+                const previousRole = previousOrganization.ownerId === user.uid ? 'owner' : existingProfile.role;
+                if (['owner', 'manager', 'worker'].includes(previousRole)) {
+                    transaction.set(userRef.collection('memberships').doc(previousOrganizationId), {
+                        organizationId: previousOrganizationId,
+                        organizationName: previousOrganization.name ?? existingProfile.organizationName ?? 'Workspace',
+                        industry,
+                        role: previousRole,
+                        access: previousRole === 'owner' ? [] : normalizeAccess(existingProfile.access ?? [], industry),
+                        status: 'active',
+                        updatedAt: FieldValue.serverTimestamp(),
+                    }, { merge: true });
+                }
+            }
 
             transaction.set(userRef, {
                 uid: user.uid,
                 email: user.email,
-                displayName: user.email.split('@')[0],
+                displayName: existingProfile.displayName ?? user.email.split('@')[0],
                 organizationId: invite.organizationId,
+                organizationName: org.name ?? invite.orgName ?? 'Your Team',
+                industry,
                 role: invite.role,
                 access,
+                updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+            transaction.set(userRef.collection('memberships').doc(String(invite.organizationId)), {
+                uid: user.uid,
+                email: user.email,
+                organizationId: invite.organizationId,
+                organizationName: org.name ?? invite.orgName ?? 'Your Team',
+                industry,
+                role: invite.role,
+                access,
+                status: 'active',
+                acceptedInviteId: inviteId,
+                joinedAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+            transaction.set(adminDb.collection('organizations').doc(String(invite.organizationId)).collection('members').doc(user.uid), {
+                uid: user.uid,
+                email: user.email,
+                displayName: existingProfile.displayName ?? user.email.split('@')[0],
+                organizationId: invite.organizationId,
+                organizationName: org.name ?? invite.orgName ?? 'Your Team',
+                industry,
+                role: invite.role,
+                access,
+                status: 'active',
+                acceptedInviteId: inviteId,
+                joinedAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             }, { merge: true });
             transaction.update(inviteRef, {

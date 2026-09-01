@@ -11,7 +11,7 @@
     "test:sigatoka": "node --no-warnings --experimental-strip-types scripts/verify-sigatoka.mjs",
     "test:water": "node --no-warnings --experimental-strip-types scripts/verify-water-balance.mjs",
     "check:env": "node scripts/check-env.mjs",
-    "verify": "npm run typecheck && npm run build"
+    "verify": "npm run typecheck && npm run test:sigatoka && npm run test:water && npm run build"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.8",

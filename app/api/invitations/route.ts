@@ -25,8 +25,9 @@ export async function POST(request: NextRequest) {
         }
         const normalizedAccess = normalizeAccessForRole(recognizedAccess, industry, role);
 
-        const [members, pending, configSnapshot] = await Promise.all([
+        const [legacyMembers, tenantMembers, pending, configSnapshot] = await Promise.all([
             adminDb.collection('users').where('organizationId', '==', user.organizationId).count().get(),
+            adminDb.collection('organizations').doc(user.organizationId).collection('members').count().get(),
             adminDb.collection('invitations').where('organizationId', '==', user.organizationId).where('status', '==', 'pending').count().get(),
             adminDb.collection('system').doc('config').get(),
         ]);
@@ -46,7 +47,8 @@ export async function POST(request: NextRequest) {
             : hasConfiguredLimit
                 ? configuredLimit
                 : getPlanLimit(user.subscription, 'teamMembers');
-        if (members.data().count + pending.data().count >= limit) throw new ApiError(`Your plan allows up to ${limit} team members`, 403);
+        const activeMemberCount = Math.max(legacyMembers.data().count, tenantMembers.data().count);
+        if (activeMemberCount + pending.data().count >= limit) throw new ApiError(`Your plan allows up to ${limit} team members`, 403);
 
         const ref = adminDb.collection('invitations').doc();
         await ref.set({

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAppStore } from '@/lib/store';
+import { useAppStore, type Organization, type TenantMembership } from '@/lib/store';
 import { isSuperAdminEmail } from '@/lib/access-control';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthContext';
@@ -18,8 +18,9 @@ import { canUseFeature, isSubscriptionActive, type PlanFeature } from '@/lib/pla
 import { getAgricultureProfile } from '@/lib/agric/config';
 import { useAgric } from '@/lib/agric/useAgric';
 import { userCanAccessHref } from '@/lib/access-permissions';
+import { authenticatedFetch } from '@/lib/api-client';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 interface NavItem {
     name: string;
@@ -39,6 +40,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const { inventory } = useAgric();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [attentionCount, setAttentionCount] = useState(0);
+    const [tenantSwitching, setTenantSwitching] = useState(false);
+    const [tenantError, setTenantError] = useState('');
 
     // Live stock attention badge count
     useEffect(() => {
@@ -74,7 +77,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }, [organization, setStoreUser, user]);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsSidebarOpen(false);
     }, [pathname]);
 
@@ -209,20 +211,39 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const ActiveIcon = config.icon;
 
     const switchTenant = async (organizationId: string) => {
-        if (!user || organizationId === user.organizationId) return;
+        if (!user || organizationId === user.organizationId || tenantSwitching) return;
         const membership = user.memberships?.find(item => item.organizationId === organizationId);
         if (!membership) return;
-        const orgSnap = await getDoc(doc(db, 'organizations', organizationId));
-        if (!orgSnap.exists()) return;
-        const nextOrg = { ...(orgSnap.data() as NonNullable<typeof organization>), id: orgSnap.id };
-        setStoreUser({
-            ...user,
-            organizationId,
-            role: membership.role,
-            access: membership.access,
-        }, nextOrg);
-        setIndustry(nextOrg.industry);
-        router.push('/dashboard/agriculture');
+        setTenantSwitching(true);
+        setTenantError('');
+        try {
+            const response = await authenticatedFetch('/api/organizations', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ organizationId }),
+            });
+            const result = await response.json() as { organization?: Organization; membership?: TenantMembership; error?: string };
+            if (!response.ok || !result.organization || !result.membership) {
+                throw new Error(result.error ?? 'The workspace could not be activated.');
+            }
+            const memberships = [
+                ...(user.memberships ?? []).filter(item => item.organizationId !== organizationId),
+                result.membership,
+            ];
+            setStoreUser({
+                ...user,
+                organizationId,
+                role: result.membership.role,
+                access: result.membership.access,
+                memberships,
+            }, result.organization);
+            setIndustry(result.organization.industry);
+            router.push('/dashboard/agriculture');
+        } catch (error) {
+            setTenantError(error instanceof Error ? error.message : 'The workspace could not be activated.');
+        } finally {
+            setTenantSwitching(false);
+        }
     };
 
     const mobileNavItems = ([
@@ -301,6 +322,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <select
                             value={user.organizationId}
                             onChange={event => void switchTenant(event.target.value)}
+                            disabled={tenantSwitching}
                             className="mb-2 w-full rounded-lg border bg-background px-3 py-2 text-xs font-medium"
                             aria-label="Switch organisation workspace"
                         >
@@ -342,6 +364,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             <select
                                 value={user.organizationId}
                                 onChange={event => void switchTenant(event.target.value)}
+                                disabled={tenantSwitching}
                                 className="hidden max-w-56 rounded-lg border bg-background px-3 py-2 text-xs font-medium sm:block"
                                 aria-label="Switch organisation workspace"
                             >
@@ -369,6 +392,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </header>
 
                 <main className="flex-1 p-3 pb-24 sm:p-6 sm:pb-6">
+                    {tenantError && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{tenantError}</div>}
                     {children}
                 </main>
             </div>

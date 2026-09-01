@@ -13,6 +13,8 @@ import { useAgric } from '@/lib/agric/useAgric';
 import { AgricInventoryItem, AgricCategory, UOM } from '@/lib/agric/types';
 import { useAppStore } from '@/lib/store';
 import { createInventoryImportTemplateCsv, parseInventoryFile } from '@/lib/inventory-import';
+import { canUseFeature, getPlanLimit } from '@/lib/plans';
+import { userHasAccess } from '@/lib/access-permissions';
 
 const CATEGORY_LABELS: Record<AgricCategory, string> = {
   fungicide: 'Fungicide', insecticide: 'Insecticide', herbicide: 'Herbicide',
@@ -45,10 +47,13 @@ interface AdjustmentModal {
 
 export default function StockManagementPage() {
   const { inventory: rawInventory, addItem, deleteItem, submitAdjustment } = useAgric();
-  const { user } = useAppStore();
+  const { user, organization } = useAppStore();
   const currentUser = user?.name ?? 'Storekeeper';
   const currentUserId = user?.id ?? 'user';
-  const canManageStock = !!user && ['super_admin', 'owner', 'manager'].includes(user.role);
+  const canManageStock = userHasAccess(user, 'agricStock');
+  const isSuperAdmin = user?.role === 'super_admin';
+  const bulkImportAllowed = canUseFeature(organization?.subscription, 'bulkImport', isSuperAdmin);
+  const inventoryLimit = getPlanLimit(organization?.subscription, 'inventoryItems', isSuperAdmin);
   const [inventory, setLocalInventory] = useState<AgricInventoryItem[]>([]);
   useEffect(() => { setLocalInventory(rawInventory); }, [rawInventory]);
   const [search, setSearch] = useState('');
@@ -64,6 +69,7 @@ export default function StockManagementPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [importMessage, setImportMessage] = useState('');
   const [importError, setImportError] = useState('');
+  const [actionError, setActionError] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const filtered = useMemo(() => {
@@ -114,6 +120,12 @@ export default function StockManagementPage() {
 
   async function handleAddItem() {
     if (!newItem.name || !newItem.category) return;
+    const activeItems = rawInventory.filter(item => item.isActive).length;
+    if (activeItems >= inventoryLimit) {
+      setActionError(`Your current plan allows up to ${inventoryLimit.toLocaleString()} active stock items. Upgrade the plan or deactivate an item before adding another.`);
+      return;
+    }
+    setActionError('');
     await addItem({
       name: newItem.name!, chemicalComponent: newItem.chemicalComponent,
       category: newItem.category as AgricCategory, uom: newItem.uom || 'lt',
@@ -132,10 +144,15 @@ export default function StockManagementPage() {
     setImportMessage('');
     setImportError('');
     try {
+      if (!bulkImportAllowed) throw new Error('Bulk inventory import is not included in your current plan. Upgrade to Pro or Enterprise to import files.');
       const result = await parseInventoryFile(file);
       if (result.errors.length) {
         setImportError(result.errors.slice(0, 8).join('\n'));
         return;
+      }
+      const remainingCapacity = inventoryLimit - rawInventory.filter(item => item.isActive).length;
+      if (result.items.length > remainingCapacity) {
+        throw new Error(`This import contains ${result.items.length.toLocaleString()} items, but your plan has room for ${Math.max(0, remainingCapacity).toLocaleString()} more. Reduce the file or upgrade the plan.`);
       }
       for (const item of result.items) {
         await addItem({ ...item, createdBy: currentUser });
@@ -191,6 +208,7 @@ export default function StockManagementPage() {
           )}
         </div>
       </div>
+      {actionError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>}
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -248,7 +266,7 @@ export default function StockManagementPage() {
           <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 flex-1">
               <p className="font-medium">Bulk import agriculture stock</p>
-              <p className="text-sm text-muted-foreground">Start with the template, keep its column headings, and replace the two example rows with your stock. Then drop the completed CSV/XLSX file here or choose it below. Name and current stock are required.</p>
+              <p className="text-sm text-muted-foreground">{bulkImportAllowed ? 'Start with the template, keep its column headings, and replace the two example rows with your stock. Then drop the completed CSV/XLSX file here or choose it below. Name and current stock are required.' : 'Bulk import is available on Pro and Enterprise plans. Individual stock items can still be added within your plan limit.'}</p>
               <p className="mt-1 text-xs text-muted-foreground">Accepted categories: fungicide, insecticide, herbicide, fertilizer, equipment, seed, other. Maximum 5,000 rows or 10 MB.</p>
               {importMessage && <p className="mt-2 text-sm text-green-700">{importMessage}</p>}
               {importError && <pre className="mt-2 whitespace-pre-wrap rounded-md bg-red-50 p-2 text-xs text-red-700">{importError}</pre>}
@@ -264,7 +282,7 @@ export default function StockManagementPage() {
               <Button variant="outline" onClick={downloadImportTemplate} disabled={isImporting}>
                 <Download className="mr-2 h-4 w-4" /> Download Template
               </Button>
-              <Button onClick={() => fileInputRef.current?.click()} disabled={isImporting}>
+              <Button onClick={() => fileInputRef.current?.click()} disabled={isImporting || !bulkImportAllowed}>
                 <Upload className="mr-2 h-4 w-4" /> {isImporting ? 'Importing...' : 'Choose File'}
               </Button>
             </div>
