@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import {
   Tractor, Plus, Clock, CheckCircle2, AlertTriangle,
-  User, X, Search, Package
+  User, X, Search, Package, BarChart3
 } from 'lucide-react';
+import { ContextualOperationsReport } from '@/components/agriculture/ContextualOperationsReport';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +23,7 @@ export default function EquipmentPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'out' | 'overdue' | 'returned'>('all');
   const [showCheckout, setShowCheckout] = useState(false);
+  const [workspaceView, setWorkspaceView] = useState<'operations' | 'reports'>('operations');
   const [newCheckout, setNewCheckout] = useState<Partial<EquipmentCheckout>>({
     farmZone: farmZones[0] as FarmZone, supervisorName: currentUserName, supervisorId: user?.id ?? 's01'
   });
@@ -47,9 +49,10 @@ export default function EquipmentPage() {
     if (!newCheckout.itemId || !newCheckout.checkoutBy || !newCheckout.farmZone) return;
     const invItem = equipmentItems.find(i => i.id === newCheckout.itemId);
     if (!invItem) return;
+    const workerKey = newCheckout.checkoutBy.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'worker';
     await checkoutItem({
       itemId: invItem.id, itemName: invItem.name,
-      checkoutBy: newCheckout.checkoutBy!, checkoutById: `w_${Date.now()}`,
+      checkoutBy: newCheckout.checkoutBy, checkoutById: `worker_${workerKey}`,
       checkoutTime: new Date().toISOString(),
       expectedReturnTime: newCheckout.expectedReturnTime,
       supervisorId: newCheckout.supervisorId || 's01',
@@ -70,6 +73,19 @@ export default function EquipmentPage() {
 
   const displayItems = filtered();
 
+  const workspaceTabs = <nav className="sticky top-[4.5rem] z-30 -mx-1 overflow-x-auto border-b bg-background/95 px-1 backdrop-blur print:static" aria-label="Equipment workspace sections"><div className="flex min-w-max gap-1">{([
+    ['operations', 'Equipment activity', Tractor],
+    ['reports', 'Reports', BarChart3],
+  ] as const).map(([value, label, Icon]) => <button key={value} type="button" onClick={() => setWorkspaceView(value)} className={`inline-flex h-11 items-center gap-2 border-b-2 px-3 text-sm font-semibold ${workspaceView === value ? 'border-green-700 text-green-700' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><Icon className="h-4 w-4" />{label}</button>)}</div></nav>;
+
+  if (workspaceView === 'reports') {
+    return <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-2xl font-bold">Equipment Tracking</h1><p className="text-sm text-muted-foreground">Manage equipment movement and review return performance in one workspace.</p></div><Button className="bg-green-600 hover:bg-green-700" onClick={() => { setWorkspaceView('operations'); setShowCheckout(true); }}><Plus className="mr-1 h-4 w-4" />Checkout Item</Button></div>
+      {workspaceTabs}
+      <ContextualOperationsReport module="equipment" inventory={inventory} checkouts={checkouts} />
+    </div>;
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -81,6 +97,7 @@ export default function EquipmentPage() {
           <Plus className="w-4 h-4 mr-1" /> Checkout Item
         </Button>
       </div>
+      {workspaceTabs}
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -150,8 +167,8 @@ export default function EquipmentPage() {
           <Input className="pl-9" placeholder="Search by item, worker, or zone..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <div className="flex gap-1 border rounded-md p-1 bg-background">
-          {[['all', 'All'], ['out', 'Out'], ['overdue', 'Overdue'], ['returned', 'Returned']].map(([v, l]) => (
-            <button key={v} onClick={() => setFilter(v as any)} className={`px-3 py-1 rounded text-sm transition-colors ${filter === v ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>{l}</button>
+          {([['all', 'All'], ['out', 'Out'], ['overdue', 'Overdue'], ['returned', 'Returned']] as const).map(([v, l]) => (
+            <button key={v} onClick={() => setFilter(v)} className={`px-3 py-1 rounded text-sm transition-colors ${filter === v ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>{l}</button>
           ))}
         </div>
       </div>

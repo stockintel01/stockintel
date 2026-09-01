@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from 'react';
 import {
-  FlaskConical, Plus, Search, Download, Calendar,
-  Filter, X, ChevronDown, TrendingUp, BarChart3
+  FlaskConical, Plus, Search, Download,
+  X, TrendingUp, BarChart3
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { UsageLog, FarmZone, AgricCategory, UOM } from '@/lib/agric/types';
 import { getAgricultureProfile } from '@/lib/agric/config';
 import { getFarmWeek, getRecentFarmWeeks } from '@/lib/agric/week';
 import { compatibleUnitsForItem, convertItemQuantity, formatQuantity } from '@/lib/agric/units';
+import { ContextualOperationsReport } from '@/components/agriculture/ContextualOperationsReport';
 
 const CATEGORY_COLORS: Record<string, string> = {
   fungicide: 'bg-blue-100 text-blue-800',
@@ -35,7 +36,7 @@ export default function UsageTrackerPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showLogModal, setShowLogModal] = useState(false);
-  const [view, setView] = useState<'list' | 'summary'>('list');
+  const [view, setView] = useState<'list' | 'summary' | 'reports'>('list');
   const [newLog, setNewLog] = useState<Partial<UsageLog>>({
     date: new Date().toISOString().slice(0, 10),
     farmZone: farmZones[0] as FarmZone,
@@ -114,6 +115,20 @@ export default function UsageTrackerPage() {
     a.click();
   }
 
+  const workspaceTabs = <nav className="sticky top-[4.5rem] z-30 -mx-1 overflow-x-auto border-b bg-background/95 px-1 backdrop-blur print:static" aria-label="Usage workspace sections"><div className="flex min-w-max gap-1">{([
+    ['list', 'Usage records', FlaskConical],
+    ['summary', 'Quick summary', TrendingUp],
+    ['reports', 'Reports', BarChart3],
+  ] as const).map(([value, label, Icon]) => <button key={value} type="button" onClick={() => setView(value)} className={`inline-flex h-11 items-center gap-2 border-b-2 px-3 text-sm font-semibold ${view === value ? 'border-green-700 text-green-700' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><Icon className="h-4 w-4" />{label}</button>)}</div></nav>;
+
+  if (view === 'reports') {
+    return <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-2xl font-bold">Input Usage</h1><p className="text-sm text-muted-foreground">Record applications and analyse the resulting usage in one workspace.</p></div><Button className="bg-green-600 hover:bg-green-700" onClick={() => { setView('list'); setShowLogModal(true); }}><Plus className="mr-1 h-4 w-4" />Log Usage</Button></div>
+      {workspaceTabs}
+      <ContextualOperationsReport module="usage" inventory={inventory} usageLogs={logs} />
+    </div>;
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -132,13 +147,7 @@ export default function UsageTrackerPage() {
         </div>
       </div>
 
-      {/* View Toggle */}
-      <div className="flex gap-1 border rounded-md p-1 bg-muted/30 w-fit">
-        {[['list', 'Log View'], ['summary', 'Summary View']].map(([v, l]) => (
-          <button key={v} onClick={() => setView(v as any)}
-            className={`px-3 py-1.5 rounded text-sm transition-colors ${view === v ? 'bg-background shadow-sm font-medium' : 'hover:bg-background/60'}`}>{l}</button>
-        ))}
-      </div>
+      {workspaceTabs}
 
       {/* Filters */}
       <Card>
@@ -148,13 +157,13 @@ export default function UsageTrackerPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input placeholder="Search item or applicator..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <select className="border rounded-md px-3 py-2 text-sm bg-background" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as any)}>
+            <select className="border rounded-md px-3 py-2 text-sm bg-background" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as AgricCategory | 'all')}>
               <option value="all">All Categories</option>
               {['fungicide', 'insecticide', 'herbicide', 'fertilizer', 'seed'].map(c => (
                 <option key={c} value={c} className="capitalize">{c.charAt(0).toUpperCase() + c.slice(1)}</option>
               ))}
             </select>
-            <select className="border rounded-md px-3 py-2 text-sm bg-background" value={zoneFilter} onChange={e => setZoneFilter(e.target.value as any)}>
+            <select className="border rounded-md px-3 py-2 text-sm bg-background" value={zoneFilter} onChange={e => setZoneFilter(e.target.value as FarmZone | 'all')}>
               <option value="all">All Zones</option>
               {farmZones.map(z => <option key={z} value={z}>{z}</option>)}
             </select>
@@ -244,9 +253,9 @@ export default function UsageTrackerPage() {
                     return (
                       <div key={w.week} className="flex-1 flex flex-col items-center gap-0.5">
                         <div className="w-full flex flex-col justify-end" style={{ height: `${(total / maxTotal) * 64}px` }}>
-                          <div className="bg-blue-400 w-full" style={{ height: `${(w.fungicide / total) * 100}%` }} />
-                          <div className="bg-orange-400 w-full" style={{ height: `${(w.insecticide / total) * 100}%` }} />
-                          <div className="bg-yellow-400 w-full" style={{ height: `${(w.herbicide / total) * 100}%` }} />
+                          <div className="bg-blue-400 w-full" style={{ height: total ? `${(w.fungicide / total) * 100}%` : 0 }} />
+                          <div className="bg-orange-400 w-full" style={{ height: total ? `${(w.insecticide / total) * 100}%` : 0 }} />
+                          <div className="bg-yellow-400 w-full" style={{ height: total ? `${(w.herbicide / total) * 100}%` : 0 }} />
                         </div>
                         <span className="text-xs text-muted-foreground">{w.week}</span>
                       </div>

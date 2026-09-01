@@ -128,8 +128,8 @@ export default function ReportsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Farm Reports</h1>
-          <p className="text-muted-foreground text-sm">Daily · Weekly · Monthly — based on your real-time data</p>
+          <h1 className="text-2xl font-bold">Consolidated Farm Reports</h1>
+          <p className="text-muted-foreground text-sm">Cross-module management view. Detailed stock, usage, equipment, packhouse, disease, and livestock reports also remain beside their source records.</p>
         </div>
         <Button className="bg-green-600 hover:bg-green-700" onClick={exportReport}>
           <Download className="w-4 h-4 mr-1" /> Export Report

@@ -4,8 +4,9 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Search, Plus, Download,
   Package, Edit2, Trash2, Eye,
-  Clock, X, Save, Upload
+  Clock, X, Save, Upload, BarChart3
 } from 'lucide-react';
+import { ContextualOperationsReport } from '@/components/agriculture/ContextualOperationsReport';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,6 +71,7 @@ export default function StockManagementPage() {
   const [importMessage, setImportMessage] = useState('');
   const [importError, setImportError] = useState('');
   const [actionError, setActionError] = useState('');
+  const [workspaceView, setWorkspaceView] = useState<'inventory' | 'reports'>('inventory');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const filtered = useMemo(() => {
@@ -184,6 +186,19 @@ export default function StockManagementPage() {
     const a = document.createElement('a'); a.href = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`; a.download = `agric-stock-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
   }
 
+  const workspaceTabs = <nav className="sticky top-[4.5rem] z-30 -mx-1 overflow-x-auto border-b bg-background/95 px-1 backdrop-blur print:static" aria-label="Stock workspace sections"><div className="flex min-w-max gap-1">{([
+    ['inventory', 'Inventory', Package],
+    ['reports', 'Reports', BarChart3],
+  ] as const).map(([value, label, Icon]) => <button key={value} type="button" onClick={() => setWorkspaceView(value)} className={`inline-flex h-11 items-center gap-2 border-b-2 px-3 text-sm font-semibold ${workspaceView === value ? 'border-green-700 text-green-700' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><Icon className="h-4 w-4" />{label}</button>)}</div></nav>;
+
+  if (workspaceView === 'reports') {
+    return <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-2xl font-bold">Stock Management</h1><p className="text-sm text-muted-foreground">Manage stock and review its operational report in one workspace.</p></div>{canManageStock ? <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => { setWorkspaceView('inventory'); setShowAddModal(true); }}><Plus className="mr-1 h-4 w-4" />Add Item</Button> : null}</div>
+      {workspaceTabs}
+      <ContextualOperationsReport module="stock" inventory={rawInventory} />
+    </div>;
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -208,6 +223,7 @@ export default function StockManagementPage() {
           )}
         </div>
       </div>
+      {workspaceTabs}
       {actionError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>}
 
       {/* Stats Row */}
