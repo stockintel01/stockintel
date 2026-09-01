@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { aggregateSigatokaSessions, calculateSigatokaMetrics, convertArea, createEmptySigatokaAdvancedStageLeafCounts, generateSigatokaDecisionAlerts, normalizeSigatokaAdvancedStageObservation, sigatokaCoefficient, validateSigatokaAdvancedStageObservation, validateSigatokaPlants } from '../lib/agric/sigatoka.ts';
+import { aggregateSigatokaSessions, calculateSigatokaMetrics, convertArea, createEmptySigatokaAdvancedStageLeafCounts, generateSigatokaDecisionAlerts, normalizeSigatokaAdvancedStageObservation, sigatokaCoefficient, summarizeSigatokaAdvancedStageObservation, validateSigatokaAdvancedStageObservation, validateSigatokaPlants } from '../lib/agric/sigatoka.ts';
 
 const score = value => value ? {
   stage: Number(value[0]),
@@ -73,10 +73,18 @@ const detailedStageObservation = {
   plantNumber: 1,
   leafCounts: createEmptySigatokaAdvancedStageLeafCounts().map(row => row.leafNumber === 8
     ? { ...row, stage4Count: 26, stage5Count: 2, stage6Count: 0 }
-    : { ...row, stage4Count: 0, stage5Count: 0, stage6Count: 0 }),
+    : row.leafNumber <= 10 ? { ...row, stage4Count: 0, stage5Count: 0, stage6Count: 0 } : row),
 };
 assert.deepEqual(detailedStageObservation.leafCounts.map(row => row.leafNumber), [5, 6, 7, 8, 9, 10, 11, 12, 13]);
 assert.deepEqual(validateSigatokaAdvancedStageObservation(detailedStageObservation, plants), []);
+assert.deepEqual(summarizeSigatokaAdvancedStageObservation(detailedStageObservation, plants), {
+  assessedLeaves: 6,
+  unassessedLeaves: 3,
+  stage4Total: 26,
+  stage5Total: 2,
+  stage6Total: 0,
+  totalSymptoms: 28,
+});
 const normalizedDetailed = normalizeSigatokaAdvancedStageObservation({
   plantNumber: 1,
   leafCounts: [
@@ -91,5 +99,13 @@ assert.equal(normalizedDetailed?.leafCounts.find(row => row.leafNumber === 14), 
 assert.ok(validateSigatokaAdvancedStageObservation({ ...detailedStageObservation, plantNumber: 99 }, plants).some(issue => issue.includes('sampled plant')));
 assert.ok(validateSigatokaAdvancedStageObservation({ ...detailedStageObservation, leafCounts: detailedStageObservation.leafCounts.slice(0, 8) }, plants).some(issue => issue.includes('every leaf')));
 assert.ok(validateSigatokaAdvancedStageObservation({ ...detailedStageObservation, leafCounts: detailedStageObservation.leafCounts.map(row => ({ ...row, stage4Count: null, stage5Count: null, stage6Count: null })) }, plants).some(issue => issue.includes('at least one')));
+assert.ok(validateSigatokaAdvancedStageObservation({ ...detailedStageObservation, leafCounts: detailedStageObservation.leafCounts.map(row => row.leafNumber === 8 ? { ...row, stage5Count: null } : row) }, plants).some(issue => issue.includes('all three stage counts')));
+
+const weeklyWithDetailedStages = aggregateSigatokaSessions([
+  { id: 'detailed', sectorName: 'S1', plotName: 'P1', plotArea: 1, plotAreaSquareMetres: 10000, areaUnit: 'ha', observedAt: '2026-02-05', monitoringWeek: 6, monitoringYear: 2026, observerId: 'u1', observerName: 'Scout', intervalDays: 7, status: 'submitted', plants, advancedStageObservation: detailedStageObservation, metrics, rainfallMm: null, treatment: null },
+]);
+assert.equal(weeklyWithDetailedStages[0].advancedStages.observations, 1);
+assert.equal(weeklyWithDetailedStages[0].advancedStages.assessedLeaves, 6);
+assert.equal(weeklyWithDetailedStages[0].advancedStages.totalSymptoms, 28);
 
 console.log('Sigatoka SED parity, detailed stage observation, aggregation, and decision alert checks passed.');

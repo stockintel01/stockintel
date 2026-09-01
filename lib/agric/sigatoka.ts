@@ -37,6 +37,15 @@ export interface SigatokaAdvancedStageObservation {
   leafCounts: SigatokaAdvancedStageLeafCount[];
 }
 
+export interface SigatokaAdvancedStageSummary {
+  assessedLeaves: number;
+  unassessedLeaves: number;
+  stage4Total: number;
+  stage5Total: number;
+  stage6Total: number;
+  totalSymptoms: number;
+}
+
 export const SIGATOKA_ADVANCED_LEAF_NUMBERS = [5, 6, 7, 8, 9, 10, 11, 12, 13] as const;
 
 export function createEmptySigatokaAdvancedStageLeafCounts(): SigatokaAdvancedStageLeafCount[] {
@@ -93,10 +102,38 @@ export function validateSigatokaAdvancedStageObservation(
   if (rows.some(row => !row || [row.stage4Count, row.stage5Count, row.stage6Count].some(value => value !== null && !validAdvancedStageCount(value)))) {
     issues.push('Detailed stage counts must be zero or positive whole numbers.');
   }
-  if (!rows.some(row => row && [row.stage4Count, row.stage5Count, row.stage6Count].some(value => validAdvancedStageCount(value)))) {
+  const partiallyAssessedLeaves = rows.filter(row => {
+    if (!row) return false;
+    const values = [row.stage4Count, row.stage5Count, row.stage6Count];
+    return values.some(value => value !== null) && !values.every(value => validAdvancedStageCount(value));
+  }).map(row => row.leafNumber);
+  if (partiallyAssessedLeaves.length) {
+    issues.push(`Enter all three stage counts for assessed ${partiallyAssessedLeaves.length === 1 ? 'leaf' : 'leaves'} ${partiallyAssessedLeaves.join(', ')}, using zero when none were found, or clear the entire row.`);
+  }
+  if (!rows.some(row => row && [row.stage4Count, row.stage5Count, row.stage6Count].every(value => validAdvancedStageCount(value)))) {
     issues.push('Enter at least one detailed stage 4-6 count, including zero when none were observed.');
   }
   return issues;
+}
+
+export function summarizeSigatokaAdvancedStageObservation(
+  observation: SigatokaAdvancedStageObservation | null | undefined,
+  plants: SigatokaPlantObservation[],
+): SigatokaAdvancedStageSummary | null {
+  const normalized = normalizeSigatokaAdvancedStageObservation(observation, plants);
+  if (!normalized) return null;
+  const assessedRows = normalized.leafCounts.filter(row => [row.stage4Count, row.stage5Count, row.stage6Count].every(value => validAdvancedStageCount(value)));
+  const stage4Total = assessedRows.reduce((total, row) => total + (row.stage4Count ?? 0), 0);
+  const stage5Total = assessedRows.reduce((total, row) => total + (row.stage5Count ?? 0), 0);
+  const stage6Total = assessedRows.reduce((total, row) => total + (row.stage6Count ?? 0), 0);
+  return {
+    assessedLeaves: assessedRows.length,
+    unassessedLeaves: SIGATOKA_ADVANCED_LEAF_NUMBERS.length - assessedRows.length,
+    stage4Total,
+    stage5Total,
+    stage6Total,
+    totalSymptoms: stage4Total + stage5Total + stage6Total,
+  };
 }
 
 export interface SigatokaMetrics {
@@ -196,6 +233,7 @@ export interface SigatokaWeeklySummary {
   rainfallMm: number | null;
   treatments: NonNullable<SigatokaSessionRecord['treatment']>[];
   harvestDistribution: SigatokaMetrics['harvestDistribution'];
+  advancedStages: SigatokaAdvancedStageSummary & { observations: number };
 }
 
 const COEFFICIENTS: Record<string, Record<SigatokaLeafPosition, number>> = {
@@ -322,6 +360,17 @@ export function aggregateSigatokaSessions(sessions: SigatokaSessionRecord[]): Si
       over5: total.over5 + record.metrics.harvestDistribution.over5,
       counted: total.counted + record.metrics.harvestDistribution.counted,
     }), { under3: 0, from3To5: 0, over5: 0, counted: 0 });
+    const advancedStageSummaries = records.map(record => summarizeSigatokaAdvancedStageObservation(record.advancedStageObservation, record.plants))
+      .filter((summary): summary is SigatokaAdvancedStageSummary => summary !== null);
+    const advancedStages = advancedStageSummaries.reduce<SigatokaAdvancedStageSummary & { observations: number }>((total, summary) => ({
+      observations: total.observations + 1,
+      assessedLeaves: total.assessedLeaves + summary.assessedLeaves,
+      unassessedLeaves: total.unassessedLeaves + summary.unassessedLeaves,
+      stage4Total: total.stage4Total + summary.stage4Total,
+      stage5Total: total.stage5Total + summary.stage5Total,
+      stage6Total: total.stage6Total + summary.stage6Total,
+      totalSymptoms: total.totalSymptoms + summary.totalSymptoms,
+    }), { observations: 0, assessedLeaves: 0, unassessedLeaves: 0, stage4Total: 0, stage5Total: 0, stage6Total: 0, totalSymptoms: 0 });
 
     return {
       key,
@@ -342,6 +391,7 @@ export function aggregateSigatokaSessions(sessions: SigatokaSessionRecord[]): Si
       rainfallMm: rainfallValues.length ? rainfallValues.reduce((total, value) => total + value, 0) / rainfallValues.length : null,
       treatments: records.flatMap(record => record.treatment ? [record.treatment] : []),
       harvestDistribution,
+      advancedStages,
     };
   }).sort((a, b) => a.key.localeCompare(b.key));
 }

@@ -47,6 +47,7 @@ import {
   diseaseClassLabel,
   generateSigatokaDecisionAlerts,
   normalizeSigatokaAdvancedStageObservation,
+  summarizeSigatokaAdvancedStageObservation,
   validateSigatokaAdvancedStageObservation,
   validateSigatokaPlants,
   type SigatokaAdvancedStageLeafCount,
@@ -75,7 +76,7 @@ import { userHasAccess } from '@/lib/access-permissions';
 const AREA_FACTORS = { hectare: 10000, acre: 4046.8564224, square_metre: 1 } as const;
 type ReportPeriod = 'all' | 'week' | 'month' | 'year' | 'custom';
 type DataRemovalAction = 'archive' | 'delete';
-type ImportIssueStatus = 'Blocked' | 'Already exists';
+type ImportIssueStatus = 'Blocked' | 'Imported with warning' | 'Already exists';
 type ScoutingView = 'overview' | 'record' | 'sheets' | 'reports' | 'guide';
 type ReportSection = 'summary' | 'trends' | 'coverage' | 'records';
 
@@ -86,6 +87,7 @@ interface ImportIssue {
 
 function describeImportIssue(issue: ImportIssue): { category: string; action: string } {
   if (issue.status === 'Already exists') return { category: 'Duplicate observation', action: 'No correction is required. Edit, archive, or delete the existing observation before importing a replacement.' };
+  if (issue.status === 'Imported with warning') return { category: 'Optional detail omitted', action: 'The main field observation was imported. Review the source and add the omitted detailed stage observation from the record editor when required.' };
   if (issue.details.includes('invalid; use blank or a disease class')) return { category: 'Invalid disease class', action: 'Correct the listed workbook cell to blank or 1-/1+ through 6-/6+, then import again.' };
   if (issue.details.includes('observation is incomplete')) return { category: 'Missing plant reading', action: 'Enter both old and new leaf readings for the listed plant, or remove that plant row intentionally before importing again.' };
   return { category: 'Validation error', action: 'Correct the source value described here, then import the affected observation again.' };
@@ -274,7 +276,18 @@ export default function SigatokaPage() {
     ynl: summary.averageYnl,
     nlf: summary.averageNlf,
     nlh: summary.averageNlh,
+    stage4: summary.advancedStages.stage4Total,
+    stage5: summary.advancedStages.stage5Total,
+    stage6: summary.advancedStages.stage6Total,
+    detailedObservations: summary.advancedStages.observations,
   }));
+  const detailedStagePeriodSummary = weeklySummaries.reduce((total, summary) => ({
+    observations: total.observations + summary.advancedStages.observations,
+    assessedLeaves: total.assessedLeaves + summary.advancedStages.assessedLeaves,
+    stage4Total: total.stage4Total + summary.advancedStages.stage4Total,
+    stage5Total: total.stage5Total + summary.advancedStages.stage5Total,
+    stage6Total: total.stage6Total + summary.advancedStages.stage6Total,
+  }), { observations: 0, assessedLeaves: 0, stage4Total: 0, stage5Total: 0, stage6Total: 0 });
   const latestReport = reportSessions.slice().sort((a, b) => b.observedAt.localeCompare(a.observedAt))[0];
   const reportFilterCount = Number(reportPlot !== 'all') + Number(reportPeriod !== 'all');
   const submittedSessions = useMemo(() => sessions.filter(session => session.status !== 'draft').slice().sort((a, b) => b.observedAt.localeCompare(a.observedAt)), [sessions]);
@@ -289,6 +302,11 @@ export default function SigatokaPage() {
   const activeMonitoringPlots = config.monitoringPlots.filter(plot => plot.status === 'active');
   const selectedPlant = plants[currentPlant];
   const advancedStagePlant = plants.find(plant => plant.plantNumber === Number(advancedStagePlantNumber));
+  const advancedStageSummary = summarizeSigatokaAdvancedStageObservation(recordAdvancedStages && advancedStagePlant ? {
+    plantNumber: advancedStagePlant.plantNumber,
+    ...(advancedStagePlant.sentinelPlantId ? { sentinelPlantId: advancedStagePlant.sentinelPlantId } : {}),
+    leafCounts: advancedStageLeafCounts,
+  } : null, plants);
   const selectedRegisteredPlot = activeMonitoringPlots.find(plot => plot.name.toLowerCase() === plotName.trim().toLowerCase());
   const selectedSentinel = selectedRegisteredPlot?.sentinels.find(sentinel => sentinel.id === selectedPlant?.sentinelPlantId);
   const carriedFromPlant = previousSession && selectedPlant
@@ -354,7 +372,31 @@ export default function SigatokaPage() {
   }
 
   function updateAdvancedStageCount(index: number, field: 'stage4Count' | 'stage5Count' | 'stage6Count', value: string) {
-    setAdvancedStageLeafCounts(current => current.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: optionalNumber(value) } : row));
+    setAdvancedStageLeafCounts(current => current.map((row, rowIndex) => {
+      if (rowIndex !== index) return row;
+      const parsed = optionalNumber(value);
+      if (parsed === null) return { ...row, [field]: null };
+      return {
+        ...row,
+        stage4Count: row.stage4Count ?? 0,
+        stage5Count: row.stage5Count ?? 0,
+        stage6Count: row.stage6Count ?? 0,
+        [field]: parsed,
+      };
+    }));
+  }
+
+  function markAdvancedStageLeafAssessed(index: number) {
+    setAdvancedStageLeafCounts(current => current.map((row, rowIndex) => rowIndex === index ? {
+      ...row,
+      stage4Count: row.stage4Count ?? 0,
+      stage5Count: row.stage5Count ?? 0,
+      stage6Count: row.stage6Count ?? 0,
+    } : row));
+  }
+
+  function clearAdvancedStageLeaf(index: number) {
+    setAdvancedStageLeafCounts(current => current.map((row, rowIndex) => rowIndex === index ? { ...row, stage4Count: null, stage5Count: null, stage6Count: null } : row));
   }
 
   function resetObservationForm() {
@@ -469,6 +511,7 @@ export default function SigatokaPage() {
     if (!reportSessions.length) return setMessage('There are no submitted observations to export.');
     exportToCSV(reportSessions.flatMap(session => {
       const detailedObservation = normalizeSigatokaAdvancedStageObservation(session.advancedStageObservation, session.plants);
+      const detailedSummary = summarizeSigatokaAdvancedStageObservation(detailedObservation, session.plants);
       const rowCount = Math.max(session.plants.length, detailedObservation?.leafCounts.length ?? 0);
       return Array.from({ length: rowCount }, (_, rowIndex) => {
         const plant = session.plants[rowIndex];
@@ -514,6 +557,11 @@ export default function SigatokaPage() {
           'Stage 4 count': detailedRow?.stage4Count ?? '',
           'Stage 5 count': detailedRow?.stage5Count ?? '',
           'Stage 6 count': detailedRow?.stage6Count ?? '',
+          'Detailed leaves assessed': detailedSummary?.assessedLeaves ?? '',
+          'Detailed stage 4 total': detailedSummary?.stage4Total ?? '',
+          'Detailed stage 5 total': detailedSummary?.stage5Total ?? '',
+          'Detailed stage 6 total': detailedSummary?.stage6Total ?? '',
+          'Detailed total findings': detailedSummary?.totalSymptoms ?? '',
           Notes: session.notes ?? '',
           'Calculation version': session.metrics.calculationVersion,
         };
@@ -556,19 +604,22 @@ export default function SigatokaPage() {
         return true;
       });
       const blockedIssues: ImportIssue[] = result.errors.map(details => ({ status: 'Blocked', details }));
-      setImportIssues([...blockedIssues, ...alreadyExisting]);
+      const warningIssues: ImportIssue[] = result.warnings.map(details => ({ status: 'Imported with warning', details }));
+      setImportIssues([...blockedIssues, ...warningIssues, ...alreadyExisting]);
       if (!accepted.length) {
         const blockedSummary = blockedIssues.length ? `${blockedIssues.length} validation finding${blockedIssues.length === 1 ? '' : 's'} blocked affected observations.` : '';
         const existingSummary = alreadyExisting.length ? `${alreadyExisting.length} observation${alreadyExisting.length === 1 ? '' : 's'} already exist${alreadyExisting.length === 1 ? 's' : ''} and were safely skipped.` : '';
-        setMessage(`No new observations were imported. ${blockedSummary} ${existingSummary} Download the import report for exact locations and recommended actions.`.replace(/\s+/g, ' ').trim());
+        const warningSummary = warningIssues.length ? `${warningIssues.length} optional detailed-stage warning${warningIssues.length === 1 ? '' : 's'} found.` : '';
+        setMessage(`No new observations were imported. ${blockedSummary} ${warningSummary} ${existingSummary} Download the import report for exact locations and recommended actions.`.replace(/\s+/g, ' ').trim());
         return;
       }
       await addSigatokaSessions(organization.id, accepted);
       const skipped = result.skippedRows ? ` ${result.skippedRows} empty future-template row${result.skippedRows === 1 ? ' was' : 's were'} ignored.` : '';
       const blocked = blockedIssues.length ? ` ${blockedIssues.length} validation finding${blockedIssues.length === 1 ? '' : 's'} blocked affected observations.` : '';
+      const warnings = warningIssues.length ? ` ${warningIssues.length} optional detailed-stage warning${warningIssues.length === 1 ? ' was' : 's were'} recorded without discarding the main field observation.` : '';
       const existing = alreadyExisting.length ? ` ${alreadyExisting.length} observation${alreadyExisting.length === 1 ? '' : 's'} already exist${alreadyExisting.length === 1 ? 's' : ''} and were skipped without changing stored data.` : '';
-      const report = blockedIssues.length || alreadyExisting.length ? ' Download the import report for exact locations and recommended actions.' : '';
-      setMessage(`${accepted.length} historical observation${accepted.length === 1 ? '' : 's'} imported from ${result.totalRows} plant rows.${skipped}${blocked}${existing}${report} Calculations were rebuilt by the verified engine.`);
+      const report = blockedIssues.length || warningIssues.length || alreadyExisting.length ? ' Download the import report for exact locations and recommended actions.' : '';
+      setMessage(`${accepted.length} historical observation${accepted.length === 1 ? '' : 's'} imported from ${result.totalRows} plant rows.${skipped}${blocked}${warnings}${existing}${report} Calculations were rebuilt by the verified engine.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'The observation import failed.');
     } finally { setImporting(false); }
@@ -887,13 +938,21 @@ export default function SigatokaPage() {
               <div className="space-y-1.5"><Label>Observed {config.plantLabel.toLowerCase()}</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={advancedStagePlantNumber} onChange={event => setAdvancedStagePlantNumber(event.target.value)}><option value="">Select {config.plantLabel.toLowerCase()}</option>{plants.map(plant => <option key={plant.plantNumber} value={plant.plantNumber}>{plant.sentinelPlantCode || `${config.plantLabel} ${plant.plantNumber}`}</option>)}</select></div>
               <div className="rounded-lg border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">Current leaf reading (NLN)</p><p className="mt-1 text-lg font-bold">{metric(advancedStagePlant?.currentLeafReading, 1)}</p><p className="text-xs text-muted-foreground">Filled from the selected plant reading above.</p></div>
             </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{[
+              ['Assessed leaves', advancedStageSummary ? `${advancedStageSummary.assessedLeaves}/9` : '0/9'],
+              ['Stage 4 total', advancedStageSummary?.stage4Total ?? 0],
+              ['Stage 5 total', advancedStageSummary?.stage5Total ?? 0],
+              ['Stage 6 total', advancedStageSummary?.stage6Total ?? 0],
+              ['All findings', advancedStageSummary?.totalSymptoms ?? 0],
+            ].map(([label, value]) => <div key={label} className="rounded-lg border bg-background p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-xl font-bold">{value}</p></div>)}</div>
             <div className="overflow-x-auto rounded-lg border">
-              <table className="w-full min-w-[520px] text-sm">
-                <thead className="bg-muted/50"><tr><th className="px-3 py-2 text-left font-semibold">Leaf number</th><th className="px-3 py-2 text-left font-semibold">Stage 4 count</th><th className="px-3 py-2 text-left font-semibold">Stage 5 count</th><th className="px-3 py-2 text-left font-semibold">Stage 6 count</th></tr></thead>
-                <tbody>{advancedStageLeafCounts.map((row, index) => <tr key={row.leafNumber} className="border-t"><td className="px-3 py-2 font-medium">{row.leafNumber}</td>{(['stage4Count', 'stage5Count', 'stage6Count'] as const).map((field, stageIndex) => <td key={field} className="px-2 py-1.5"><Input aria-label={`Leaf ${row.leafNumber} stage ${stageIndex + 4} count`} type="number" min={0} step={1} inputMode="numeric" value={row[field] ?? ''} onChange={event => updateAdvancedStageCount(index, field, event.target.value)} /></td>)}</tr>)}</tbody>
+              <table className="w-full min-w-[680px] text-sm">
+                <thead className="bg-muted/50"><tr><th className="px-3 py-2 text-left font-semibold">Leaf</th><th className="px-3 py-2 text-left font-semibold">Stage 4</th><th className="px-3 py-2 text-left font-semibold">Stage 5</th><th className="px-3 py-2 text-left font-semibold">Stage 6</th><th className="px-3 py-2 text-left font-semibold">Assessment</th><th className="px-3 py-2 text-right font-semibold">Action</th></tr></thead>
+                <tbody>{advancedStageLeafCounts.map((row, index) => { const assessed = [row.stage4Count, row.stage5Count, row.stage6Count].every(value => value !== null); const partial = !assessed && [row.stage4Count, row.stage5Count, row.stage6Count].some(value => value !== null); return <tr key={row.leafNumber} className="border-t"><td className="px-3 py-2 font-semibold">{row.leafNumber}</td>{(['stage4Count', 'stage5Count', 'stage6Count'] as const).map((field, stageIndex) => <td key={field} className="px-2 py-1.5"><Input aria-label={`Leaf ${row.leafNumber} stage ${stageIndex + 4} count`} type="number" min={0} step={1} inputMode="numeric" value={row[field] ?? ''} onChange={event => updateAdvancedStageCount(index, field, event.target.value)} /></td>)}<td className="px-3 py-2"><Badge variant="outline" className={assessed ? 'border-green-200 bg-green-50 text-green-800' : partial ? 'border-amber-200 bg-amber-50 text-amber-800' : ''}>{assessed ? 'Assessed' : partial ? 'Complete row' : 'Not assessed'}</Badge></td><td className="px-3 py-2 text-right">{assessed || partial ? <Button type="button" size="sm" variant="ghost" onClick={() => clearAdvancedStageLeaf(index)}>Clear</Button> : <Button type="button" size="sm" variant="outline" onClick={() => markAdvancedStageLeafAssessed(index)}>Checked: none</Button>}</td></tr>; })}</tbody>
+                <tfoot className="border-t-2 bg-muted/40 font-semibold"><tr><td className="px-3 py-2">Totals</td><td className="px-3 py-2">{advancedStageSummary?.stage4Total ?? 0}</td><td className="px-3 py-2">{advancedStageSummary?.stage5Total ?? 0}</td><td className="px-3 py-2">{advancedStageSummary?.stage6Total ?? 0}</td><td className="px-3 py-2" colSpan={2}>{advancedStageSummary?.assessedLeaves ?? 0} of 9 leaves assessed</td></tr></tfoot>
               </table>
             </div>
-            <p className="text-xs text-muted-foreground">Use zero when the leaf was checked and none were found. Leave a cell blank only when that stage was not assessed.</p>
+            <p className="text-xs text-muted-foreground">Choose <span className="font-medium text-foreground">Checked: none</span> to record 0 for all three stages. A blank row means that leaf was not assessed. Every assessed row is saved as a complete stage 4, 5 and 6 set.</p>
           </div>}
         </div>
 
@@ -946,10 +1005,18 @@ export default function SigatokaPage() {
     </section>
 
     <section id="report-trends-panel" role="tabpanel" aria-hidden={reportSection !== 'trends'} inert={reportSection !== 'trends'} className={`print-report-section space-y-5 ${reportSection === 'trends' ? 'max-h-none opacity-100' : 'pointer-events-none max-h-0 overflow-hidden opacity-0'}`} aria-labelledby="report-trends-heading">
-    <div><h3 id="report-trends-heading" className="text-lg font-bold">Trend analysis</h3><p className="text-sm text-muted-foreground">Compare disease pressure, functional leaves, and harvest outcomes over time.</p></div>
+    <div><h3 id="report-trends-heading" className="text-lg font-bold">Trend analysis</h3><p className="text-sm text-muted-foreground">Compare disease pressure, detailed stage 4-6 findings, functional leaves, and harvest outcomes over time.</p></div>
     <div className="grid gap-5 xl:grid-cols-2">
       <Card><CardHeader><CardTitle>Youngest affected and functional leaves</CardTitle></CardHeader><CardContent>{chartData.some(item => item.yil !== null || item.ynl !== null) ? <div><div className="h-60 w-full sm:h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={chartData} margin={{ top: 8, left: -12, right: 4, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="week" interval="preserveStartEnd" minTickGap={18} tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} width={42} /><Tooltip contentStyle={{ fontSize: 12 }} /><Line type="monotone" dataKey="yil" stroke="#dc2626" strokeWidth={2} dot={{ r: 2 }} name="YIL" /><Line type="monotone" dataKey="ynl" stroke="#7c3aed" strokeWidth={2} dot={{ r: 2 }} name="YNL" /><Line type="monotone" dataKey="nlf" stroke="#16a34a" strokeWidth={2} dot={{ r: 2 }} name="NLF" /><Line type="monotone" dataKey="nlh" stroke="#0284c7" strokeWidth={2} dot={{ r: 2 }} name="NLH" /></LineChart></ResponsiveContainer></div><CompactChartLegend items={[{ color: '#dc2626', label: 'YIL', title: 'Youngest Infested Leaf (lower is worse)' }, { color: '#7c3aed', label: 'YNL', title: 'Youngest Necrotic Leaf (lower is worse)' }, { color: '#16a34a', label: 'NLF', title: 'Number of Leaves at Flowering' }, { color: '#0284c7', label: 'NLH', title: 'Number of Leaves at Harvest' }]} /></div> : <div className="py-14 text-center text-sm text-muted-foreground">Record YIL, YNL, NLF or NLH to build this analysis.</div>}</CardContent></Card>
       <Card><CardHeader><CardTitle>Functional leaves at harvest</CardTitle></CardHeader><CardContent>{harvestChartData.some(item => item.under3 + item.from3To5 + item.over5 > 0) ? <div><div className="h-60 w-full sm:h-72"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={harvestChartData} margin={{ top: 8, left: -8, right: 4, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="week" interval="preserveStartEnd" minTickGap={18} tick={{ fontSize: 10 }} /><YAxis domain={[0, 100]} width={46} tickFormatter={value => `${value}%`} tick={{ fontSize: 10 }} /><Tooltip contentStyle={{ fontSize: 12 }} formatter={value => `${Number(value).toFixed(1)}%`} /><Bar dataKey="under3" stackId="harvest" fill="#dc2626" name="NLH under 3" /><Bar dataKey="from3To5" stackId="harvest" fill="#f59e0b" name="NLH 3-5" /><Bar dataKey="over5" stackId="harvest" fill="#16a34a" name="NLH over 5" /></ComposedChart></ResponsiveContainer></div><CompactChartLegend items={[{ color: '#dc2626', label: 'NLH under 3', title: 'Leaves at harvest under 3' }, { color: '#f59e0b', label: 'NLH 3 to 5', title: 'Leaves at harvest from 3 to 5' }, { color: '#16a34a', label: 'NLH over 5', title: 'Leaves at harvest over 5' }]} /></div> : <div className="py-14 text-center text-sm text-muted-foreground">Record leaves at harvest to see the workbook-style percentage distribution.</div>}</CardContent></Card>
+      <Card className="xl:col-span-2"><CardHeader><CardTitle>Detailed stage 4, 5 and 6 observations</CardTitle></CardHeader><CardContent>{detailedStagePeriodSummary.observations ? <div className="grid gap-5 lg:grid-cols-[1.5fr_1fr]"><div><div className="h-60 w-full sm:h-72"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData} margin={{ top: 8, left: -8, right: 4, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="week" interval="preserveStartEnd" minTickGap={18} tick={{ fontSize: 10 }} /><YAxis allowDecimals={false} width={46} tick={{ fontSize: 10 }} /><Tooltip contentStyle={{ fontSize: 12 }} /><Bar dataKey="stage4" stackId="advanced" fill="#fbbf24" name="Stage 4 findings" /><Bar dataKey="stage5" stackId="advanced" fill="#f97316" name="Stage 5 findings" /><Bar dataKey="stage6" stackId="advanced" fill="#dc2626" name="Stage 6 findings" /></ComposedChart></ResponsiveContainer></div><CompactChartLegend items={[{ color: '#fbbf24', label: 'Stage 4', title: 'Stage 4 symptom count' }, { color: '#f97316', label: 'Stage 5', title: 'Stage 5 symptom count' }, { color: '#dc2626', label: 'Stage 6', title: 'Stage 6 symptom count' }]} /></div><div className="grid grid-cols-2 gap-3 self-start">{[
+        ['Detailed observations', detailedStagePeriodSummary.observations],
+        ['Leaves assessed', detailedStagePeriodSummary.assessedLeaves],
+        ['Stage 4 total', detailedStagePeriodSummary.stage4Total],
+        ['Stage 5 total', detailedStagePeriodSummary.stage5Total],
+        ['Stage 6 total', detailedStagePeriodSummary.stage6Total],
+        ['All findings', detailedStagePeriodSummary.stage4Total + detailedStagePeriodSummary.stage5Total + detailedStagePeriodSummary.stage6Total],
+      ].map(([label, value]) => <div key={label} className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-xl font-bold">{value}</p></div>)}</div></div> : <div className="py-14 text-center"><p className="font-medium">No detailed stage observations in this range</p><p className="mt-1 text-sm text-muted-foreground">Enable the stage 4, 5 and 6 section on a field observation to build this analysis.</p></div>}</CardContent></Card>
     </div>
     </section>
 

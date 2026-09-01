@@ -2,6 +2,8 @@ import {
   diseaseClassLabel,
   normalizeSigatokaAdvancedStageObservation,
   sigatokaCoefficient,
+  summarizeSigatokaAdvancedStageObservation,
+  type SigatokaAdvancedStageSummary,
   type SigatokaDensity,
   type SigatokaSessionRecord,
 } from './sigatoka';
@@ -62,6 +64,7 @@ export interface SigatokaFieldReportModel {
     plantCode: string;
     currentLeafReading: number | null;
     leafCounts: Array<{ leafNumber: number; stage4Count: number | null; stage5Count: number | null; stage6Count: number | null }>;
+    summary: SigatokaAdvancedStageSummary;
   } | null;
   riskLevel: RiskLevel;
   riskLabel: string;
@@ -141,6 +144,7 @@ export function buildSigatokaFieldReportModel(
     plantCode: advancedPlant?.sentinelPlantCode ?? '',
     currentLeafReading: advancedPlant?.currentLeafReading ?? null,
     leafCounts: normalizedAdvancedStageObservation.leafCounts,
+    summary: summarizeSigatokaAdvancedStageObservation(normalizedAdvancedStageObservation, session.plants)!,
   } : null;
   const risk = riskForSed(session.metrics.sed, options.riskThresholds);
   return { session, options, plantRows, stageRows, advancedStageObservation, riskLevel: risk.level, riskLabel: risk.label, generatedAt: new Date().toLocaleString() };
@@ -158,9 +162,10 @@ export function buildSigatokaFieldReportHtml(model: SigatokaFieldReportModel): s
   </tr>`).join('');
   const stageRows = model.stageRows.map(row => `<tr><td>${row.label}</td><td>${row.leaf2Count}</td><td>${row.leaf3Count}</td><td>${row.leaf4Count}</td><td>${row.leaf2Score}</td><td>${row.leaf3Score}</td><td>${row.leaf4Score}</td></tr>`).join('');
   const advancedRows = (model.advancedStageObservation?.leafCounts ?? Array.from({ length: 9 }, (_, index) => ({ leafNumber: index + 5, stage4Count: null, stage5Count: null, stage6Count: null })))
-    .map(row => `<tr><td>${row.leafNumber}</td><td>${displayNumber(row.stage4Count, 0)}</td><td>${displayNumber(row.stage5Count, 0)}</td><td>${displayNumber(row.stage6Count, 0)}</td></tr>`).join('');
+    .map(row => `<tr><td>${row.leafNumber}</td><td class="input">${displayNumber(row.stage4Count, 0)}</td><td class="input">${displayNumber(row.stage5Count, 0)}</td><td class="input">${displayNumber(row.stage6Count, 0)}</td></tr>`).join('');
   const advancedPlantLabel = model.advancedStageObservation ? htmlEscape(model.advancedStageObservation.plantCode || model.advancedStageObservation.plantNumber) : 'Not recorded';
   const advancedNln = displayNumber(model.advancedStageObservation?.currentLeafReading, 1);
+  const advancedSummary = model.advancedStageObservation?.summary;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${htmlEscape(options.organizationName)} - ${htmlEscape(session.plotName)} field report</title><style>
     *{box-sizing:border-box}body{margin:0;padding:18px;font:11px Arial,sans-serif;color:#17201b;background:#fff}.page{max-width:1500px;margin:auto}.header{display:flex;justify-content:space-between;gap:20px;border-bottom:4px solid #17643a;padding-bottom:10px;margin-bottom:12px}.eyebrow{color:#17643a;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.title{font-size:22px;font-weight:800;margin:3px 0}.muted{color:#5d6a62}.status{align-self:flex-start;border-radius:999px;padding:6px 10px;font-weight:800}.risk-normal{background:#dcfce7;color:#166534}.risk-watch{background:#fef3c7;color:#92400e}.risk-high{background:#ffedd5;color:#9a3412}.risk-critical{background:#fee2e2;color:#991b1b}.risk-unconfigured{background:#e2e8f0;color:#334155}.meta{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:10px 0}.meta div,.summary div{border:1px solid #b9c5bd;padding:7px;background:#f8faf8}.meta b,.summary b{display:block;font-size:9px;text-transform:uppercase;color:#526159;margin-bottom:3px}.section{background:#dce9df;border:1px solid #7c9584;font-weight:800;text-align:center;padding:5px;margin-top:10px}.layout{display:grid;grid-template-columns:minmax(720px,1.7fr) minmax(430px,1fr);gap:10px;align-items:start}table{width:100%;border-collapse:collapse}th,td{border:1px solid #536159;padding:3px 4px;text-align:center;white-space:nowrap}th{background:#dce9df;font-weight:800}.input{background:#fff8b8}.calculated{background:#e9f1f7}.quality-ok{background:#15803d;color:#fff;font-weight:800}.quality-warning{background:#f59e0b;color:#422006;font-weight:800}.quality-error{background:#dc2626;color:#fff;font-weight:800}.summary{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-top:10px}.summary .risk{background:#fff;border-width:2px}.legend{display:flex;gap:14px;align-items:center;margin-top:10px;color:#526159}.swatch{display:inline-block;width:13px;height:13px;border:1px solid #87928b;vertical-align:-2px;margin-right:4px}.foot{margin-top:10px;padding-top:8px;border-top:1px solid #cbd5ce;font-size:9px;color:#66736b}.print-button{position:fixed;right:18px;top:18px;background:#17643a;color:white;border:0;border-radius:6px;padding:9px 13px;font-weight:700;cursor:pointer}
     @media(max-width:900px){.layout{grid-template-columns:1fr}.meta,.summary{grid-template-columns:repeat(2,1fr)}body{padding:10px;overflow-x:auto}}@media print{@page{size:A4 landscape;margin:7mm}body{padding:0;font-size:7.4px}.page{max-width:none}.print-button{display:none}.header{margin-bottom:5px;padding-bottom:5px}.title{font-size:15px}.meta{margin:5px 0;gap:3px}.meta div,.summary div{padding:3px}.section{margin-top:5px;padding:3px}.layout{grid-template-columns:1.65fr 1fr;gap:5px}th,td{padding:1.8px 2px}.summary{gap:3px;margin-top:5px}.legend,.foot{margin-top:5px}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
@@ -169,7 +174,7 @@ export function buildSigatokaFieldReportHtml(model: SigatokaFieldReportModel): s
     <section class="meta"><div><b>Organization</b>${htmlEscape(options.organizationName)}</div><div><b>${htmlEscape(options.sectorLabel)}</b>${htmlEscape(session.sectorName)}</div><div><b>${htmlEscape(options.plotLabel)}</b>${htmlEscape(session.plotName)}</div><div><b>Date</b>${htmlEscape(session.observedAt)}</div><div><b>Farm week</b>${session.monitoringYear} W${session.monitoringWeek}</div><div><b>Observer / status</b>${htmlEscape(session.observerName)} | ${htmlEscape(session.status)}</div></section>
     <section class="layout"><div><div class="section">Plant readings and quality checks</div><table><thead><tr><th title="${htmlEscape(options.plantLabel)}">${htmlEscape(options.plantLabel)}</th><th title="Old Leaf Number">OLN</th><th title="New Leaf Number">NLN</th><th title="Foliar Emission Rhythm">FER</th><th>Leaf II</th><th>Leaf III</th><th>Leaf IV</th><th title="Youngest Infested Leaf">YIL</th><th title="Youngest Necrotic Leaf">YNL</th><th>Check</th><th title="Number of Leaves at Flowering">NLF</th><th title="Number of Leaves at Harvest">NLH</th></tr></thead><tbody>${plantRows}</tbody></table></div>
       <div><div class="section">Disease class calculations</div><table><thead><tr><th rowspan="2">Class</th><th colspan="3">Observed count</th><th colspan="3">Weighted score</th></tr><tr><th>II</th><th>III</th><th>IV</th><th>II</th><th>III</th><th>IV</th></tr></thead><tbody>${stageRows}<tr><th colspan="4">Total weighted score</th><th>${session.metrics.coefficientLeaf2}</th><th>${session.metrics.coefficientLeaf3}</th><th>${session.metrics.coefficientLeaf4}</th></tr><tr><th colspan="6">Gross disease coefficient</th><th>${session.metrics.grossCoefficient}</th></tr></tbody></table>
-      <div class="section">Detailed observation of stages 4, 5 and 6</div><table><thead><tr><th>${htmlEscape(options.plantLabel)}</th><td class="input">${advancedPlantLabel}</td><th title="New Leaf Number">NLN</th><td class="input">${advancedNln}</td></tr><tr><th>Leaf number</th><th>Stage 4 count</th><th>Stage 5 count</th><th>Stage 6 count</th></tr></thead><tbody>${advancedRows}</tbody></table></div></section>
+      <div class="section">Detailed observation of stages 4, 5 and 6</div><table><thead><tr><th>${htmlEscape(options.plantLabel)}</th><td class="input">${advancedPlantLabel}</td><th title="New Leaf Number">NLN</th><td class="input">${advancedNln}</td></tr><tr><th>Leaf number</th><th>Stage 4 count</th><th>Stage 5 count</th><th>Stage 6 count</th></tr></thead><tbody>${advancedRows}<tr><th>Totals</th><th class="calculated">${advancedSummary?.stage4Total ?? '-'}</th><th class="calculated">${advancedSummary?.stage5Total ?? '-'}</th><th class="calculated">${advancedSummary?.stage6Total ?? '-'}</th></tr><tr><th colspan="2">Assessment coverage</th><td colspan="2" class="calculated">${advancedSummary ? `${advancedSummary.assessedLeaves} of 9 leaves` : 'Not recorded'}</td></tr></tbody></table></div></section>
     <section class="summary"><div><b>Mean FER</b>${displayNumber(session.metrics.meanRawFer, 3)}</div><div><b>Interval</b>${session.intervalDays} days</div><div><b>10-day FER</b>${displayNumber(session.metrics.fer10d, 3)}</div><div><b>Previous final FER</b>${displayNumber(session.metrics.previousFinalFer, 3)}</div><div><b>Final FER</b>${displayNumber(session.metrics.finalFer, 4)}</div><div><b>Average YIL / YNL</b>${displayNumber(session.metrics.averageYil, 1)} / ${displayNumber(session.metrics.averageYnl, 1)}</div><div><b>Average NLF / NLH</b>${displayNumber(session.metrics.averageNlf, 1)} / ${displayNumber(session.metrics.averageNlh, 1)}</div><div class="risk risk-${model.riskLevel}"><b>SED / risk</b>${displayNumber(session.metrics.sed, 0)} | ${htmlEscape(model.riskLabel)}</div></section>
     <div class="legend"><span><i class="swatch" style="background:#fff8b8"></i>Recorded field value</span><span><i class="swatch" style="background:#e9f1f7"></i>System calculation</span><span><i class="swatch" style="background:#15803d"></i>Passed check</span><span><i class="swatch" style="background:#f59e0b"></i>Review</span><span><i class="swatch" style="background:#dc2626"></i>Blocking inconsistency</span></div>
     <footer class="foot">Generated ${htmlEscape(model.generatedAt)} | Calculation protocol ${htmlEscape(session.metrics.calculationVersion)} | Colors communicate recorded values, calculation output, data quality and configured risk only. Abbreviations are expanded in cell tooltips and the workbook method guide.</footer>
@@ -336,6 +341,17 @@ export async function buildSigatokaFieldWorkbook(session: SigatokaSessionRecord,
   });
   styleRange(worksheet, 7, 15, 23, 26);
   for (let row = 7; row <= 15; row++) for (let column = 24; column <= 26; column++) worksheet.getCell(row, column).fill = fill(fills.input);
+  const detailedStageSummary = model.advancedStageObservation?.summary;
+  worksheet.getCell('W16').value = 'Totals'; styleHeader(worksheet.getCell('W16'));
+  ['X', 'Y', 'Z'].forEach((column, index) => {
+    const total = detailedStageSummary ? [detailedStageSummary.stage4Total, detailedStageSummary.stage5Total, detailedStageSummary.stage6Total][index] : '';
+    worksheet.getCell(`${column}16`).value = { formula: `IF(COUNT(${column}7:${column}15)=0,"",SUM(${column}7:${column}15))`, result: total };
+    worksheet.getCell(`${column}16`).fill = fill(fills.calculated);
+    worksheet.getCell(`${column}16`).border = border;
+  });
+  worksheet.mergeCells('W17:X17'); worksheet.getCell('W17').value = 'Assessment coverage'; styleHeader(worksheet.getCell('W17'));
+  worksheet.mergeCells('Y17:Z17'); worksheet.getCell('Y17').value = detailedStageSummary ? `${detailedStageSummary.assessedLeaves} of 9 leaves` : 'Not recorded';
+  worksheet.getCell('Y17').fill = fill(fills.calculated); worksheet.getCell('Y17').border = border; worksheet.getCell('Y17').alignment = { horizontal: 'center' };
 
   const summaryStart = Math.max(plantEnd + 2, 22);
   const summaries: Array<[string, number | string | null, string | null]> = [
