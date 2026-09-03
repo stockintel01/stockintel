@@ -1,4 +1,4 @@
-const CACHE_NAME = 'intellistock-v4';
+const CACHE_NAME = 'intellistock-v5';
 const OFFLINE_URL = '/offline';
 const STATIC_ASSETS = [OFFLINE_URL, '/manifest.json', '/logo.svg'];
 
