@@ -19,8 +19,22 @@ service firebase.storage {
         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId == orgId;
     }
 
+    function isOwner() {
+      return isSignedIn() &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'owner';
+    }
+
+    match /organizations/{orgId}/branding/{fileName} {
+      allow read: if isSuperAdmin() || isSameOrg(orgId);
+      allow create, update: if (isSuperAdmin() || (isSameOrg(orgId) && isOwner()))
+        && request.resource.size <= 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/(png|jpeg|webp)');
+      allow delete: if isSuperAdmin() || (isSameOrg(orgId) && isOwner());
+    }
+
     match /organizations/{orgId}/{allPaths=**} {
-      allow read, write: if isSuperAdmin() || isSameOrg(orgId);
+      allow read: if isSuperAdmin() || isSameOrg(orgId);
+      allow write: if false;
     }
 
     match /{allPaths=**} {

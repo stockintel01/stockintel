@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AccessKey } from './access-permissions';
+import {
+    DEFAULT_SALES_RECEIPT_SETTINGS,
+    normalizeSalesReceiptSettings,
+    type SalesReceiptSettings,
+} from './sales/receipt';
 
 export type UserRole = 'super_admin' | 'owner' | 'manager' | 'worker';
 export type IndustryType = 'agriculture';
@@ -22,6 +27,7 @@ export interface Organization {
     address?: string;
     phone?: string;
     taxId?: string;
+    receiptSettings?: Partial<SalesReceiptSettings>;
 }
 
 export interface User {
@@ -48,17 +54,7 @@ interface AppState {
     organization: Organization | null;
     activeIndustry: IndustryType;
     currency: string;
-    receiptSettings: {
-        template: 'thermal' | 'a4' | 'minimal';
-        businessName: string;
-        address: string;
-        phone: string;
-        email: string;
-        taxId: string;
-        logoUrl: string;
-        footerText: string;
-        showLogo: boolean;
-    };
+    receiptSettings: SalesReceiptSettings;
     taxSettings: {
         enabled: boolean;
         rate: number;
@@ -79,30 +75,30 @@ export const useAppStore = create<AppState>()(
             user: null,
             organization: null,
             activeIndustry: 'agriculture',
-            currency: '$',
-            receiptSettings: {
-                template: 'thermal',
-                businessName: 'StockIntel Agri',
-                address: '',
-                phone: '',
-                email: '',
-                taxId: '',
-                logoUrl: '',
-                footerText: 'Thank you.',
-                showLogo: true,
-            },
+            currency: 'GHS',
+            receiptSettings: DEFAULT_SALES_RECEIPT_SETTINGS,
             taxSettings: {
                 enabled: true,
                 rate: 0,
             },
             isAuthenticated: false,
-            setStoreUser: (user, org = null) => set({ user, organization: org, isAuthenticated: !!user }),
+            setStoreUser: (user, org = null) => set((state) => ({
+                user,
+                organization: org,
+                isAuthenticated: !!user,
+                currency: org?.currency ?? state.currency,
+                receiptSettings: org
+                    ? normalizeSalesReceiptSettings(org.receiptSettings, org, user?.email)
+                    : user ? state.receiptSettings : DEFAULT_SALES_RECEIPT_SETTINGS,
+            })),
             setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
             logout: () => set({
                 user: null,
                 organization: null,
                 isAuthenticated: false,
                 activeIndustry: 'agriculture',
+                currency: 'GHS',
+                receiptSettings: DEFAULT_SALES_RECEIPT_SETTINGS,
             }),
             setIndustry: (industry) => set({ activeIndustry: industry }),
             setCurrency: (currency) => set({ currency }),
@@ -118,7 +114,6 @@ export const useAppStore = create<AppState>()(
             partialize: (state) => ({
                 activeIndustry: state.activeIndustry,
                 currency: state.currency,
-                receiptSettings: state.receiptSettings,
                 taxSettings: state.taxSettings,
             }),
         },

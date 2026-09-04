@@ -6,14 +6,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Plus, Download, X, TrendingUp, TrendingDown,
-  AlertTriangle, CheckCircle2
+  AlertTriangle, ReceiptText
 } from 'lucide-react';
 import type { EggProductionRecord, EggSaleRecord } from '@/lib/agric/livestock-types';
 import { useAppStore } from '@/lib/store';
 import { useLivestock } from '@/lib/agric/useLivestock';
+import {
+  buildReceiptNumber,
+  formatReceiptMoney,
+  printSalesReceipt,
+  SALES_RECEIPT_CURRENCIES,
+} from '@/lib/sales/receipt';
+
+type EggPaymentMethod = EggSaleRecord['paymentStatus'];
 
 export default function EggProductionPage() {
-  const { user } = useAppStore();
+  const { user, receiptSettings } = useAppStore();
   const { eggRecords: records, eggSales: sales, flocks, addRecord } = useLivestock();
   const layerFlocks = flocks.filter(f => f.species === 'chicken_layer' && f.status === 'active');
   const today = new Date().toISOString().slice(0, 10);
@@ -33,7 +41,8 @@ export default function EggProductionPage() {
   // Form state - sale
   const [saleForm, setSaleForm] = useState({
     buyerName: '', buyerContact: '', gradeA: 0, gradeB: 0, gradeC: 0,
-    pricePerTray: 0, currency: 'GHS', paymentStatus: 'cash' as const,
+    pricePerTray: 0, currency: receiptSettings.currencyCode, paymentStatus: 'cash' as EggPaymentMethod,
+    discountAmount: 0, taxRate: receiptSettings.showTax ? receiptSettings.defaultTaxRate : 0,
     invoiceNumber: '', date: today,
   });
 
@@ -50,9 +59,8 @@ export default function EggProductionPage() {
     : '—';
 
   // 7-day totals
-  const weekTotal  = records.filter(r => r.date >= new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10)).reduce((s, r) => s + r.totalEggsCollected, 0);
-  const weekTrays  = Math.floor(weekTotal / 30);
-  const weekCrates = Math.floor(weekTotal / 360);
+  const weekStart = new Date(new Date(`${today}T12:00:00`).getTime() - 6 * 86400000).toISOString().slice(0, 10);
+  const weekTotal = records.filter(r => r.date >= weekStart).reduce((s, r) => s + r.totalEggsCollected, 0);
 
   // Egg inventory (rolling)
   const totalSold    = sales.reduce((s, r) => s + r.totalEggs, 0);
@@ -61,6 +69,17 @@ export default function EggProductionPage() {
   const stockTrays   = Math.floor(currentStock / 30);
   const stockGradeA  = Math.max(0, records.reduce((s, r) => s + r.gradeA, 0) - sales.reduce((s, r) => s + r.gradeA, 0));
   const stockGradeB  = Math.max(0, records.reduce((s, r) => s + r.gradeB, 0) - sales.reduce((s, r) => s + r.gradeB, 0));
+  const salesTotalsByCurrency = sales.reduce<Record<string, number>>((totals, sale) => {
+    const code = sale.currency ?? receiptSettings.currencyCode;
+    totals[code] = (totals[code] ?? 0) + (sale.totalRevenue ?? 0);
+    return totals;
+  }, {});
+  const saleEggs = saleForm.gradeA + saleForm.gradeB + saleForm.gradeC;
+  const saleTrays = Math.ceil(saleEggs / 30);
+  const saleSubtotal = saleTrays * saleForm.pricePerTray;
+  const saleDiscount = Math.min(saleSubtotal, Math.max(0, saleForm.discountAmount));
+  const saleTax = (saleSubtotal - saleDiscount) * saleForm.taxRate / 100;
+  const saleTotal = saleSubtotal - saleDiscount + saleTax;
 
   // Lay rate trend arrow
   const productionTrend = [...records].sort((a, b) => a.date.localeCompare(b.date)).slice(-7);
@@ -84,11 +103,11 @@ export default function EggProductionPage() {
     const flock = layerFlocks.find(f => f.id === form.flockId)!;
     const layRate = parseFloat(autoCalcLayRate() ?? '0');
     const rec: EggProductionRecord = {
-      id: `ep_${Date.now()}`,
+      id: '',
       flockId: form.flockId,
       flockName: flock.name,
       date: form.date,
-      shift: form.shift as any,
+      shift: form.shift as EggProductionRecord['shift'],
       penHouseId: flock.penHouseId,
       penHouseName: flock.penHouseName,
       totalEggsCollected: form.totalEggsCollected,
@@ -112,9 +131,13 @@ export default function EggProductionPage() {
     if (!saleForm.buyerName || !saleForm.pricePerTray) return;
     const totalEggs = saleForm.gradeA + saleForm.gradeB + saleForm.gradeC;
     const trays     = Math.ceil(totalEggs / 30);
-    const revenue   = trays * saleForm.pricePerTray;
+    const subtotal = trays * saleForm.pricePerTray;
+    const discountAmount = Math.min(subtotal, Math.max(0, saleForm.discountAmount));
+    const taxAmount = (subtotal - discountAmount) * saleForm.taxRate / 100;
+    const revenue = subtotal - discountAmount + taxAmount;
+    const settlementStatus = saleForm.paymentStatus === 'credit' ? 'unpaid' : 'paid';
     const rec: EggSaleRecord = {
-      id: `es_${Date.now()}`,
+      id: '',
       date: saleForm.date,
       buyerName: saleForm.buyerName,
       buyerContact: saleForm.buyerContact || undefined,
@@ -122,14 +145,49 @@ export default function EggProductionPage() {
       totalEggs, trays,
       pricePerTray: saleForm.pricePerTray,
       currency: saleForm.currency,
+      subtotal,
+      discountAmount,
+      taxRate: saleForm.taxRate,
+      taxAmount,
       totalRevenue: revenue,
+      amountPaid: settlementStatus === 'paid' ? revenue : 0,
+      settlementStatus,
       paymentStatus: saleForm.paymentStatus,
       invoiceNumber: saleForm.invoiceNumber || undefined,
       soldBy: user?.name ?? 'Farm Manager',
     };
     await addRecord('eggSale', rec);
     setShowSaleForm(false);
-    setSaleForm({ buyerName: '', buyerContact: '', gradeA: 0, gradeB: 0, gradeC: 0, pricePerTray: 0, currency: 'GHS', paymentStatus: 'cash', invoiceNumber: '', date: today });
+    setSaleForm({ buyerName: '', buyerContact: '', gradeA: 0, gradeB: 0, gradeC: 0, pricePerTray: 0, currency: receiptSettings.currencyCode, paymentStatus: 'cash', discountAmount: 0, taxRate: receiptSettings.showTax ? receiptSettings.defaultTaxRate : 0, invoiceNumber: '', date: today });
+  }
+
+  function openSaleForm() {
+    setSaleForm(current => ({ ...current, currency: receiptSettings.currencyCode, taxRate: receiptSettings.showTax ? receiptSettings.defaultTaxRate : 0 }));
+    setShowSaleForm(true);
+  }
+
+  function printEggSaleReceipt(sale: EggSaleRecord) {
+    const opened = printSalesReceipt(receiptSettings, {
+      receiptNumber: buildReceiptNumber(receiptSettings, sale.id, sale.date, sale.invoiceNumber),
+      issuedAt: sale.date,
+      customerName: sale.buyerName,
+      customerContact: sale.buyerContact,
+      sellerName: sale.soldBy,
+      paymentMethod: sale.paymentStatus,
+      paymentStatus: sale.settlementStatus ?? (sale.paymentStatus === 'credit' ? 'unpaid' : 'paid'),
+      currencyCode: sale.currency ?? receiptSettings.currencyCode,
+      discountAmount: sale.discountAmount ?? 0,
+      taxRate: sale.taxRate ?? 0,
+      amountPaid: sale.amountPaid ?? (sale.paymentStatus === 'credit' ? 0 : sale.totalRevenue),
+      notes: sale.notes,
+      items: [{
+        description: `Egg sale - Grade A: ${sale.gradeA}, Grade B: ${sale.gradeB}, Grade C: ${sale.gradeC}`,
+        quantity: sale.trays,
+        unit: 'trays (30 eggs each)',
+        unitPrice: sale.pricePerTray ?? 0,
+      }],
+    });
+    if (!opened) window.alert('The receipt window was blocked. Allow pop-ups for this site and try again.');
   }
 
   function exportCSV() {
@@ -157,7 +215,7 @@ export default function EggProductionPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={exportCSV}><Download className="w-4 h-4 mr-1" /> Export</Button>
-          <Button variant="outline" size="sm" onClick={() => setShowSaleForm(true)}>💰 Record Sale</Button>
+          <Button variant="outline" size="sm" onClick={openSaleForm}>Record Sale</Button>
           <Button className="bg-amber-600 hover:bg-amber-700" onClick={() => setShowForm(true)}>
             <Plus className="w-4 h-4 mr-1" /> Log Collection
           </Button>
@@ -197,7 +255,7 @@ export default function EggProductionPage() {
       {/* Tabs */}
       <div className="flex gap-1 border-b">
         {[['production', '🥚 Production Log'], ['sales', '💰 Sales Log'], ['inventory', '📦 Inventory']].map(([v, l]) => (
-          <button key={v} onClick={() => setActiveTab(v as any)}
+          <button key={v} onClick={() => setActiveTab(v as 'production' | 'sales' | 'inventory')}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === v ? 'border-amber-500 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>{l}</button>
         ))}
       </div>
@@ -209,7 +267,7 @@ export default function EggProductionPage() {
           {todayRecords.length > 0 && (
             <Card>
               <CardHeader className="py-3">
-                <CardTitle className="text-sm">Today's Egg Grades — {today}</CardTitle>
+                <CardTitle className="text-sm">Today&apos;s Egg Grades — {today}</CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center text-sm">
@@ -317,7 +375,7 @@ export default function EggProductionPage() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/30 border-b">
                   <tr>
-                    {['Date', 'Buyer', 'Grade A', 'Grade B', 'Grade C', 'Total Eggs', 'Trays', 'Price/Tray', 'Revenue', 'Payment'].map(h => (
+                    {['Date', 'Buyer', 'Grade A', 'Grade B', 'Grade C', 'Total Eggs', 'Trays', 'Price/Tray', 'Revenue', 'Payment', 'Receipt'].map(h => (
                       <th key={h} className="px-3 py-2 text-left font-medium text-xs text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -332,11 +390,12 @@ export default function EggProductionPage() {
                       <td className="px-3 py-2 text-amber-600">{s.gradeC}</td>
                       <td className="px-3 py-2 font-bold">{s.totalEggs.toLocaleString()}</td>
                       <td className="px-3 py-2">{s.trays}</td>
-                      <td className="px-3 py-2">{s.currency} {s.pricePerTray}</td>
-                      <td className="px-3 py-2 font-bold text-green-700">{s.currency} {s.totalRevenue?.toLocaleString()}</td>
+                      <td className="px-3 py-2">{formatReceiptMoney(s.pricePerTray ?? 0, s.currency ?? receiptSettings.currencyCode, receiptSettings.locale)}</td>
+                      <td className="px-3 py-2 font-bold text-green-700">{formatReceiptMoney(s.totalRevenue ?? 0, s.currency ?? receiptSettings.currencyCode, receiptSettings.locale)}</td>
                       <td className="px-3 py-2">
                         <span className="text-xs bg-muted px-2 py-0.5 rounded">{(s.paymentStatus ?? '').replace(/_/g, ' ')}</span>
                       </td>
+                      <td className="px-3 py-2"><Button size="sm" variant="outline" onClick={() => printEggSaleReceipt(s)}><ReceiptText className="mr-1.5 h-3.5 w-3.5" />Receipt</Button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -346,8 +405,8 @@ export default function EggProductionPage() {
                     <td className="px-3 py-2">{sales.reduce((s, r) => s + r.totalEggs, 0).toLocaleString()}</td>
                     <td className="px-3 py-2">{sales.reduce((s, r) => s + r.trays, 0)}</td>
                     <td className="px-3 py-2"></td>
-                    <td className="px-3 py-2 text-green-700">GHS {sales.reduce((s, r) => s + (r.totalRevenue ?? 0), 0).toLocaleString()}</td>
-                    <td></td>
+                    <td className="px-3 py-2 text-green-700">{Object.entries(salesTotalsByCurrency).map(([code, total]) => <span key={code} className="block">{formatReceiptMoney(total, code, receiptSettings.locale)}</span>)}</td>
+                    <td colSpan={2}></td>
                   </tr>
                 </tfoot>
               </table>
@@ -531,12 +590,22 @@ export default function EggProductionPage() {
                   <Input type="number" className="mt-1" value={saleForm.gradeB || ''} onChange={e => setSaleForm(f => ({ ...f, gradeB: parseInt(e.target.value) || 0 }))} />
                 </div>
                 <div>
+                  <label className="text-xs font-medium text-muted-foreground uppercase">Grade C Eggs</label>
+                  <Input type="number" min={0} className="mt-1" value={saleForm.gradeC || ''} onChange={e => setSaleForm(f => ({ ...f, gradeC: parseInt(e.target.value) || 0 }))} />
+                </div>
+                <div>
                   <label className="text-xs font-medium text-muted-foreground uppercase">Price Per Tray *</label>
-                  <Input type="number" className="mt-1" placeholder="e.g. 38" value={saleForm.pricePerTray || ''} onChange={e => setSaleForm(f => ({ ...f, pricePerTray: parseFloat(e.target.value) || 0 }))} />
+                  <Input type="number" min={0} step="0.01" className="mt-1" placeholder="e.g. 38" value={saleForm.pricePerTray || ''} onChange={e => setSaleForm(f => ({ ...f, pricePerTray: parseFloat(e.target.value) || 0 }))} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground uppercase">Currency</label>
+                  <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={saleForm.currency} onChange={e => setSaleForm(f => ({ ...f, currency: e.target.value }))}>
+                    {SALES_RECEIPT_CURRENCIES.map(([code, label]) => <option key={code} value={code}>{code} - {label}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground uppercase">Payment Method</label>
-                  <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={saleForm.paymentStatus} onChange={e => setSaleForm(f => ({ ...f, paymentStatus: e.target.value as any }))}>
+                  <select className="w-full border rounded-md px-3 py-2 text-sm mt-1 bg-background" value={saleForm.paymentStatus} onChange={e => setSaleForm(f => ({ ...f, paymentStatus: e.target.value as EggPaymentMethod }))}>
                     <option value="cash">Cash</option>
                     <option value="mobile_money">Mobile Money</option>
                     <option value="bank_transfer">Bank Transfer</option>
@@ -544,18 +613,29 @@ export default function EggProductionPage() {
                   </select>
                 </div>
                 <div>
+                  <label className="text-xs font-medium text-muted-foreground uppercase">Discount ({saleForm.currency})</label>
+                  <Input type="number" min={0} step="0.01" className="mt-1" value={saleForm.discountAmount || ''} onChange={e => setSaleForm(f => ({ ...f, discountAmount: parseFloat(e.target.value) || 0 }))} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground uppercase">Tax Rate (%)</label>
+                  <Input type="number" min={0} max={100} step="0.01" className="mt-1" value={saleForm.taxRate || ''} onChange={e => setSaleForm(f => ({ ...f, taxRate: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) }))} />
+                </div>
+                <div>
                   <label className="text-xs font-medium text-muted-foreground uppercase">Invoice Number</label>
                   <Input className="mt-1" placeholder="INV-EGG-..." value={saleForm.invoiceNumber} onChange={e => setSaleForm(f => ({ ...f, invoiceNumber: e.target.value }))} />
+                  <p className="mt-1 text-xs text-muted-foreground">Optional. A unique receipt number is created automatically when blank.</p>
                 </div>
               </div>
-              {saleForm.pricePerTray > 0 && (saleForm.gradeA + saleForm.gradeB + saleForm.gradeC) > 0 && (
+              {saleForm.pricePerTray > 0 && saleEggs > 0 && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
-                  <p><strong>Total:</strong> {saleForm.gradeA + saleForm.gradeB + saleForm.gradeC} eggs · {Math.ceil((saleForm.gradeA + saleForm.gradeB + saleForm.gradeC) / 30)} trays · <strong>Revenue: {saleForm.currency} {(Math.ceil((saleForm.gradeA + saleForm.gradeB + saleForm.gradeC) / 30) * saleForm.pricePerTray).toLocaleString()}</strong></p>
+                  <p><strong>{saleEggs} eggs</strong> in {saleTrays} trays</p>
+                  <div className="mt-2 grid grid-cols-2 gap-1 text-xs"><span>Subtotal</span><strong className="text-right">{formatReceiptMoney(saleSubtotal, saleForm.currency, receiptSettings.locale)}</strong>{saleDiscount > 0 ? <><span>Discount</span><strong className="text-right">- {formatReceiptMoney(saleDiscount, saleForm.currency, receiptSettings.locale)}</strong></> : null}{saleForm.taxRate > 0 ? <><span>Tax ({saleForm.taxRate}%)</span><strong className="text-right">{formatReceiptMoney(saleTax, saleForm.currency, receiptSettings.locale)}</strong></> : null}<span className="border-t pt-1 font-bold">Total</span><strong className="border-t pt-1 text-right">{formatReceiptMoney(saleTotal, saleForm.currency, receiptSettings.locale)}</strong></div>
+                  {saleForm.paymentStatus === 'credit' ? <p className="mt-2 text-xs font-medium">This sale will be recorded as unpaid.</p> : null}
                 </div>
               )}
               <div className="flex gap-2 pt-2">
                 <Button variant="outline" className="flex-1" onClick={() => setShowSaleForm(false)}>Cancel</Button>
-                <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={submitSale} disabled={!saleForm.buyerName || !saleForm.pricePerTray}>Save Sale</Button>
+                <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={submitSale} disabled={!saleForm.buyerName || !saleForm.pricePerTray || saleEggs <= 0}>Save Sale</Button>
               </div>
             </CardContent>
           </Card>

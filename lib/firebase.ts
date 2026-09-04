@@ -4,6 +4,7 @@ import { getAnalytics, isSupported, type Analytics } from "firebase/analytics";
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -41,6 +42,7 @@ if (typeof window === "undefined") {
     }
 }
 const auth = getAuth(app);
+const storage = getStorage(app);
 const googleProvider = new GoogleAuthProvider();
 
-export { app, analytics, db, auth, googleProvider };
+export { app, analytics, db, auth, storage, googleProvider };

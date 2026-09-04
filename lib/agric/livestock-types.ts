@@ -132,7 +132,13 @@ export interface EggSaleRecord {
   trays: number;
   pricePerTray?: number;                // e.g. GHS 35
   currency?: string;
+  subtotal?: number;
+  discountAmount?: number;
+  taxRate?: number;
+  taxAmount?: number;
   totalRevenue?: number;
+  amountPaid?: number;
+  settlementStatus?: 'paid' | 'partially_paid' | 'unpaid' | 'refunded';
   paymentStatus: 'cash' | 'credit' | 'mobile_money' | 'bank_transfer';
   invoiceNumber?: string;
   soldBy: string;

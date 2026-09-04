@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { doc, updateDoc } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
+import { isSuperAdminEmail } from '@/lib/access-control';
 import {
     agricultureProfileLabel,
     buildAgricultureProfile,
@@ -33,6 +34,7 @@ export default function SettingsPage() {
     const [locating, setLocating] = useState(false);
     const [savingAgriculture, setSavingAgriculture] = useState(false);
     const [newMonitoringPlot, setNewMonitoringPlot] = useState({ name: '', sectorName: '', area: '' });
+    const canDesignSalesReceipts = user?.role === 'owner' || isSuperAdminEmail(user?.email);
 
     const toggleAgricultureOperation = (operation: AgricultureOperation) => {
         const selected = agricultureProfile.operationTypes.includes(operation);
@@ -508,18 +510,16 @@ export default function SettingsPage() {
                     </CardContent>
                 </Card>
 
-                {/* Receipt Section */}
+                {/* Customer sales receipt section */}
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            <Scroll className="w-5 h-5" /> Receipt & Billing
+                            <Scroll className="w-5 h-5" /> Customer Sales Receipts
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        <p className="text-sm text-muted-foreground">Customize invoice templates, logos, and footer messages.</p>
-                        <Link href="/dashboard/settings/receipts">
-                            <Button variant="outline" className="w-full">Open Receipt Designer</Button>
-                        </Link>
+                        <p className="text-sm text-muted-foreground">Design the branded receipt customers receive when you sell farm goods. This is separate from expense attachments and supplier records.</p>
+                        {canDesignSalesReceipts ? <Link href="/dashboard/settings/receipts"><Button variant="outline" className="w-full">Open Sales Receipt Designer</Button></Link> : <p className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">The workspace owner controls customer receipt branding and legal details.</p>}
                     </CardContent>
                 </Card>
 
