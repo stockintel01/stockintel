@@ -1,4 +1,4 @@
-const CACHE_NAME = 'intellistock-v5';
+const CACHE_NAME = 'intellistock-v6';
 const OFFLINE_URL = '/offline';
 const STATIC_ASSETS = [OFFLINE_URL, '/manifest.json', '/logo.svg'];
 
@@ -12,6 +12,10 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+    // Signing out on a shared device leaves nothing of the previous farm behind.
+    if (event.data?.type === 'CLEAR_CACHES') {
+        event.waitUntil(caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key)))));
+    }
 });
 
 self.addEventListener('fetch', event => {

@@ -37,6 +37,7 @@ function organizationPayload(id: string, data: FirebaseFirestore.DocumentData) {
         phone: data.phone,
         taxId: data.taxId,
         receiptSettings: data.receiptSettings,
+        appBranding: data.appBranding ?? {},
     };
 }
 

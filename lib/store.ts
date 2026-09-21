@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AccessKey } from './access-permissions';
+import type { AppBranding } from './branding/app-branding';
 import {
     DEFAULT_SALES_RECEIPT_SETTINGS,
     normalizeSalesReceiptSettings,
@@ -28,6 +29,7 @@ export interface Organization {
     phone?: string;
     taxId?: string;
     receiptSettings?: Partial<SalesReceiptSettings>;
+    appBranding?: Partial<AppBranding>;
 }
 
 export interface User {

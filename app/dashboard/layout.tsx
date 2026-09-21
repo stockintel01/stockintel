@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useAppStore, type Organization, type TenantMembership } from '@/lib/store';
+import { useEffect, useRef, useState } from 'react';
+import { useAppStore } from '@/lib/store';
 import { isSuperAdminEmail } from '@/lib/access-control';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthContext';
@@ -18,7 +18,8 @@ import { canUseFeature, isSubscriptionActive, type PlanFeature } from '@/lib/pla
 import { getAgricultureProfile } from '@/lib/agric/config';
 import { useAgric } from '@/lib/agric/useAgric';
 import { userCanAccessHref } from '@/lib/access-permissions';
-import { authenticatedFetch } from '@/lib/api-client';
+import { TenantAppManifest } from '@/components/pwa/TenantAppManifest';
+import { activateWorkspace } from '@/lib/workspace/activate';
 import { db } from '@/lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 
@@ -109,6 +110,41 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             router.replace('/dashboard/agriculture');
         }
     }, [authLoading, user, isAuthenticated, organization?.subscription, pathname, router, superAdmin]);
+
+    // An installed farm app opens with its own workspace in the start URL. The
+    // server still re-checks membership, so this only reopens a workspace the
+    // person already belongs to.
+    const workspaceRequestHandled = useRef(false);
+    useEffect(() => {
+        if (workspaceRequestHandled.current || !user) return;
+        const params = new URLSearchParams(window.location.search);
+        const requested = params.get('workspace');
+        if (!requested) return;
+
+        workspaceRequestHandled.current = true;
+        params.delete('workspace');
+        const query = params.toString();
+        window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+
+        if (requested === user.organizationId) return;
+        if (!user.memberships?.some(membership => membership.organizationId === requested)) return;
+
+        void activateWorkspace(requested)
+            .then(({ organization: nextOrganization, membership }) => {
+                setStoreUser({
+                    ...user,
+                    organizationId: requested,
+                    role: membership.role,
+                    access: membership.access,
+                    memberships: [
+                        ...(user.memberships ?? []).filter(item => item.organizationId !== requested),
+                        membership,
+                    ],
+                }, nextOrganization);
+                setIndustry(nextOrganization.industry);
+            })
+            .catch(() => undefined);
+    }, [user, setStoreUser, setIndustry]);
 
     if (authLoading || !user || !isAuthenticated) {
         return (
@@ -217,15 +253,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         setTenantSwitching(true);
         setTenantError('');
         try {
-            const response = await authenticatedFetch('/api/organizations', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ organizationId }),
-            });
-            const result = await response.json() as { organization?: Organization; membership?: TenantMembership; error?: string };
-            if (!response.ok || !result.organization || !result.membership) {
-                throw new Error(result.error ?? 'The workspace could not be activated.');
-            }
+            const result = await activateWorkspace(organizationId);
             const memberships = [
                 ...(user.memberships ?? []).filter(item => item.organizationId !== organizationId),
                 result.membership,
@@ -265,6 +293,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     return (
         <div className="min-h-screen bg-muted/20 flex">
+            <TenantAppManifest />
             {/* Sidebar */}
             <aside className={cn(
                 'fixed inset-y-0 left-0 z-50 h-screen w-64 bg-background border-r flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 lg:sticky lg:top-0',
