@@ -7,6 +7,7 @@ import {
   Clock, X, Save, Upload, BarChart3
 } from 'lucide-react';
 import { ContextualOperationsReport } from '@/components/agriculture/ContextualOperationsReport';
+import { WhatsAppAlertsCard } from '@/components/comms/WhatsAppAlertsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -224,6 +225,7 @@ export default function StockManagementPage() {
         </div>
       </div>
       {workspaceTabs}
+      {canManageStock && <WhatsAppAlertsCard />}
       {actionError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>}
 
       {/* Stats Row */}
