@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Supabase local state and sensitive migration exports
+/supabase/.branches/
+/supabase/.temp/
+/supabase/migration-data/
+/supabase/*-service.json
+/supabase/*-users.json
+/supabase/*-export.json
