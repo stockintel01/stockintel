@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
     User,
     onAuthStateChanged,
@@ -94,6 +95,9 @@ async function getTenantMemberships(
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+    const pathname = usePathname();
+    // Only routes that assume a signed-in user wait for Firebase.
+    const gatedRoute = pathname.startsWith('/dashboard') || pathname.startsWith('/onboarding');
     const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
     // authReady: true once Firebase has resolved the initial auth state
     // This is the single source of truth for whether the guard should fire
@@ -269,6 +273,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const logout = async () => {
         try {
             await signOut(auth);
+            navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_CACHES' });
         } catch (err) {
             console.error('Error signing out:', err);
         }
@@ -276,10 +281,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return (
         <AuthContext.Provider value={{ user: firebaseUser, loading: !authReady, signInWithGoogle, logout }}>
-            {/* Block rendering until Firebase has resolved auth state.
-                This prevents the dashboard guard from firing with stale
-                isAuthenticated=false before onAuthStateChanged completes. */}
-            {authReady ? children : (
+            {/* Block rendering until Firebase has resolved auth state, so the dashboard
+                guard does not fire with a stale isAuthenticated=false. Public pages are
+                not gated: the landing page prerendered as nothing but this spinner, which
+                is what every first-time visitor and link preview saw. */}
+            {authReady || !gatedRoute ? children : (
                 <div className="min-h-screen flex items-center justify-center bg-background">
                     <div className="flex flex-col items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center font-black text-primary-foreground text-base">SI</div>

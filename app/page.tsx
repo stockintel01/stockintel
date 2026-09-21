@@ -8,6 +8,8 @@ const outcomes = [
   'Accurate farm input, usage, and request records',
   'Packhouse, dispatch, crop, poultry, and livestock workflows',
   'Permissions that match each person’s responsibility',
+  'Your own installable app, named and coloured for your farm',
+  'Low-stock alerts on WhatsApp, so the field hears before stock runs out',
 ];
 
 export default function HomePage() {
@@ -44,6 +46,8 @@ export default function HomePage() {
             <div className="space-y-4 pt-5 text-sm">
               <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="font-medium">Inventory and field usage</p><p className="mt-1 text-slate-500">Know what is available, requested, issued, and consumed.</p></div>
               <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="font-medium">Packhouse and shipping</p><p className="mt-1 text-slate-500">Track packing output, station stock, and dispatches.</p></div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="font-medium">Your farm, your app</p><p className="mt-1 text-slate-500">Install it under your own name, colours, and icon. Every farm keeps its own.</p></div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="font-medium">Alerts that reach the field</p><p className="mt-1 text-slate-500">A WhatsApp message when an item drops to its minimum, not a dashboard nobody opened.</p></div>
               <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><p>Role-based access keeps each team member focused on the work assigned to them.</p></div>
             </div>
           </div>

@@ -20,9 +20,48 @@ import {
   type OrgSummary, type UserSummary, type SystemStats, type SystemConfig,
 } from '@/lib/superadmin';
 import { SUPER_ADMIN_EMAILS } from '@/lib/access-control';
+import { authenticatedFetch } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
 const SUPER_ADMIN_CONTACT = SUPER_ADMIN_EMAILS.join(' or ');
+
+interface PlatformStatus {
+  backend: {
+    active: string;
+    supabaseConfigured: boolean;
+    secretKeyPresent: boolean;
+    heartbeats: Record<string, { at: string; source: string }>;
+  };
+  messaging: {
+    senderConfigured: boolean;
+    storeConfigured: boolean;
+    senderNumber: string | null;
+    graphApiVersion: string | null;
+    usesCustomGraphHost: boolean;
+    quotaMode: string;
+    schedulerSecretPresent: boolean;
+    error: string | null;
+    snapshot: {
+      queue: Record<string, number>;
+      activeContacts: number;
+      lastSentAt: string | null;
+      templates: Array<{ templateKey: string; providerTemplateName: string; languageCode: string; status: string }>;
+    } | null;
+  };
+  apps: { total: number; customized: number } | null;
+}
+
+function StatusTile({ label, value, ok }: { label: string; value?: string; ok?: boolean }) {
+  const text = value ?? (ok ? 'Yes' : 'No');
+  const tone = value !== undefined ? 'text-foreground' : ok ? 'text-green-600' : 'text-amber-600';
+  return (
+    <div className="rounded-lg border p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={cn('mt-0.5 text-sm font-semibold', tone)}>{text}</p>
+    </div>
+  );
+}
+
 
 // ── Plan badge ────────────────────────────────────────────────
 function PlanBadge({ plan, status }: { plan: string; status: string }) {
@@ -45,7 +84,7 @@ function IndustryIcon({ industry }: { industry: string }) {
 }
 
 // ── Tabs ──────────────────────────────────────────────────────
-type Tab = 'overview' | 'organisations' | 'users' | 'config' | 'announcements';
+type Tab = 'overview' | 'organisations' | 'users' | 'config' | 'announcements' | 'platform';
 
 export default function SuperAdminPage() {
   const { user } = useAppStore();
@@ -79,6 +118,7 @@ function AuthorizedSuperAdminPage({ email }: { email: string }) {
   const [orgs, setOrgs]           = useState<OrgSummary[]>([]);
   const [users, setUsers]         = useState<UserSummary[]>([]);
   const [config, setConfig]       = useState<SystemConfig>(getDefaultConfig());
+  const [platform, setPlatform]   = useState<PlatformStatus | null>(null);
   const [loading, setLoading]     = useState(true);
   const [saving, setSaving]       = useState(false);
   const [search, setSearch]       = useState('');
@@ -104,16 +144,22 @@ function AuthorizedSuperAdminPage({ email }: { email: string }) {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, o, u, cfg] = await Promise.all([
+      const [s, o, u, cfg, status] = await Promise.all([
         getSystemStats(),
         getAllOrganisations(),
         getAllUsers(),
         getSystemConfig(),
+        // Subsystem status comes from the server: it reports whether a secret is
+        // present, never its value.
+        authenticatedFetch('/api/admin/platform-status')
+          .then(async response => (response.ok ? await response.json() as PlatformStatus : null))
+          .catch(() => null),
       ]);
       setStats(s);
       setOrgs(o);
       setUsers(u);
       setConfig(cfg);
+      setPlatform(status);
     } catch (err: any) {
       notify(err.message || 'Failed to load data', true);
     } finally {
@@ -210,6 +256,7 @@ function AuthorizedSuperAdminPage({ email }: { email: string }) {
     { id: 'organisations',  label: 'Organisations',  icon: Building2   },
     { id: 'users',          label: 'Users',          icon: Users       },
     { id: 'config',         label: 'System Config',  icon: Settings    },
+    { id: 'platform',       label: 'Platform',       icon: Activity    },
     { id: 'announcements',  label: 'Announcements',  icon: Bell        },
   ];
 
@@ -568,6 +615,138 @@ function AuthorizedSuperAdminPage({ email }: { email: string }) {
       )}
 
       {/* ── ANNOUNCEMENTS ── */}
+      {!loading && tab === 'platform' && (
+        <div className="space-y-4">
+          {!platform && (
+            <Card><CardContent className="py-6 text-sm text-muted-foreground">
+              Platform status could not be loaded. Check the server logs.
+            </CardContent></Card>
+          )}
+
+          {platform && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><Globe className="w-5 h-5" /> Data backend</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <StatusTile label="Serving farm data" value={platform.backend.active === 'supabase' ? 'Supabase' : 'Firebase'} />
+                    <StatusTile label="Supabase configured" ok={platform.backend.supabaseConfigured} />
+                    <StatusTile label="Service key present" ok={platform.backend.secretKeyPresent} />
+                  </div>
+                  {(() => {
+                    const beat = platform.backend.heartbeats?.keepalive;
+                    if (!beat) {
+                      return (
+                        <p className="text-sm text-amber-700">
+                          No database heartbeat recorded yet. A free Supabase project pauses after about a week
+                          without requests, so schedule the daily keep-alive before relying on it.
+                        </p>
+                      );
+                    }
+                    const ageHours = (Date.now() - new Date(beat.at).getTime()) / 3_600_000;
+                    return (
+                      <p className={cn('text-sm', ageHours > 72 ? 'text-amber-700' : 'text-muted-foreground')}>
+                        Database last reached {new Date(beat.at).toLocaleString()}
+                        {ageHours > 72 ? ' — the keep-alive has not run in over three days.' : '.'}
+                      </p>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><Bell className="w-5 h-5" /> WhatsApp messaging</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <StatusTile label="Sender configured" ok={platform.messaging.senderConfigured} />
+                    <StatusTile label="Queue store ready" ok={platform.messaging.storeConfigured} />
+                    <StatusTile label="Scheduler secret set" ok={platform.messaging.schedulerSecretPresent} />
+                    <StatusTile label="Plan limits" value={platform.messaging.quotaMode === 'enforce' ? 'Enforced' : 'Counted only'} />
+                  </div>
+
+                  {platform.messaging.senderNumber && (
+                    <p className="text-sm text-muted-foreground">
+                      Sending from {platform.messaging.senderNumber} on Graph {platform.messaging.graphApiVersion}
+                      {platform.messaging.usesCustomGraphHost ? ' · pointed at a custom host' : ''}
+                    </p>
+                  )}
+                  {platform.messaging.error && (
+                    <p role="alert" className="text-sm text-red-600">{platform.messaging.error}</p>
+                  )}
+
+                  {platform.messaging.snapshot ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+                        {Object.entries(platform.messaging.snapshot.queue).map(([status, count]) => (
+                          <div key={status} className="rounded-lg border p-3">
+                            <p className="text-xs capitalize text-muted-foreground">{status}</p>
+                            <p className="mt-0.5 text-lg font-semibold tabular-nums">{count}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {platform.messaging.snapshot.activeContacts} connected number(s) · last message sent{' '}
+                        {platform.messaging.snapshot.lastSentAt
+                          ? new Date(platform.messaging.snapshot.lastSentAt).toLocaleString()
+                          : 'never'}
+                      </p>
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">Platform templates</p>
+                        {platform.messaging.snapshot.templates.length === 0 && (
+                          <p className="text-sm text-muted-foreground">No templates registered yet.</p>
+                        )}
+                        {platform.messaging.snapshot.templates.map(template => (
+                          <div key={template.templateKey + template.languageCode} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+                            <div>
+                              <p className="text-sm font-medium">{template.providerTemplateName}</p>
+                              <p className="text-xs text-muted-foreground">{template.templateKey} · {template.languageCode}</p>
+                            </div>
+                            <span className={cn(
+                              'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                              template.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800',
+                            )}>
+                              {template.status}
+                            </span>
+                          </div>
+                        ))}
+                        <p className="text-xs text-muted-foreground">
+                          Alerts only send once Meta has approved a template and it is marked approved here.
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Queue figures appear once the Supabase queue store is configured.</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><Package className="w-5 h-5" /> Farm apps</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {platform.apps ? (
+                    <p className="text-sm">
+                      <strong className="tabular-nums">{platform.apps.customized}</strong> of{' '}
+                      <strong className="tabular-nums">{platform.apps.total}</strong> farms have customized their installable app.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Counts are read from the active backend and are unavailable right now.</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Every farm installs its own app. Farms that have not customized anything still get their own name and icon.
+                  </p>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
+      )}
+
       {!loading && tab === 'announcements' && (
         <div className="space-y-4 max-w-2xl">
           <p className="text-sm text-muted-foreground">Post system-wide announcements visible to all users on login.</p>

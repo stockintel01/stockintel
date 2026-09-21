@@ -11,6 +11,7 @@ StockIntel Agri is a production-focused agriculture SaaS platform for farm stock
 - Livestock tools for flock/herd records, eggs, feed, health, mortality, growth, and milk production.
 - Expense categories, budgets, and spending tracking per tenant.
 - Firestore persistence and PWA service worker support for previously loaded data and supported offline writes.
+- Per-farm installable app: each organization sets its own app name, colours, and icon in Settings, and installs from its own manifest at `/api/pwa/manifest?org=<id>`. Installed apps reopen their own workspace.
 - Stripe subscriptions, referral rewards, and superadmin controls.
 
 ## Quick Start
