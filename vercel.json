@@ -4,7 +4,16 @@
   "devCommand": "next dev",
   "installCommand": "npm install",
   "functions": {
-    "app/api/alerts/low-stock/route.ts": {
+    "app/api/comms/webhooks/whatsapp/route.ts": {
+      "maxDuration": 15
+    },
+    "app/api/comms/cron/dispatch/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/comms/cron/scan/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/supabase/keepalive/route.ts": {
       "maxDuration": 15
     },
     "app/api/webhooks/stripe/route.ts": {
@@ -14,6 +23,12 @@
       "maxDuration": 15
     }
   },
+  "crons": [
+    {
+      "path": "/api/supabase/keepalive",
+      "schedule": "0 6 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/sw.js",

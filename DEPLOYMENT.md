@@ -6,7 +6,7 @@
 - Vercel account (free tier works)
 - Firebase project (Blaze plan required for Cloud Functions)
 - Stripe account with Pro and Enterprise recurring prices
-- Twilio account (optional — for WhatsApp/SMS alerts)
+- Meta Business account with WhatsApp Cloud API access (optional — for WhatsApp alerts)
 - OpenAI, Google Gemini, or Anthropic API key (optional — for AI features)
 
 ---
@@ -59,16 +59,37 @@ Stripe Dashboard → Developers → API keys
 
 ---
 
-## 3. Twilio Setup (optional)
+## 3. WhatsApp Cloud API Setup (optional)
 
-1. Create account at [twilio.com](https://console.twilio.com)
-2. Get **Account SID** and **Auth Token** from dashboard
-3. For SMS: Buy a phone number → `TWILIO_FROM_NUMBER`
-4. For WhatsApp: Join sandbox at [console.twilio.com/try-twilio/whatsapp](https://console.twilio.com/try-twilio/whatsapp)
-   - Or apply for WhatsApp Business API approval (production)
-   - `TWILIO_WHATSAPP_FROM=whatsapp:+14155238886` (sandbox number)
-5. Generate a random secret: `openssl rand -hex 16`
-   - Set as `ALERT_WEBHOOK_SECRET` only. Never expose it with a `NEXT_PUBLIC_` prefix.
+WhatsApp messaging stores its queue, contacts, and consent records in Supabase, so the Supabase variables must be configured too. A farm can receive alerts once its organization exists in Supabase.
+
+1. In [Meta Business Suite](https://business.facebook.com), start **Business verification**. It takes the longest, so begin first.
+2. Create an app at [developers.facebook.com](https://developers.facebook.com/apps) and add the **WhatsApp** product.
+3. Register the sending phone number. It must not already be active on the WhatsApp or WhatsApp Business app.
+4. Create a **System User** with `whatsapp_business_messaging` and `whatsapp_business_management` permissions and generate a permanent token → `WHATSAPP_ACCESS_TOKEN`
+5. From **WhatsApp → API Setup**, copy the phone number ID → `WHATSAPP_PHONE_NUMBER_ID` and the WhatsApp Business Account ID → `WHATSAPP_BUSINESS_ACCOUNT_ID`. Set `WHATSAPP_DISPLAY_PHONE_NUMBER` to the number in international format.
+6. From **App settings → Basic**, copy the app secret → `WHATSAPP_APP_SECRET`
+7. Generate two random secrets with `openssl rand -hex 32` → `WHATSAPP_WEBHOOK_VERIFY_TOKEN` and `CRON_SECRET`
+8. In **WhatsApp → Configuration**, set the callback URL to `https://yourdomain.vercel.app/api/comms/webhooks/whatsapp`, enter the verify token, and subscribe to the **messages** field.
+9. Submit the `stockintel_low_stock_alert` template (category **Utility**, language **English**) with this body, plus a **Visit website** button pointing at your stock management page:
+
+   ```text
+   Low stock at {{1}}: {{2}} below minimum. {{3}}. Open StockIntel to reorder or adjust stock.
+   ```
+
+   After Meta approves it, mark it approved in Supabase:
+
+   ```sql
+   update public.message_templates set status = 'approved'
+   where organization_id is null and template_key = 'inventory_low_stock';
+   ```
+10. Schedule the two worker routes, sending `Authorization: Bearer <CRON_SECRET>`:
+    - `GET /api/comms/cron/dispatch` — every minute (sends queued messages)
+    - `GET /api/comms/cron/scan` — every 15 minutes (checks stock levels)
+
+    Vercel Pro can schedule these in `vercel.json`. Vercel Hobby only allows daily cron jobs, so use Supabase `pg_cron` or another scheduler instead.
+
+None of these values may use a `NEXT_PUBLIC_` prefix.
 
 ---
 
@@ -127,12 +148,16 @@ GEMINI_MODEL
 ANTHROPIC_API_KEY
 ANTHROPIC_MODEL
 
-# Twilio
-TWILIO_ACCOUNT_SID                    ← server-only
-TWILIO_AUTH_TOKEN                     ← server-only
-TWILIO_FROM_NUMBER                    ← server-only
-TWILIO_WHATSAPP_FROM                  ← server-only
-ALERT_WEBHOOK_SECRET                  ← server-only
+# WhatsApp Cloud API
+WHATSAPP_ACCESS_TOKEN                 ← server-only
+WHATSAPP_PHONE_NUMBER_ID              ← server-only
+WHATSAPP_BUSINESS_ACCOUNT_ID          ← server-only
+WHATSAPP_DISPLAY_PHONE_NUMBER         ← server-only
+WHATSAPP_APP_SECRET                   ← server-only
+WHATSAPP_WEBHOOK_VERIFY_TOKEN         ← server-only
+WHATSAPP_GRAPH_API_VERSION=v23.0
+CRON_SECRET                           ← server-only
+COMMS_QUOTA_MODE=observe
 
 # App
 NEXT_PUBLIC_APP_URL=https://yourdomain.vercel.app
@@ -169,7 +194,7 @@ After getting your Vercel URL:
 - [ ] Trigger a test Stripe webhook: `stripe trigger checkout.session.completed`
 - [ ] Test the barcode scanner on a mobile device
 - [ ] Verify offline mode: turn off WiFi, navigate the app, reconnect
-- [ ] Test WhatsApp alert by temporarily lowering reorder threshold in Settings
+- [ ] Connect WhatsApp from Stock Management, raise an item's minimum above its stock, then call the scan and dispatch routes
 
 ---
 
@@ -221,9 +246,9 @@ npm run lint
     └─────────────┘         └─────────────┘
            │
     ┌──────┴──────┐         ┌─────────────┐
-    │  Anthropic  │         │   Twilio    │
-    │  Claude API │         │  WhatsApp   │
-    │  (server)   │         │  SMS Alerts │
+    │  Anthropic  │         │  Meta Cloud │
+    │  Claude API │         │  API        │
+    │  (server)   │         │  WhatsApp   │
     └─────────────┘         └─────────────┘
 ```
 
