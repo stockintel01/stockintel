@@ -215,6 +215,9 @@ export default function ExpensesPage() {
 
       {message && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{message}<button onClick={() => setMessage('')}><X className="h-4 w-4" /></button></div>}
 
+      {/* Without this an unreadable ledger looks exactly like an empty one. */}
+      {finance.error && <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{finance.error}</div>}
+
       {finance.loading ? <div className="flex justify-center py-20 text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading finance workspace...</div> : <>
         {tab === 'overview' && <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

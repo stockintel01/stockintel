@@ -49,11 +49,54 @@ Email/password users are migrated with their Firebase password hashes. Google us
 - **Settling a sale** — `record_sale_payment`, `issue_sales_receipt` and `void_sales_receipt` complete the payment and receipt path, which is otherwise append-only with no writer. `shipments` stays read-only for clients because `create_shipment` writes the shipment, its allocations and the stock movements together.
 - **Alerts and the deletion log** — `record_alert` and `record_deletion_audit` write the two tables that are closed to clients on purpose (`alerts` grants only `update (read_at)`, and inserts on `deletion_audit` are revoked). `record_alert` returns the existing unread alert about the same entity rather than raising a duplicate.
 - **Per-farm apps** — `20260918130000_organization_app_branding.sql` adds `organizations.app_branding`, read by the manifest route with the service role because a browser fetches a manifest without a session. Only the farm's own settings screen can change it, and the importer carries it across.
-- **Realtime** — `20260918110000_realtime_publication.sql` registers the tables behind the live subscriptions in `lib/agric/agric-service.ts` and `lib/expenses/useExpenses.ts`. The client still has to subscribe through Supabase channels; the publication only makes the changes available.
+- **Realtime** — `20260918110000_realtime_publication.sql` registers the tables behind the live subscriptions in `lib/agric/agric-service.ts` and `lib/expenses/`. The publication only makes the changes available; a screen still has to open a channel, and so far only the expense ledger does.
+- **Names on a record** — `20260922090000_workspace_member_directory.sql` adds `organization_member_directory`. Firestore stores the author's name on each document, so everyone sees who did what. Postgres keeps names in `profiles`, whose policy shows a member only their own row unless they can manage the farm, so without this a worker reads an expense ledger with nobody against the amounts. Every ported screen that shows a person needs it.
 - **Sign-in** — `app/auth/callback/route.ts` exchanges the OAuth code for a session and `lib/supabase/auth.ts` starts it. `components/auth/AuthContext.tsx` still signs in through Firebase and is the remaining step.
 - **Google provider** — configured in `config.toml` behind `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` and `SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET`, disabled until those are set. The hosted project is configured in the dashboard, including the `/auth/callback` redirect URL.
 
 The Data API returns at most `max_rows` (1000) per request, so every migrated list query needs to page with `.range()` the way `lib/comms/server/repository.ts` does.
+
+## The data layer
+
+Every workspace screen still reads Firestore directly. The expense ledger is ported as
+the pattern the rest follow, and is the only one wired to both backends:
+
+- `lib/expenses/useExpenses.ts` picks an implementation once at module load from
+  `NEXT_PUBLIC_DATA_BACKEND`, so hook order is fixed and rolling back is a redeploy of
+  the same build rather than a code change.
+- `lib/expenses/firebase-expenses.ts` is the original Firestore listener, unchanged
+  apart from reporting load failures.
+- `lib/expenses/supabase-expenses.ts` is the Supabase equivalent.
+- `lib/expenses/supabase-mapping.ts` holds every row conversion with no Supabase or
+  React import, so `npm run test:expenses` exercises it without a database.
+- `lib/expenses/budget-health.ts` is shared, so the two backends cannot report
+  different numbers for the same farm.
+- `ExpensesController` in `lib/expenses/types.ts` is the contract both satisfy.
+
+Five things a Firestore service does not have to think about, and the reason each
+ported service needs more than a search and replace:
+
+1. **Paging.** Lists stop at 1000 rows without `.range()`.
+2. **Realtime is a change feed, not a query.** Messages missed while the socket was
+   down are never replayed, so the snapshot is re-read every time the channel reaches
+   `SUBSCRIBED`, which covers the first load and every reconnection.
+3. **Names are joined, not stored.** Firestore denormalises `categoryName` and
+   `submittedByName` onto the document, where they go stale on a rename. The Supabase
+   reader joins them back from the rows it already has and from
+   `organization_member_directory`.
+4. **Identities are uuids.** A Firestore document id written into a uuid column is
+   silent corruption, so every write validates the farm, the actor and each reference
+   first and fails loudly.
+5. **An empty screen is ambiguous.** A policy refusal and an empty ledger look
+   identical, so the controller carries an `error` the screen shows.
+
+Two deliberate behaviour changes: emptying a field now clears it (the Firestore writer
+dropped empty strings, so clearing a vendor silently did nothing), and a receipt is a
+path in a private bucket that has to be signed before it opens.
+
+The remaining services — `lib/agric/agric-service.ts`, `useLivestock`, and the
+stock, request, packing, equipment and scouting screens — are unported and read
+Firestore whatever the flag says. Cutover gate 9 cannot pass until they follow.
 
 ## Keeping the project awake
 
@@ -101,7 +144,7 @@ Run the repository checks before deployment:
 npm run verify
 ```
 
-That runs the type check; the Sigatoka, packing, water-balance, receipt, Supabase foundation, messaging and migration-mapping suites; and the production build.
+That runs the type check; the Sigatoka, packing, water-balance, receipt, Supabase foundation, messaging, migration-mapping, per-farm app and expense-ledger suites; and the production build.
 
 Messaging has an on-demand end-to-end check that starts a dev server and stubs Supabase and Meta, so it is kept out of the hermetic suite:
 
