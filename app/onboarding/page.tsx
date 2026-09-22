@@ -3,9 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppStore, IndustryType } from '@/lib/store';
-import { inviteMember } from '@/lib/firebase-utils';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { onboardingService } from '@/lib/onboarding/service';
+import { CURRENCY_OPTIONS } from '@/lib/currency';
 import { buildAgricultureProfile, type AgricultureOperation } from '@/lib/agric/config';
 import { ACCESS_PRESETS } from '@/lib/access-permissions';
 import {
@@ -44,19 +43,9 @@ const INDUSTRIES: { id: IndustryType; label: string; desc: string; icon: React.E
     { id: 'agriculture', label: 'Agriculture', desc: 'Farm stock, packing, livestock, weather, and field operations', icon: Leaf, color: '#16a34a', bg: '#dcfce7' },
 ];
 
-const CURRENCIES = [
-    { symbol: 'GHS', label: 'GHS — Ghanaian Cedi' },
-    { symbol: '₦', label: 'NGN — Nigerian Naira' },
-    { symbol: 'KSh', label: 'KES — Kenyan Shilling' },
-    { symbol: 'UGX', label: 'UGX — Ugandan Shilling' },
-    { symbol: 'TZS', label: 'TZS — Tanzanian Shilling' },
-    { symbol: 'ZAR', label: 'ZAR — South African Rand' },
-    { symbol: '$', label: 'USD — US Dollar' },
-    { symbol: '£', label: 'GBP — British Pound' },
-    { symbol: '€', label: 'EUR — Euro' },
-    { symbol: '₹', label: 'INR — Indian Rupee' },
-    { symbol: '₵', label: 'GHS — Ghana Cedi (₵)' },
-];
+// The option value stays the symbol the whole UI prints in front of an amount;
+// lib/currency.ts resolves the ISO code the Postgres column requires.
+const CURRENCIES = CURRENCY_OPTIONS;
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -66,6 +55,7 @@ export default function OnboardingPage() {
     const [step, setStep] = useState(0);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+    const [inviteFailures, setInviteFailures] = useState<{ email: string; reason: string }[]>([]);
 
     const [business, setBusiness] = useState<BusinessSetup>({
         businessName: organization?.name === 'New Business' || organization?.name?.endsWith("'s Business") ? '' : organization?.name ?? '',
@@ -113,7 +103,7 @@ export default function OnboardingPage() {
     const handleNext = async () => {
         setError('');
 
-        // On business step — save to Firestore
+        // On business step — save the farm profile to whichever backend is active
         if (step === 2) {
             setSaving(true);
             try {
@@ -128,21 +118,19 @@ export default function OnboardingPage() {
                     taxId: business.taxId,
                 });
 
-                // Persist to Firestore org document if user is logged in
                 if (organization?.id) {
                     const agricultureSettings = {
                         ...(organization.settings ?? {}),
                         agriculture: buildAgricultureProfile(business.agricultureOperations),
                     };
-                    await updateDoc(doc(db, 'organizations', organization.id), {
+                    await onboardingService.saveBusinessProfile({
+                        organizationId: organization.id,
                         name: business.businessName,
-                        industry: business.industry,
                         currency: business.currency,
                         address: business.address,
                         phone: business.phone,
                         taxId: business.taxId,
                         settings: agricultureSettings,
-                        onboardingStep: 'business_complete',
                     });
                     if (user) {
                         setStoreUser(user, {
@@ -159,38 +147,45 @@ export default function OnboardingPage() {
                 }
             } catch (err) {
                 console.error('Failed to save business details:', err);
-                setError('Failed to save. Please check your connection and try again.');
+                setError(err instanceof Error ? err.message : 'Failed to save. Please check your connection and try again.');
                 setSaving(false);
                 return;
             }
             setSaving(false);
         }
 
-        // On team step — send invites
+        // On team step — send invites, then mark the workspace ready
         if (step === 3) {
             setSaving(true);
-            const validInvites = invites.filter(i => i.email.trim() && i.email.includes('@'));
-            if (validInvites.length > 0 && organization?.id) {
+            if (organization?.id && user) {
                 try {
-                    await Promise.all(
-                        validInvites.map(inv => {
-                            const preset = ACCESS_PRESETS.agriculture.find(item => item.id === inv.presetId);
-                            return inviteMember(inv.email.trim(), inv.role, organization.id, organization.name, user?.name, preset?.access);
-                        })
-                    );
+                    const outcome = await onboardingService.inviteTeammates({
+                        organizationId: organization.id,
+                        organizationName: organization.name,
+                        invitedById: user.id,
+                        invitedByName: user.name,
+                        invites: invites.map(entry => ({
+                            email: entry.email,
+                            role: entry.role,
+                            access: ACCESS_PRESETS.agriculture.find(item => item.id === entry.presetId)?.access ?? [],
+                        })),
+                    });
+                    // Not fatal, but an invitation that never went out must not look sent.
+                    if (outcome.failures.length > 0) {
+                        setInviteFailures(outcome.failures);
+                    }
                 } catch (err) {
                     console.error('Some invites failed:', err);
-                    // Non-fatal — continue to completion
+                    setInviteFailures([{ email: 'Your invitations', reason: 'They could not be sent. Invite the team from Settings.' }]);
+                }
+
+                try {
+                    await onboardingService.completeOnboarding(organization.id);
+                } catch (err) {
+                    console.error('Failed to mark onboarding complete:', err);
                 }
             }
             setSaving(false);
-
-            // Mark onboarding complete in Firestore
-            if (organization?.id) {
-                await updateDoc(doc(db, 'organizations', organization.id), {
-                    onboardingComplete: true,
-                }).catch(console.error);
-            }
         }
 
         if (step < STEPS.length - 1) {
@@ -501,11 +496,23 @@ export default function OnboardingPage() {
                                 <strong>{business.businessName || 'Your workspace'}</strong> is ready to go. You can now add real stock, invite your team, track expenses, and run daily operations from live tenant data.
                             </p>
 
+                            {/* An invitation that never went out must not look sent. */}
+                            {inviteFailures.length > 0 && (
+                                <div style={{ textAlign: 'left', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 16px', marginBottom: 24, fontSize: 13, color: '#92400e' }}>
+                                    <strong>Some invitations were not sent.</strong> You can invite these people again from Settings.
+                                    <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                                        {inviteFailures.map(failure => (
+                                            <li key={failure.email}>{failure.email} — {failure.reason}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 32 }}>
                                 {[
                                     { emoji: '📦', title: 'Inventory', desc: 'Ready for real stock' },
                                     { emoji: '🔒', title: 'Secure', desc: 'Role-based access' },
-                                    { emoji: '📊', title: 'Live Data', desc: 'Real-time Firestore' },
+                                    { emoji: '📊', title: 'Live Data', desc: 'Updates as your team works' },
                                 ].map(card => (
                                     <div key={card.title} style={{ background: '#fafafa', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 12px' }}>
                                         <div style={{ fontSize: 22, marginBottom: 6 }}>{card.emoji}</div>

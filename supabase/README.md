@@ -145,9 +145,34 @@ Two deliberate behaviour changes: emptying a field now clears it (the Firestore 
 dropped empty strings, so clearing a vendor silently did nothing), and a receipt is a
 path in a private bucket that has to be signed before it opens.
 
+Onboarding follows the same shape in `lib/onboarding/`: `mapping.ts` holds the row
+builders and the contract, `firebase-onboarding.ts` is the page's original writes moved
+out unchanged, `supabase-onboarding.ts` is the Postgres equivalent, and `service.ts`
+picks one. All three writes go through policies a new owner already satisfies —
+`organizations_update` wants the `settings` permission, and `invitations_insert` wants
+an active subscription, which the trial created with the farm provides. Invitations are
+inserted one at a time, because a single statement would be rejected whole when one
+address already has an invitation waiting and the person would not be told which.
+
 The remaining services — `lib/agric/agric-service.ts`, `useLivestock`, and the
 stock, request, packing, equipment and scouting screens — are unported and read
 Firestore whatever the flag says. Cutover gate 9 cannot pass until they follow.
+`app/dashboard/team/page.tsx` is the nearest one: it still invites through
+`POST /api/invitations` into Firestore, so under Supabase an invitation created during
+onboarding and one created from the team screen would land in different databases.
+
+### Currency
+
+`organizations.currency` is `char(3)` with a `currency = upper(currency)` check, and
+Firestore holds whichever symbol the onboarding list offered. Those are not the same
+thing: `upper('KSh')` fails the check outright, and `₦` passes it as three bytes that
+mean nothing to a report. `lib/currency.ts` resolves a symbol or a code to an ISO code
+for the column and back to a symbol for display, and the farm's chosen symbol is kept
+in `organizations.settings.currencySymbol` so `₵` does not come back as `GHS`.
+
+The importer used to truncate and upper-case the symbol straight into the column, so
+`npm run migrate:import` would have failed on every Kenyan farm and quietly mislabelled
+every Nigerian one. It now resolves the code the same way.
 
 ## Keeping the project awake
 
@@ -195,7 +220,7 @@ Run the repository checks before deployment:
 npm run verify
 ```
 
-That runs the type check; the Sigatoka, packing, water-balance, receipt, Supabase foundation, messaging, migration-mapping, per-farm app, expense-ledger and sign-in suites; and the production build.
+That runs the type check; the Sigatoka, packing, water-balance, receipt, Supabase foundation, messaging, migration-mapping, per-farm app, expense-ledger, sign-in and onboarding suites; and the production build.
 
 Messaging has an on-demand end-to-end check that starts a dev server and stubs Supabase and Meta, so it is kept out of the hermetic suite:
 

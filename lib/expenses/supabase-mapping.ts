@@ -1,3 +1,4 @@
+import { toCurrencyCode } from '@/lib/currency';
 import type {
   ExpenseBudget,
   ExpenseBudgetPeriod,
@@ -210,11 +211,6 @@ function requireUuid(value: string | undefined, subject: string): string {
   return value;
 }
 
-export function normalizeCurrency(value: string | undefined): string {
-  const code = (value ?? '').trim().toUpperCase();
-  return /^[A-Z]{3}$/.test(code) ? code : 'GHS';
-}
-
 export function toCategoryInsert(data: Omit<ExpenseCategory, 'id'>, context: WriteContext) {
   const name = writableText(data.name);
   if (!name) throw new ExpenseWriteError('A category needs a name.');
@@ -258,7 +254,7 @@ export function toBudgetInsert(data: Omit<ExpenseBudget, 'id'>, context: WriteCo
     category_id: data.categoryId ? requireUuid(data.categoryId, 'The category') : null,
     name: writableText(data.name) ?? 'Unnamed budget',
     amount: data.amount,
-    currency: normalizeCurrency(context.currency),
+    currency: toCurrencyCode(context.currency),
     period: readPeriod(String(data.period)),
     start_date: data.startDate,
     end_date: data.endDate,
@@ -303,7 +299,7 @@ export function toExpenseInsert(data: NewExpense, context: WriteContext) {
     budget_id: data.budgetId ? requireUuid(data.budgetId, 'The budget') : null,
     title: writableText(data.title) ?? 'Untitled expense',
     amount: data.amount,
-    currency: normalizeCurrency(context.currency),
+    currency: toCurrencyCode(context.currency),
     expense_date: data.date,
     vendor: writableText(data.vendor),
     payment_method: readPaymentMethod(String(data.paymentMethod)),

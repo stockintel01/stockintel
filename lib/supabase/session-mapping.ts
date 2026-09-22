@@ -1,4 +1,5 @@
 import { normalizeAccess, type AccessKey } from '@/lib/access-permissions';
+import { toCurrencySymbol } from '@/lib/currency';
 import type { Organization, TenantMembership, User as StoreUser, UserRole } from '@/lib/store';
 
 /**
@@ -141,7 +142,9 @@ export function toStoreOrganization(row: OrganizationRow, subscription: Subscrip
     referralCode: row.referral_code,
     subscription: toSubscription(subscription),
     settings: row.settings ?? {},
-    currency: row.currency ?? 'GHS',
+    // The column holds an ISO code and the whole UI prints a symbol, so the symbol the
+    // farm actually picked is preferred over the canonical one for its code.
+    currency: toCurrencySymbol(row.currency, typeof row.settings?.currencySymbol === 'string' ? row.settings.currencySymbol : null),
     address: row.address ?? undefined,
     phone: row.phone ?? undefined,
     taxId: row.tax_id ?? undefined,

@@ -58,7 +58,19 @@ assert.equal(organizationRow.name, 'Kade Farms');
 assert.equal(organizationRow.owner_id, 'auth-owner');
 assert.equal(organizationRow.currency, 'GHS');
 assert.equal(organizationRow.referral_code, 'ORG-ORG1');
-assert.deepEqual(organizationRow.settings, { weekStart: 'monday' });
+assert.deepEqual(organizationRow.settings, { weekStart: 'monday', currencySymbol: 'ghs' },
+  'the symbol the farm displays is kept beside the code the column stores');
+
+// organizations.currency is char(3) with an upper-case check, and Firestore holds the
+// symbol the onboarding list offered. Truncating it stored a naira sign as a code and
+// made upper(KSh) fail the check outright.
+assert.equal(mapOrganizationRow({ id: 'o', data: { currency: '₦' } }, 'a').currency, 'NGN');
+assert.equal(mapOrganizationRow({ id: 'o', data: { currency: 'KSh' } }, 'a').currency, 'KES');
+assert.equal(mapOrganizationRow({ id: 'o', data: { currency: '₵' } }, 'a').currency, 'GHS');
+assert.equal(mapOrganizationRow({ id: 'o', data: { currency: '$' } }, 'a').currency, 'USD');
+assert.equal(mapOrganizationRow({ id: 'o', data: { currency: 'XOF' } }, 'a').currency, 'XOF',
+  'a code this list does not carry is still the farm’s own currency');
+assert.equal(mapOrganizationRow({ id: 'o', data: { currency: '₦' } }, 'a').settings.currencySymbol, '₦');
 assert.deepEqual(organizationRow.receipt_settings, {}, 'a malformed settings value must not break the insert');
 assert.deepEqual(organizationRow.app_branding, {}, 'a farm with no app branding still imports');
 assert.deepEqual(

@@ -1,3 +1,5 @@
+import { toCurrencyCode } from '@/lib/currency';
+
 /**
  * Pure mapping from exported Firestore documents to Supabase rows, kept separate from
  * scripts/import-supabase.mjs so the conversions can be tested without a database.
@@ -64,11 +66,18 @@ export function mapOrganizationRow(document: FirestoreDocument, ownerAuthId: str
     owner_id: ownerAuthId,
     industry: 'agriculture',
     referral_code: referralCodeFor(document),
-    currency: (asText(data.currency, 3) ?? 'GHS').toUpperCase(),
+    // Firestore stores the symbol the onboarding list offered, and this column is a
+    // char(3) ISO code with an upper-case check. Truncating the symbol passed the
+    // check for the naira and failed it for KSh, so the code is resolved properly and
+    // the original symbol is kept for display.
+    currency: toCurrencyCode(asText(data.currency, 8)),
     address: asText(data.address),
     phone: asText(data.phone, 40),
     tax_id: asText(data.taxId, 60),
-    settings: data.settings && typeof data.settings === 'object' ? data.settings : {},
+    settings: {
+      ...(data.settings && typeof data.settings === 'object' && !Array.isArray(data.settings) ? data.settings : {}),
+      ...(asText(data.currency, 8) ? { currencySymbol: asText(data.currency, 8) } : {}),
+    },
     receipt_settings: data.receiptSettings && typeof data.receiptSettings === 'object' ? data.receiptSettings : {},
     // Carried across so a farm keeps its installed app's name, colours and icon.
     app_branding: data.appBranding && typeof data.appBranding === 'object' && !Array.isArray(data.appBranding)

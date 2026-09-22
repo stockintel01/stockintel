@@ -14,10 +14,11 @@
     "test:receipts": "node --no-warnings --experimental-strip-types scripts/verify-sales-receipts.mjs",
     "test:supabase": "node scripts/verify-supabase-foundation.mjs",
     "test:comms": "node --no-warnings --experimental-strip-types scripts/verify-comms.mjs",
-    "test:migration": "node --no-warnings --experimental-strip-types scripts/verify-migration-mapping.mjs",
+    "test:migration": "node --no-warnings --experimental-strip-types --import ./scripts/ts-path-resolver.mjs scripts/verify-migration-mapping.mjs",
     "test:branding": "node --no-warnings --experimental-strip-types scripts/verify-app-branding.mjs",
-    "test:expenses": "node --no-warnings --experimental-strip-types scripts/verify-expenses.mjs",
+    "test:expenses": "node --no-warnings --experimental-strip-types --import ./scripts/ts-path-resolver.mjs scripts/verify-expenses.mjs",
     "test:auth": "node --no-warnings --experimental-strip-types --import ./scripts/ts-path-resolver.mjs scripts/verify-auth.mjs",
+    "test:onboarding": "node --no-warnings --experimental-strip-types --import ./scripts/ts-path-resolver.mjs scripts/verify-onboarding.mjs",
     "test:comms-integration": "node scripts/verify-comms-integration.mjs",
     "check:env": "node scripts/check-env.mjs",
     "migrate:export": "node --no-warnings --experimental-strip-types scripts/export-firebase.mjs",
@@ -26,7 +27,7 @@
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
     "db:lint": "supabase db lint --level warning",
-    "verify": "npm run typecheck && npm run test:sigatoka && npm run test:packing && npm run test:water && npm run test:receipts && npm run test:supabase && npm run test:comms && npm run test:migration && npm run test:branding && npm run test:expenses && npm run test:auth && npm run build"
+    "verify": "npm run typecheck && npm run test:sigatoka && npm run test:packing && npm run test:water && npm run test:receipts && npm run test:supabase && npm run test:comms && npm run test:migration && npm run test:branding && npm run test:expenses && npm run test:auth && npm run test:onboarding && npm run build"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.8",

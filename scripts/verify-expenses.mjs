@@ -3,7 +3,6 @@ import { computeBudgetHealth } from '../lib/expenses/budget-health.ts';
 import {
   ExpenseWriteError,
   UNKNOWN_MEMBER,
-  normalizeCurrency,
   toBudgetInsert,
   toBudgetUpdate,
   toCategoryInsert,
@@ -124,9 +123,12 @@ assert.throws(() => toExpenseInsert(newExpense, { ...context, organizationId: 'o
 assert.throws(() => toExpenseInsert(newExpense, { ...context, actorId: 'firebase-uid' }), ExpenseWriteError);
 assert.throws(() => toExpenseInsert({ ...newExpense, categoryId: 'cat-1' }, context), ExpenseWriteError);
 
-assert.equal(normalizeCurrency(undefined), 'GHS');
-assert.equal(normalizeCurrency('usd'), 'USD');
-assert.equal(normalizeCurrency('Ghana cedi'), 'GHS', 'a label that is not a code falls back rather than failing the insert');
+// The store holds the display symbol a farm picked, and the column takes an ISO code.
+assert.equal(toExpenseInsert(newExpense, { ...context, currency: '₦' }).currency, 'NGN',
+  'a naira farm records naira, not the default');
+assert.equal(toExpenseInsert(newExpense, { ...context, currency: 'KSh' }).currency, 'KES',
+  'KSh is three characters but is not a code, and upper(KSh) would fail the column check');
+assert.equal(toExpenseInsert(newExpense, { ...context, currency: '' }).currency, 'GHS');
 
 const categoryInsert = toCategoryInsert({ name: ' Fuel ', color: '', kind: '', isActive: true, requiresApproval: false, monthlyLimit: 0 }, context);
 assert.equal(categoryInsert.name, 'Fuel');
