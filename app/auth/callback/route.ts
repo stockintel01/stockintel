@@ -33,14 +33,28 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code');
   if (!code) return loginRedirect(origin, 'That sign-in link is incomplete. Try signing in again.');
 
+  const next = safeNextPath(searchParams.get('next'));
+
   try {
     const supabase = await createServerSupabaseClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) return loginRedirect(origin, error.message);
+
+    // An account with no farm is on its way to creating one, so it starts at
+    // onboarding rather than an empty dashboard. An invitation is the exception: the
+    // membership arrives when /join accepts it.
+    if (next === '/dashboard' && data.user) {
+      const { count } = await supabase
+        .from('organization_memberships')
+        .select('organization_id', { count: 'exact', head: true })
+        .eq('user_id', data.user.id)
+        .eq('active', true);
+      if (!count) return NextResponse.redirect(`${origin}/onboarding`);
+    }
   } catch (error) {
     console.error('[auth] Supabase code exchange failed:', error);
     return loginRedirect(origin, 'Sign-in could not be completed. Try again.');
   }
 
-  return NextResponse.redirect(`${origin}${safeNextPath(searchParams.get('next'))}`);
+  return NextResponse.redirect(`${origin}${next}`);
 }

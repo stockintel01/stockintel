@@ -43,6 +43,57 @@ The final system uses Supabase Auth. Firebase third-party JWTs are deliberately 
 
 Email/password users are migrated with their Firebase password hashes. Google users authenticate through the Google provider configured in Supabase. Redirect URLs must include the production domain and approved preview/local callback URLs.
 
+### Signing in
+
+`components/auth/AuthContext.tsx` chooses a provider once from `NEXT_PUBLIC_DATA_BACKEND`:
+
+- `components/auth/auth-shared.tsx` is the contract both implement, and carries no
+  Firebase or Supabase type. `app/login/page.tsx` and `app/join/page.tsx` call only
+  this, so neither knows which backend is serving them.
+- `components/auth/firebase-auth-provider.tsx` is the original flow. The email,
+  password and reset calls the login screen used to make against Firebase directly
+  now live here.
+- `components/auth/supabase-auth-provider.tsx` is the Supabase flow.
+- `lib/supabase/session-mapping.ts` turns rows into the store's user and organization,
+  with no Supabase or React import, so `npm run test:auth` covers it.
+- `lib/supabase/workspace-session.ts` runs the four queries and creates the farm.
+- `lib/api-client.ts` sends the right bearer token; `requireUser` in `lib/api-auth.ts`
+  validates it and loads the caller's workspace from Postgres.
+
+What differs from Firebase, and why each one needed handling:
+
+1. **Google is a full-page redirect, not a popup.** The browser leaves the login screen
+   and returns through `/auth/callback`, so nothing after that call runs and the
+   redirect decision moves into the callback.
+2. **A session arrives before the workspace is known.** Supabase warns against calling
+   the client from inside `onAuthStateChange`, so the listener only records who signed
+   in and a second effect reads their farm.
+3. **A new account has no farm.** One insert into `organizations` is enough:
+   `initialize_organization` then writes the owner membership, the farm profile, the
+   Sigatoka defaults and a fourteen-day trial. The provider is the only place that
+   inserts it. `/join` is exempt, because an invitation assigns the membership and a
+   farm created here would leave the invitee owning an empty one.
+4. **Sign-up may not produce a session.** With email confirmation on, the account waits
+   for the emailed link, so the screen says so instead of redirecting.
+5. **Five subscription statuses, three the store knows.** A trial is active until it
+   runs out, and a past-due plan stays active until the period it was paid for ends, so
+   the grace period is the payment provider's rather than one invented here.
+6. **Permissions are a wider enum.** `app_permission` gained the messaging values that
+   `AccessKey` does not carry, so the array is filtered rather than cast.
+7. **Server-side authorisation reads with the service role.** `requireUser` decides what
+   a caller may do, so it must not be filtered by the policies it is about to authorise.
+
+Still on Firebase after this: `POST /api/organizations`, `/api/invitations/[inviteId]`
+and the `/join` acceptance flow. They write Firestore, so moving only their
+authentication would not make them work — Postgres already has `accept_invitation` for
+the invitation half. `requireFirebaseUser` returns 501 rather than an invalid-token
+error when the Supabase backend is active, so an unported route says which it is.
+
+Two gaps to close before cutover: a referral code is kept in `organizations.settings`
+because Postgres has no column for one, and the Firestore route's referral credit has
+no Supabase equivalent; and the deployment must keep the Firebase public variables set
+through the rollback window, since both providers are compiled into the same build.
+
 ## What the repository already provides
 
 - **Module access policies** — `20260918090000_module_access_policies.sql` gives every organization-scoped table a read rule and, where clients write directly, insert/update/delete rules. Without it, forced row-level security with no policy silently hides equipment, packhouse, sales, expenses, crops, livestock and scouting data.
@@ -51,7 +102,7 @@ Email/password users are migrated with their Firebase password hashes. Google us
 - **Per-farm apps** — `20260918130000_organization_app_branding.sql` adds `organizations.app_branding`, read by the manifest route with the service role because a browser fetches a manifest without a session. Only the farm's own settings screen can change it, and the importer carries it across.
 - **Realtime** — `20260918110000_realtime_publication.sql` registers the tables behind the live subscriptions in `lib/agric/agric-service.ts` and `lib/expenses/`. The publication only makes the changes available; a screen still has to open a channel, and so far only the expense ledger does.
 - **Names on a record** — `20260922090000_workspace_member_directory.sql` adds `organization_member_directory`. Firestore stores the author's name on each document, so everyone sees who did what. Postgres keeps names in `profiles`, whose policy shows a member only their own row unless they can manage the farm, so without this a worker reads an expense ledger with nobody against the amounts. Every ported screen that shows a person needs it.
-- **Sign-in** — `app/auth/callback/route.ts` exchanges the OAuth code for a session and `lib/supabase/auth.ts` starts it. `components/auth/AuthContext.tsx` still signs in through Firebase and is the remaining step.
+- **Sign-in** — ported. `components/auth/AuthContext.tsx` picks a provider from the backend flag, and both put the same user and organization into the store, so no screen knows which one signed the member in. See "Signing in" below.
 - **Google provider** — configured in `config.toml` behind `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` and `SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET`, disabled until those are set. The hosted project is configured in the dashboard, including the `/auth/callback` redirect URL.
 
 The Data API returns at most `max_rows` (1000) per request, so every migrated list query needs to page with `.range()` the way `lib/comms/server/repository.ts` does.
@@ -144,7 +195,7 @@ Run the repository checks before deployment:
 npm run verify
 ```
 
-That runs the type check; the Sigatoka, packing, water-balance, receipt, Supabase foundation, messaging, migration-mapping, per-farm app and expense-ledger suites; and the production build.
+That runs the type check; the Sigatoka, packing, water-balance, receipt, Supabase foundation, messaging, migration-mapping, per-farm app, expense-ledger and sign-in suites; and the production build.
 
 Messaging has an on-demand end-to-end check that starts a dev server and stubs Supabase and Meta, so it is kept out of the hermetic suite:
 

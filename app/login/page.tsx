@@ -7,15 +7,6 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/components/auth/AuthContext';
 import { ArrowLeft, Boxes, CheckCircle2, CloudSun, Eye, EyeOff, Leaf, Loader2, ShieldCheck } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
-  updateProfile,
-} from 'firebase/auth';
-import { FirebaseError } from 'firebase/app';
-import { auth } from '@/lib/firebase';
-import { createUserProfile, createOrganization } from '@/lib/firebase-utils';
 import { isSuperAdminEmail } from '@/lib/access-control';
 
 type AuthMode = 'signin' | 'signup' | 'reset';
@@ -24,7 +15,9 @@ function LoginInner() {
   const router       = useRouter();
   const params       = useSearchParams();
   const referralCode = params.get('ref');
-  const { signInWithGoogle } = useAuth();
+  // Sign-in goes through the context so this screen never knows which backend is
+  // serving it; each provider translates its own errors.
+  const { signInWithGoogle, signInWithEmail, signUpWithEmail, sendPasswordReset, describeError } = useAuth();
 
   // Form state
   const [mode, setMode]             = useState<AuthMode>('signin');
@@ -32,33 +25,12 @@ function LoginInner() {
   const [password, setPassword]     = useState('');
   const [name, setName]             = useState('');
   const [showPass, setShowPass]     = useState(false);
-  const industry                    = 'agriculture' as const;
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState('');
   const [resetSent, setResetSent]   = useState(false);
+  const [confirmSent, setConfirmSent] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  // ── Human-readable Firebase error messages ────────────────
-  function friendlyError(error: unknown): string {
-    const code = error instanceof FirebaseError ? error.code : '';
-    const fallback = error instanceof Error ? error.message : undefined;
-    const map: Record<string, string> = {
-      'auth/user-not-found':        'No account found with this email. Check the address or sign up.',
-      'auth/wrong-password':        'Incorrect password. Please try again or reset your password.',
-      'auth/invalid-credential':    'Invalid email or password.',
-      'auth/email-already-in-use':  'An account already exists with this email. Sign in instead.',
-      'auth/weak-password':         'Password must be at least 8 characters.',
-      'auth/invalid-email':         'Please enter a valid email address.',
-      'auth/too-many-requests':     'Too many attempts. Please wait a moment and try again.',
-      'auth/network-request-failed':'Network error. Check your connection and try again.',
-      'auth/operation-not-allowed': 'This sign-in method is not enabled in Firebase Authentication.',
-      'auth/unauthorized-domain':   'This domain is not authorized in Firebase Authentication.',
-      'auth/popup-closed-by-user':  'Sign-in popup was closed. Please try again.',
-      'auth/cancelled-popup-request':'Another sign-in is in progress.',
-      'auth/popup-blocked':         'Popup was blocked by your browser. Please allow popups and try again.',
-    };
-    return map[code] ?? fallback ?? 'Something went wrong. Please try again.';
-  }
 
   // ── Sign In ───────────────────────────────────────────────
   async function handleSignIn(e: React.FormEvent) {
@@ -66,10 +38,10 @@ function LoginInner() {
     if (!email || !password) { setError('Please enter your email and password.'); return; }
     setLoading(true); setError('');
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      await signInWithEmail(email.trim(), password);
       router.replace('/dashboard');
     } catch (error) {
-      setError(friendlyError(error));
+      setError(describeError(error));
     } finally { setLoading(false); }
   }
 
@@ -81,33 +53,21 @@ function LoginInner() {
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     setLoading(true); setError('');
     try {
-      // 1. Create Firebase Auth user
-      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      await updateProfile(cred.user, { displayName: name.trim() });
-
-      // 2. Create organisation in Firestore
-      const orgId = await createOrganization(
-        cred.user.uid,
-        industry,
-        'New Business',
-        referralCode ?? undefined,
-      );
-
-      // 3. Create user profile document
-      await createUserProfile({
-        uid:            cred.user.uid,
-        email:          cred.user.email ?? email,
-        displayName:    name.trim(),
-        photoURL:       cred.user.photoURL ?? '',
-        organizationId: orgId,
-        role:           isSuperAdminEmail(cred.user.email) ? 'super_admin' : 'owner',
-        createdAt:      new Date(),
+      const { needsEmailConfirmation } = await signUpWithEmail({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+        referrerCode: referralCode ?? undefined,
       });
-
-      // 4. Redirect to onboarding to fill business details
-      router.replace(isSuperAdminEmail(cred.user.email) ? '/dashboard' : '/onboarding');
+      // Supabase can hold the account until the emailed link is opened; there is no
+      // session to take anywhere yet.
+      if (needsEmailConfirmation) {
+        setConfirmSent(true);
+        return;
+      }
+      router.replace(isSuperAdminEmail(email.trim()) ? '/dashboard' : '/onboarding');
     } catch (error) {
-      setError(friendlyError(error));
+      setError(describeError(error));
     } finally { setLoading(false); }
   }
 
@@ -117,10 +77,10 @@ function LoginInner() {
     if (!email) { setError('Please enter the email address on your account.'); return; }
     setLoading(true); setError('');
     try {
-      await sendPasswordResetEmail(auth, email.trim());
+      await sendPasswordReset(email.trim());
       setResetSent(true);
     } catch (error) {
-      setError(friendlyError(error));
+      setError(describeError(error));
     } finally { setLoading(false); }
   }
 
@@ -128,10 +88,13 @@ function LoginInner() {
   async function handleGoogle() {
     setGoogleLoading(true); setError('');
     try {
-      const { isNewUser } = await signInWithGoogle(referralCode ?? undefined);
-      router.replace(isSuperAdminEmail(auth.currentUser?.email) ? '/dashboard' : isNewUser ? '/onboarding' : '/dashboard');
+      const { isNewUser, email: signedInEmail } = await signInWithGoogle(referralCode ?? undefined);
+      // A null email means the browser is being redirected to the provider and this
+      // page is going away; /auth/callback decides where the session lands.
+      if (signedInEmail === null) return;
+      router.replace(isSuperAdminEmail(signedInEmail) ? '/dashboard' : isNewUser ? '/onboarding' : '/dashboard');
     } catch (error) {
-      setError(friendlyError(error));
+      setError(describeError(error));
     } finally { setGoogleLoading(false); }
   }
 
@@ -170,17 +133,19 @@ function LoginInner() {
 
           <div className="space-y-6 rounded-2xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
 
-            {/* ── Password Reset Sent ── */}
-            {resetSent ? (
+            {/* ── Password Reset Sent, or an account waiting on its confirmation link ── */}
+            {resetSent || confirmSent ? (
               <div className="text-center space-y-4 py-4">
                 <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
                   <CheckCircle2 className="w-8 h-8 text-green-600" />
                 </div>
                 <h2 className="text-xl font-bold">Check your inbox</h2>
                 <p className="text-muted-foreground text-sm">
-                  We sent a password reset link to <strong>{email}</strong>. Check your spam folder if you don&apos;t see it.
+                  {confirmSent
+                    ? <>We sent a confirmation link to <strong>{email}</strong>. Open it to finish creating your workspace.</>
+                    : <>We sent a password reset link to <strong>{email}</strong>. Check your spam folder if you don&apos;t see it.</>}
                 </p>
-                <Button variant="outline" className="w-full" onClick={() => { setResetSent(false); setMode('signin'); }}>
+                <Button variant="outline" className="w-full" onClick={() => { setResetSent(false); setConfirmSent(false); setMode('signin'); }}>
                   <ArrowLeft className="mr-2 h-4 w-4" /> Back to sign in
                 </Button>
               </div>

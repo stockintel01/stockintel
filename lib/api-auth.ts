@@ -3,6 +3,16 @@ import { adminAuth, adminDb, adminProjectId } from '@/lib/firebase-admin';
 import { isSuperAdminEmail } from '@/lib/access-control';
 import { canUseFeature, isSubscriptionActive, type PlanFeature, type SubscriptionLike } from '@/lib/plans';
 import { userHasAccess, type AccessKey } from '@/lib/access-permissions';
+import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { isSupabaseBackendActive } from '@/lib/supabase/config';
+import {
+    activeOrganizationId,
+    toMemberships,
+    toSubscription,
+    type MembershipRow,
+    type ProfileRow,
+    type SubscriptionRow,
+} from '@/lib/supabase/session-mapping';
 
 export interface AuthenticatedUser {
     uid: string;
@@ -65,6 +75,13 @@ export async function requireFirebaseUser(request: NextRequest): Promise<{ uid: 
         throw new ApiError('Authentication required', 401);
     }
 
+    // A Supabase session carries a token Firebase cannot read. The few routes still on
+    // this path write Firestore anyway, so say which one is unported rather than
+    // failing as an invalid token.
+    if (isSupabaseBackendActive()) {
+        throw new ApiError('This endpoint has not been moved to Supabase yet.', 501);
+    }
+
     const token = authorization.slice(7);
     try {
         const decoded = await adminAuth.verifyIdToken(token);
@@ -109,7 +126,101 @@ export async function requireFirebaseUser(request: NextRequest): Promise<{ uid: 
     }
 }
 
+function bearerToken(request: NextRequest): string {
+    const authorization = request.headers.get('authorization');
+    if (!authorization?.startsWith('Bearer ')) throw new ApiError('Authentication required', 401);
+    return authorization.slice(7);
+}
+
+/**
+ * Validates a Supabase access token. The secret key is used only to ask the Auth
+ * server who the token belongs to; it never lends its own privileges to the caller.
+ */
+export async function requireSupabaseUser(request: NextRequest): Promise<{ uid: string; email: string }> {
+    const token = bearerToken(request);
+    let client: ReturnType<typeof getSupabaseAdminClient>;
+    try {
+        client = getSupabaseAdminClient();
+    } catch {
+        throw new ApiError(
+            'Supabase is not configured on the server. Add NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY to the deployment environment.',
+            503,
+        );
+    }
+
+    const { data, error } = await client.auth.getUser(token);
+    if (error || !data.user) {
+        if (error?.message?.toLowerCase().includes('expired')) {
+            throw new ApiError('Your login session expired. Sign out and sign in again.', 401);
+        }
+        throw new ApiError('Invalid or expired authentication token', 401);
+    }
+    return { uid: data.user.id, email: data.user.email ?? '' };
+}
+
+/**
+ * The workspace a Supabase session acts in. Read with the service role rather than the
+ * caller's token on purpose: this is the decision about what the caller is allowed to
+ * do, so it must not be filtered by the policies it is about to authorise.
+ */
+async function requireSupabaseWorkspaceUser(request: NextRequest): Promise<AuthenticatedUser> {
+    const decoded = await requireSupabaseUser(request);
+    if (isSuperAdminEmail(decoded.email)) {
+        return {
+            uid: decoded.uid,
+            email: decoded.email,
+            organizationId: 'system',
+            role: 'super_admin',
+            subscription: { plan: 'enterprise', status: 'active' },
+        };
+    }
+
+    const client = getSupabaseAdminClient();
+    const [profileResult, membershipResult] = await Promise.all([
+        client.from('profiles').select('id, email, display_name, photo_url, default_organization_id')
+            .eq('id', decoded.uid).maybeSingle(),
+        client.from('organization_memberships').select('organization_id, role, permissions, active')
+            .eq('user_id', decoded.uid).eq('active', true),
+    ]);
+
+    if (profileResult.error) {
+        console.error('[api-auth] Supabase profile load failed:', profileResult.error);
+        throw new ApiError('Unable to load your user profile.', 503);
+    }
+    if (!profileResult.data) throw new ApiError('User profile not found', 403);
+
+    const memberships = toMemberships((membershipResult.data ?? []) as unknown as MembershipRow[]);
+    const organizationId = activeOrganizationId(profileResult.data as unknown as ProfileRow, memberships);
+    const membership = memberships.find(item => item.organizationId === organizationId);
+
+    if (!organizationId || !membership) {
+        return {
+            uid: decoded.uid,
+            email: decoded.email,
+            organizationId: '',
+            role: 'owner',
+            access: [],
+            subscription: null,
+        };
+    }
+
+    const { data: subscription } = await client.from('organization_subscriptions')
+        .select('plan_id, status, trial_ends_at, current_period_end')
+        .eq('organization_id', organizationId).maybeSingle();
+
+    return {
+        uid: decoded.uid,
+        email: decoded.email,
+        organizationId,
+        role: membership.role,
+        access: membership.access,
+        subscription: toSubscription((subscription ?? null) as SubscriptionRow | null),
+    };
+}
+
 export async function requireUser(request: NextRequest): Promise<AuthenticatedUser> {
+    if (isSupabaseBackendActive()) return requireSupabaseWorkspaceUser(request);
+
     const decoded = await requireFirebaseUser(request);
     if (isSuperAdminEmail(decoded.email)) {
         return {
