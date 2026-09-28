@@ -175,21 +175,21 @@ every Nigerian one. It now resolves the code the same way.
 
 ## Keeping the project awake
 
-A project on the free plan pauses after about a week without requests. While Firebase
-serves farm data the application never calls Supabase, so the project receives no
-traffic at all and pauses on its own. That is what happened; a paused project is
-restored from the Supabase dashboard, and the data is retained.
+A project on the Free Plan may pause when it receives insufficient database activity
+over a seven-day window. Supabase says a few user database requests each day are
+typically enough to avoid an inactivity pause, but only a paid plan guarantees this.
 
 Three ways to stop it recurring, strongest first:
 
 1. **Move the project to a paid plan.** Paid projects are not paused for inactivity.
    This is the only guaranteed protection.
 2. **The scheduled keep-alive in this repository.** `GET /api/supabase/keepalive`
-   records a heartbeat through `record_platform_heartbeat`, and `vercel.json` runs it
-   daily. A daily cron is permitted on every Vercel plan, unlike the per-minute
+   makes three lightweight database requests, records a heartbeat through
+   `record_platform_heartbeat`, and `vercel.json` runs it daily. A daily cron is
+   permitted on every Vercel plan, unlike the per-minute
    messaging schedules. It only reaches Supabase when the deployment has
    `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `CRON_SECRET` set; without
-   them it returns "skipped" and the project still goes idle.
+   them an active Supabase deployment returns HTTP 503 so the failed cron is visible.
 3. **An external uptime check** hitting the project daily. Useful right now, because
    the deployment does not yet carry Supabase credentials.
 

@@ -11,9 +11,9 @@ export interface HeartbeatRecord {
 }
 
 /**
- * A free Supabase project pauses after roughly a week without requests, and this
- * application does not call Supabase at all while Firebase serves farm data. A
- * scheduled heartbeat keeps the project active and makes the last contact visible.
+ * Free Plan projects with low activity may pause after a seven-day window. The daily
+ * heartbeat supplies database activity and makes the last successful contact visible.
+ * A paid Supabase plan remains the only guaranteed protection from auto-pausing.
  */
 export function isSupabaseReachable(): boolean {
   return isSupabaseConfigured() && Boolean(process.env.SUPABASE_SECRET_KEY?.trim());

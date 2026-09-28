@@ -95,6 +95,15 @@ if (!proxySource.includes('isSupabaseBackendActive() || !isSupabaseConfigured()'
   failures.push('The Next.js proxy must not initialize Supabase while Firebase is active.');
 }
 
+const keepaliveSource = await readFile(join(projectRoot, 'app/api/supabase/keepalive/route.ts'), 'utf8');
+for (const fragment of ['await recordHeartbeat', 'await readHeartbeats', 'requests: 3', "status: isSupabaseBackendActive() ? 503 : 200"]) {
+  if (!keepaliveSource.includes(fragment)) failures.push(`Supabase keep-alive is missing: ${fragment}`);
+}
+const vercelConfig = await readFile(join(projectRoot, 'vercel.json'), 'utf8');
+if (!vercelConfig.includes('/api/supabase/keepalive') || !vercelConfig.includes('0 6 * * *')) {
+  failures.push('Vercel must schedule the Supabase keep-alive daily.');
+}
+
 const requiredRuntimeFiles = [
   'lib/agric/supabase-agric-service.ts',
   'lib/agric/supabase-livestock-service.ts',
