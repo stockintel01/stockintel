@@ -21,6 +21,7 @@
     "test:branding": "node --no-warnings --experimental-strip-types scripts/verify-app-branding.mjs",
     "test:expenses": "node --no-warnings --experimental-strip-types --import ./scripts/ts-path-resolver.mjs scripts/verify-expenses.mjs",
     "test:auth": "node --no-warnings --experimental-strip-types --import ./scripts/ts-path-resolver.mjs scripts/verify-auth.mjs",
+    "test:paystack": "node --no-warnings --experimental-strip-types scripts/verify-paystack.mjs",
     "test:onboarding": "node --no-warnings --experimental-strip-types --import ./scripts/ts-path-resolver.mjs scripts/verify-onboarding.mjs",
     "test:navigation": "node --no-warnings --experimental-strip-types --import ./scripts/ts-path-resolver.mjs scripts/verify-dashboard-routing.mjs",
     "test:comms-integration": "node scripts/verify-comms-integration.mjs",
@@ -31,7 +32,7 @@
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
     "db:lint": "supabase db lint --level warning",
-    "verify": "npm run typecheck && npm run test:sigatoka && npm run test:packing && npm run test:water && npm run test:receipts && npm run test:supabase && npm run test:comms && npm run test:migration && npm run test:branding && npm run test:expenses && npm run test:auth && npm run test:onboarding && npm run test:navigation && npm run build"
+    "verify": "npm run typecheck && npm run test:paystack && npm run test:sigatoka && npm run test:packing && npm run test:water && npm run test:receipts && npm run test:supabase && npm run test:comms && npm run test:migration && npm run test:branding && npm run test:expenses && npm run test:auth && npm run test:onboarding && npm run test:navigation && npm run build"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.8",

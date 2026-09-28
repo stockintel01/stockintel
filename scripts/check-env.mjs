@@ -9,11 +9,7 @@ if (!['firebase', 'supabase'].includes(dataBackend)) {
   process.exit(1);
 }
 
-const required = [
-  'STRIPE_SECRET_KEY',
-  'STRIPE_WEBHOOK_SECRET',
-  'NEXT_PUBLIC_APP_URL',
-];
+const required = ['NEXT_PUBLIC_APP_URL', 'PAYMENT_PROVIDER'];
 const firebasePublicVariables = [
   'NEXT_PUBLIC_FIREBASE_API_KEY',
   'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN',
@@ -70,11 +66,44 @@ if (whatsappVariables.some(name => process.env[name])) {
 if (!['observe', 'enforce'].includes((process.env.COMMS_QUOTA_MODE || 'observe').trim().toLowerCase())) {
   missing.push('COMMS_QUOTA_MODE must be "observe" or "enforce"');
 }
-if (!process.env.STRIPE_PRODUCT_PRO && !process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO) {
-  missing.push('STRIPE_PRODUCT_PRO or NEXT_PUBLIC_STRIPE_PRICE_PRO');
+const paymentProvider = (process.env.PAYMENT_PROVIDER
+  || (process.env.PAYSTACK_SECRET_KEY ? 'paystack' : process.env.STRIPE_SECRET_KEY ? 'stripe' : 'paystack'))
+  .trim().toLowerCase();
+if (!['paystack', 'stripe'].includes(paymentProvider)) missing.push('PAYMENT_PROVIDER must be "paystack" or "stripe"');
+
+if (paymentProvider === 'paystack') {
+  for (const name of [
+    'PAYSTACK_SECRET_KEY',
+    'PAYSTACK_PLAN_CODE_PRO',
+    'PAYSTACK_PLAN_CODE_ENTERPRISE',
+    'NEXT_PUBLIC_MERCHANT_LEGAL_NAME',
+    'NEXT_PUBLIC_MERCHANT_ADDRESS',
+    'NEXT_PUBLIC_SUPPORT_EMAIL',
+  ]) {
+    if (!process.env[name]) missing.push(name);
+  }
+  const placeholderPatterns = [/^your\b/i, /example\.com/i, /^accra,?\s*ghana$/i];
+  for (const name of ['NEXT_PUBLIC_MERCHANT_LEGAL_NAME', 'NEXT_PUBLIC_MERCHANT_ADDRESS', 'NEXT_PUBLIC_SUPPORT_EMAIL']) {
+    const value = String(process.env[name] || '').trim();
+    if (value && placeholderPatterns.some(pattern => pattern.test(value))) missing.push(`${name} must contain real merchant information`);
+  }
+} else {
+  for (const name of ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']) {
+    if (!process.env[name]) missing.push(name);
+  }
+  if (!process.env.STRIPE_PRODUCT_PRO && !process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO) {
+    missing.push('STRIPE_PRODUCT_PRO or NEXT_PUBLIC_STRIPE_PRICE_PRO');
+  }
+  if (!process.env.STRIPE_PRODUCT_ENTERPRISE && !process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE) {
+    missing.push('STRIPE_PRODUCT_ENTERPRISE or NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE');
+  }
 }
-if (!process.env.STRIPE_PRODUCT_ENTERPRISE && !process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE) {
-  missing.push('STRIPE_PRODUCT_ENTERPRISE or NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE');
+
+if (process.env.VERCEL_ENV === 'production') {
+  if (!String(process.env.NEXT_PUBLIC_APP_URL).startsWith('https://')) missing.push('NEXT_PUBLIC_APP_URL must use HTTPS in production');
+  if (paymentProvider === 'paystack' && !String(process.env.PAYSTACK_SECRET_KEY).startsWith('sk_live_')) {
+    missing.push('PAYSTACK_SECRET_KEY must be a live key in production');
+  }
 }
 
 if (missing.length) {
@@ -87,4 +116,4 @@ const disabled = optional.filter(name => name.includes(' or ')
   : !process.env[name]);
 if (disabled.length) console.warn(`Optional integrations not configured: ${disabled.join(', ')}`);
 if (!hasAnySupabaseConfig) console.warn('Supabase migration connection is not configured; Firebase remains active.');
-console.log(`Production environment variables are configured for the ${dataBackend} backend.`);
+console.log(`Production environment variables are configured for the ${dataBackend} backend and ${paymentProvider} payments.`);

@@ -2,10 +2,10 @@
 
 ## Prerequisites
 
-- Node.js 18+ and npm
+- Node.js 22+ and npm
 - Vercel account (free tier works)
 - Firebase project (Blaze plan required for Cloud Functions)
-- Stripe account with Pro and Enterprise recurring prices
+- Verified Paystack Ghana business with Pro and Enterprise monthly GHS plans
 - Meta Business account with WhatsApp Cloud API access (optional — for WhatsApp alerts)
 - OpenAI, Google Gemini, or Anthropic API key (optional — for AI features)
 
@@ -37,25 +37,23 @@ Firebase Console → Project Settings → Your apps → Add Web App → Copy con
 
 ---
 
-## 2. Stripe Setup
+## 2. Paystack Setup
 
-### 2a. Create products
-1. Stripe Dashboard → Products → Add Product
-2. Create **IntelliStock Pro** — ₹2,499/month recurring → copy Price ID
-3. Create **IntelliStock Enterprise** — custom pricing → copy Price ID
+1. Complete Paystack business verification using the same registered legal name, address, ownership, bank, and service description published at `/legal`.
+2. Confirm StockIntel is registered as its own SaaS merchant. Do not use this account to aggregate or process payments on behalf of tenant farms.
+3. In Paystack Dashboard, create **StockIntel Pro** and **StockIntel Enterprise** as monthly GHS plans. Copy their `PLN_...` codes to `PAYSTACK_PLAN_CODE_PRO` and `PAYSTACK_PLAN_CODE_ENTERPRISE`.
+4. Set `PAYMENT_PROVIDER=paystack` and add the server-only live secret as `PAYSTACK_SECRET_KEY`. Never expose it through a `NEXT_PUBLIC_` variable.
+5. Set the webhook URL to `https://yourdomain.vercel.app/api/webhooks/paystack`. The route verifies Paystack's HMAC-SHA512 signature before processing any event.
+6. Set the dashboard callback fallback to `https://yourdomain.vercel.app/api/payments/paystack/callback`. Checkout also supplies this URL per transaction.
+7. Fill every `NEXT_PUBLIC_MERCHANT_*` and `NEXT_PUBLIC_SUPPORT_*` value with real business details. Review `/legal`, `/legal/terms`, `/legal/privacy`, and `/legal/refunds` on the deployed domain.
+8. Run a test transaction, a renewal, a failed renewal, cancellation, full refund, partial refund, duplicate webhook delivery, and callback without payment. Access must change only after server verification.
+9. Before launch, replace the test secret with an `sk_live_...` key and rerun `npm run check:env`.
 
-### 2b. Get API keys
-Stripe Dashboard → Developers → API keys
+Operationally, monitor Paystack disputes and refunds every business day, respond within the applicable deadline, retain delivery and consent evidence, keep the published policies accurate, and notify Paystack if the business model materially changes. Technical controls cannot replace Paystack's KYC, prohibited-business, card-scheme, tax, privacy, or legal approval requirements.
 
-### 2c. Configure webhook
-1. Stripe Dashboard → Developers → Webhooks → Add endpoint
-2. URL: `https://yourdomain.vercel.app/api/webhooks/stripe`
-3. Events to listen for:
-   - `checkout.session.completed`
-   - `customer.subscription.updated`
-   - `customer.subscription.deleted`
-   - `invoice.payment_failed`
-4. Copy the **Signing secret** → `STRIPE_WEBHOOK_SECRET`
+### Optional Stripe fallback
+
+Set `PAYMENT_PROVIDER=stripe`, then configure `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the two Stripe product or price variables. The Stripe webhook remains at `/api/webhooks/stripe`.
 
 ---
 
@@ -132,7 +130,18 @@ FIREBASE_ADMIN_PROJECT_ID
 FIREBASE_ADMIN_CLIENT_EMAIL
 FIREBASE_ADMIN_PRIVATE_KEY                 ← preserve \n escapes in Vercel
 
-# Stripe
+# Payment provider (Paystack is the production default)
+PAYMENT_PROVIDER=paystack
+PAYSTACK_SECRET_KEY                    ← server-only (no NEXT_PUBLIC_)
+PAYSTACK_PLAN_CODE_PRO
+PAYSTACK_PLAN_CODE_ENTERPRISE
+NEXT_PUBLIC_MERCHANT_LEGAL_NAME
+NEXT_PUBLIC_MERCHANT_TRADING_NAME
+NEXT_PUBLIC_MERCHANT_ADDRESS
+NEXT_PUBLIC_SUPPORT_EMAIL
+NEXT_PUBLIC_SUPPORT_PHONE
+
+# Optional Stripe fallback
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 STRIPE_SECRET_KEY                     ← server-only (no NEXT_PUBLIC_)
 STRIPE_WEBHOOK_SECRET                 ← server-only
@@ -191,7 +200,11 @@ After getting your Vercel URL:
 - [ ] Test inventory loads from Firestore
 - [ ] Add a test item and verify real-time sync
 - [ ] Complete a test agriculture stock import and packhouse shipping record
-- [ ] Trigger a test Stripe webhook: `stripe trigger checkout.session.completed`
+- [ ] Complete a Paystack test checkout and confirm the exact reference, amount, currency, and plan activate the workspace
+- [ ] Replay the signed `charge.success` webhook and confirm fulfillment remains idempotent
+- [ ] Verify failed renewal, cancellation, full refund, and partial refund behavior
+- [ ] Confirm the deployed `/legal` pages show the registered merchant identity, complete address, support contact, delivery, privacy, refund, and cancellation terms
+- [ ] Confirm the Paystack Dashboard webhook is `https://yourdomain.vercel.app/api/webhooks/paystack`
 - [ ] Test the barcode scanner on a mobile device
 - [ ] Verify offline mode: turn off WiFi, navigate the app, reconnect
 - [ ] Connect WhatsApp from Stock Management, raise an item's minimum above its stock, then call the scan and dispatch routes
@@ -214,10 +227,9 @@ cp .env.example .env.local
 npm run dev
 # → http://localhost:3000
 
-# 4. Test Stripe webhooks locally
-npm install -g stripe
-stripe login
-stripe listen --forward-to localhost:3000/api/webhooks/stripe
+# 4. Test Paystack webhooks with an HTTPS tunnel
+# Point the Paystack test webhook to https://<tunnel>/api/webhooks/paystack
+# Keep PAYSTACK_SECRET_KEY on the server; never put it in browser code.
 
 # 5. Run lint
 npm run lint
@@ -234,20 +246,20 @@ npm run lint
 │                                                     │
 │  /app          Pages + API routes                   │
 │  /public/sw.js Service Worker (PWA)                 │
-│  /lib          Firebase, Stripe, Zustand, hooks     │
+│  /lib          Data adapters, Paystack, state       │
 │  /components   UI + Scanner + PWA Banner            │
 └──────────┬──────────────────────────────────────────┘
            │
     ┌──────┴──────┐         ┌─────────────┐
-    │  Firebase   │         │   Stripe    │
-    │  Firestore  │         │  Checkout   │
-    │  Auth       │         │  Portal     │
-    │  Storage    │         │  Webhooks   │
+    │ Supabase or │         │  Paystack   │
+    │  Firebase   │         │  Checkout   │
+    │ Auth + data │         │  Webhooks   │
+    │  Storage    │         │  Plans      │
     └─────────────┘         └─────────────┘
            │
     ┌──────┴──────┐         ┌─────────────┐
-    │  Anthropic  │         │  Meta Cloud │
-    │  Claude API │         │  API        │
+    │ OpenAI or   │         │  Meta Cloud │
+    │   Gemini    │         │  API        │
     │  (server)   │         │  WhatsApp   │
     └─────────────┘         └─────────────┘
 ```
@@ -260,7 +272,8 @@ npm run lint
 |---|---|
 | Google sign-in fails | Add Vercel domain to Firebase Auth authorized domains |
 | Firestore permission denied | Deploy `firestore.rules` with `firebase deploy --only firestore:rules` |
-| Stripe webhook 400 | Check `STRIPE_WEBHOOK_SECRET` matches the signing secret in Stripe Dashboard |
+| Paystack webhook 401 | Confirm the route receives the raw body and `PAYSTACK_SECRET_KEY` belongs to the same test or live Paystack environment |
+| Checkout says plans differ | Make the Paystack monthly GHS plan amounts match the superadmin GHS prices, then save pricing again |
 | AI report generation returns 503 | Set `AI_PROVIDER` and its matching API key in Vercel |
 | Barcode scanner not working | Camera requires HTTPS — works automatically on Vercel, use `https://` locally via ngrok |
 | PWA install prompt not showing | Must be served over HTTPS with a valid manifest |

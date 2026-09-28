@@ -8,6 +8,8 @@ import { useAuth } from '@/components/auth/AuthContext';
 import { ArrowLeft, Boxes, CheckCircle2, CloudSun, Eye, EyeOff, Leaf, Loader2, ShieldCheck } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { isSuperAdminEmail } from '@/lib/access-control';
+import Link from 'next/link';
+import { LegalLinks } from '@/components/legal/LegalLinks';
 
 type AuthMode = 'signin' | 'signup' | 'reset';
 
@@ -263,7 +265,7 @@ function LoginInner() {
                       {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                       Create Account
                     </Button>
-                    <p className="text-center text-xs text-muted-foreground">The account creator becomes the organization owner and can invite the rest of the team.</p>
+                    <p className="text-center text-xs text-muted-foreground">The account creator becomes the organization owner and can invite the rest of the team. By creating an account, you agree to the <Link className="underline" href="/legal/terms">Terms</Link> and acknowledge the <Link className="underline" href="/legal/privacy">Privacy Policy</Link>.</p>
                   </form>
                 )}
 
@@ -304,6 +306,7 @@ function LoginInner() {
                 )}
               </>
             )}
+            <LegalLinks className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground" />
           </div>
         </div>
       </div>

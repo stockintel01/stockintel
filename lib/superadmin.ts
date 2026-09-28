@@ -63,6 +63,7 @@ export interface SystemStats {
 export interface SystemConfig {
   subscriptionPricing: {
     baseUSD: number;
+    baseGHS: number;
     proPlanMultiplier: number;
     enterprisePlanMultiplier: number;
     freeTrial: { durationDays: number };
@@ -120,8 +121,21 @@ function loadSupabaseAdminConsole() {
 export async function getSystemConfig(): Promise<SystemConfig> {
   if (isSupabaseBackendActive()) return (await loadSupabaseAdminConsole()).config;
   const snap = await getDoc(doc(db, 'system', 'config'));
-  if (snap.exists()) return snap.data() as SystemConfig;
-  return getDefaultConfig();
+  const defaults = getDefaultConfig();
+  if (!snap.exists()) return defaults;
+  const stored = snap.data() as Partial<SystemConfig>;
+  return {
+    ...defaults,
+    ...stored,
+    subscriptionPricing: {
+      ...defaults.subscriptionPricing,
+      ...stored.subscriptionPricing,
+      freeTrial: { ...defaults.subscriptionPricing.freeTrial, ...stored.subscriptionPricing?.freeTrial },
+    },
+    features: { ...defaults.features, ...stored.features },
+    maintenance: { ...defaults.maintenance, ...stored.maintenance },
+    announcements: Array.isArray(stored.announcements) ? stored.announcements : defaults.announcements,
+  };
 }
 
 export async function saveSystemConfig(config: SystemConfig): Promise<void> {
@@ -129,6 +143,15 @@ export async function saveSystemConfig(config: SystemConfig): Promise<void> {
     await adminRequest({ action: 'save_config', config });
     return;
   }
+  const proAmountMinor = Math.round(config.subscriptionPricing.baseGHS * config.subscriptionPricing.proPlanMultiplier * 100);
+  const enterpriseAmountMinor = Math.round(config.subscriptionPricing.baseGHS * config.subscriptionPricing.enterprisePlanMultiplier * 100);
+  const syncResponse = await authenticatedFetch('/api/admin/payments/plans', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ proAmountMinor, enterpriseAmountMinor }),
+  });
+  const syncPayload = await syncResponse.json().catch(() => ({}));
+  if (!syncResponse.ok) throw new Error(syncPayload.error || 'Unable to synchronize payment plans');
   await setDoc(doc(db, 'system', 'config'), {
     ...config,
     updatedAt: serverTimestamp(),
@@ -140,6 +163,7 @@ export function getDefaultConfig(): SystemConfig {
   return {
     subscriptionPricing: {
       baseUSD: 9,
+      baseGHS: 9,
       proPlanMultiplier: 1,
       enterprisePlanMultiplier: 3,
       freeTrial: { durationDays: 14 },

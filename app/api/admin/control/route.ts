@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ApiError, requireUser } from '@/lib/api-auth';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { isSupabaseBackendActive } from '@/lib/supabase/config';
+import { synchronizePaystackPlanPrices } from '@/lib/billing/paystack-plan-admin';
+import { paystackPlanCode } from '@/lib/payments/paystack';
 
 type Plan = 'free_trial' | 'pro' | 'enterprise';
 type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'expired' | 'cancelled';
@@ -10,6 +12,7 @@ type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'expired' | 'canc
 interface SystemConfigInput {
   subscriptionPricing: {
     baseUSD: number;
+    baseGHS: number;
     proPlanMultiplier: number;
     enterprisePlanMultiplier: number;
     freeTrial: { durationDays: number };
@@ -33,6 +36,7 @@ function defaultConfig(): SystemConfigInput {
   return {
     subscriptionPricing: {
       baseUSD: 9,
+      baseGHS: 9,
       proPlanMultiplier: 1,
       enterprisePlanMultiplier: 3,
       freeTrial: { durationDays: 14 },
@@ -103,7 +107,6 @@ async function loadConsole() {
       .limit(5000),
     client.from('plan_prices')
       .select('plan_id, currency, interval, amount_minor, active')
-      .eq('currency', 'USD')
       .eq('interval', 'monthly')
       .eq('active', true),
     client.from('plan_entitlements')
@@ -200,8 +203,8 @@ async function loadConsole() {
   config.maintenance = { ...defaultConfig().maintenance, ...(config.maintenance ?? {}) };
   config.announcements = Array.isArray(config.announcements) ? config.announcements : [];
 
-  const proPrice = (pricesResult.data ?? []).find(row => row.plan_id === 'pro');
-  const enterprisePrice = (pricesResult.data ?? []).find(row => row.plan_id === 'enterprise');
+  const proPrice = (pricesResult.data ?? []).find(row => row.plan_id === 'pro' && row.currency === 'USD');
+  const enterprisePrice = (pricesResult.data ?? []).find(row => row.plan_id === 'enterprise' && row.currency === 'USD');
   if (proPrice) {
     config.subscriptionPricing.baseUSD = Number(proPrice.amount_minor) / 100;
     config.subscriptionPricing.proPlanMultiplier = 1;
@@ -210,6 +213,8 @@ async function loadConsole() {
     config.subscriptionPricing.enterprisePlanMultiplier = Number(enterprisePrice.amount_minor)
       / (config.subscriptionPricing.baseUSD * 100);
   }
+  const proGhsPrice = (pricesResult.data ?? []).find(row => row.plan_id === 'pro' && row.currency === 'GHS');
+  if (proGhsPrice) config.subscriptionPricing.baseGHS = Number(proGhsPrice.amount_minor) / 100;
 
   const entitlement = (plan: Plan, key: string) => (entitlementsResult.data ?? [])
     .find(row => row.plan_id === plan && row.feature_key === key);
@@ -257,10 +262,13 @@ async function insertAudit(actorId: string, action: string, targetId: string, ta
 
 async function saveConfig(config: SystemConfigInput, actorId: string) {
   const baseUSD = finiteNumber(config.subscriptionPricing?.baseUSD, 'Base price', 0.5);
+  const baseGHS = finiteNumber(config.subscriptionPricing?.baseGHS, 'GHS base price', 0.1);
   const proMultiplier = finiteNumber(config.subscriptionPricing?.proPlanMultiplier, 'Pro multiplier', 0.01);
   const enterpriseMultiplier = finiteNumber(config.subscriptionPricing?.enterprisePlanMultiplier, 'Enterprise multiplier', 0.01);
   const proAmount = Math.round(baseUSD * proMultiplier * 100);
   const enterpriseAmount = Math.round(baseUSD * enterpriseMultiplier * 100);
+  const proGhsAmount = Math.round(baseGHS * proMultiplier * 100);
+  const enterpriseGhsAmount = Math.round(baseGHS * enterpriseMultiplier * 100);
   const durationDays = integer(config.subscriptionPricing?.freeTrial?.durationDays, 'Trial duration', 1);
   const limits = {
     maxWorkersFreeTrial: integer(config.features?.maxWorkersFreeTrial, 'Free trial worker limit'),
@@ -274,6 +282,7 @@ async function saveConfig(config: SystemConfigInput, actorId: string) {
     subscriptionPricing: {
       ...config.subscriptionPricing,
       baseUSD,
+      baseGHS,
       proPlanMultiplier: proMultiplier,
       enterprisePlanMultiplier: enterpriseMultiplier,
       freeTrial: { durationDays },
@@ -284,10 +293,16 @@ async function saveConfig(config: SystemConfigInput, actorId: string) {
 
   const client = getSupabaseAdminClient();
   const now = new Date().toISOString();
+  const paystack = await synchronizePaystackPlanPrices({
+    proAmountMinor: proGhsAmount,
+    enterpriseAmountMinor: enterpriseGhsAmount,
+  });
   const [priceResult, entitlementResult, settingResult] = await Promise.all([
     client.from('plan_prices').upsert([
       { plan_id: 'pro', currency: 'USD', interval: 'monthly', amount_minor: proAmount, active: true, updated_at: now },
       { plan_id: 'enterprise', currency: 'USD', interval: 'monthly', amount_minor: enterpriseAmount, active: true, updated_at: now },
+      { plan_id: 'pro', currency: 'GHS', interval: 'monthly', amount_minor: proGhsAmount, paystack_plan_code: paystack.provider === 'paystack' ? paystack.proPlanCode : paystackPlanCode('pro'), active: true, updated_at: now },
+      { plan_id: 'enterprise', currency: 'GHS', interval: 'monthly', amount_minor: enterpriseGhsAmount, paystack_plan_code: paystack.provider === 'paystack' ? paystack.enterprisePlanCode : paystackPlanCode('enterprise'), active: true, updated_at: now },
     ], { onConflict: 'plan_id,currency,interval' }),
     client.from('plan_entitlements').upsert([
       { plan_id: 'free_trial', feature_key: 'team_members', enabled: true, limit_value: limits.maxWorkersFreeTrial, updated_at: now },

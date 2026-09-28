@@ -548,9 +548,11 @@ function AuthorizedSuperAdminPage({ email }: { email: string }) {
           {/* Pricing */}
           <Card>
             <CardHeader className="py-4"><CardTitle className="flex items-center gap-2"><DollarSign className="w-5 h-5" /> Subscription Pricing</CardTitle></CardHeader>
-            <CardContent className="grid sm:grid-cols-3 gap-4">
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {[
                 { label: 'Base Price (USD/mo)', key: 'baseUSD', step: '0.01' },
+                { label: 'Paystack Base Price (GHS/mo)', key: 'baseGHS', step: '0.01' },
                 { label: 'Pro Multiplier', key: 'proPlanMultiplier', step: '0.1' },
                 { label: 'Enterprise Multiplier', key: 'enterprisePlanMultiplier', step: '0.1' },
               ].map(f => (
@@ -559,11 +561,17 @@ function AuthorizedSuperAdminPage({ email }: { email: string }) {
                   <Input type="number" step={f.step}
                     value={(config.subscriptionPricing as any)[f.key]}
                     onChange={e => setConfig(prev => ({ ...prev, subscriptionPricing: { ...prev.subscriptionPricing, [f.key]: parseFloat(e.target.value) || 0 } }))} />
-                  {f.key !== 'baseUSD' && (
-                    <p className="text-xs text-muted-foreground">= ${(config.subscriptionPricing.baseUSD * (config.subscriptionPricing as any)[f.key]).toFixed(2)}/mo</p>
+                  {f.key.includes('Multiplier') && (
+                    <p className="text-xs text-muted-foreground">
+                      USD {(config.subscriptionPricing.baseUSD * (config.subscriptionPricing as any)[f.key]).toFixed(2)} · GHS {(config.subscriptionPricing.baseGHS * (config.subscriptionPricing as any)[f.key]).toFixed(2)} / month
+                    </p>
                   )}
                 </div>
               ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Saving synchronizes Paystack’s Pro and Enterprise monthly plans for new subscriptions. Existing subscribers retain the amount they authorized.
+              </p>
             </CardContent>
           </Card>
 

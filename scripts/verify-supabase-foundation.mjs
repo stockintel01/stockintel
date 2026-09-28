@@ -9,8 +9,8 @@ const migrationNames = (await readdir(migrationsDirectory))
 
 const failures = [];
 
-if (migrationNames.length < 23) {
-  failures.push(`Expected at least 23 Supabase migrations, found ${migrationNames.length}.`);
+if (migrationNames.length < 24) {
+  failures.push(`Expected at least 24 Supabase migrations, found ${migrationNames.length}.`);
 }
 
 if (new Set(migrationNames.map(name => name.slice(0, 14))).size !== migrationNames.length) {
@@ -47,6 +47,9 @@ const requiredFragments = [
   'save_sigatoka_observation',
   'manage_sigatoka_observation',
   'activate_referral_credit',
+  'claim_paystack_webhook_event',
+  'activate_paystack_checkout',
+  'paystack_checkout_transactions',
 ];
 
 for (const fragment of requiredFragments) {
@@ -63,6 +66,7 @@ const serviceRoleOnlyTables = new Set([
   'contact_link_codes',
   'notification_alert_states',
   'inbound_message_receipts',
+  'paystack_subscription_secrets',
 ]);
 const createdTables = [...combinedSql.matchAll(/^create table public\.([a-z_]+)/gm)].map(match => match[1]);
 const tablesWithPolicy = new Set([

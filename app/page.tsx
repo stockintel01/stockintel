@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { ArrowRight, BarChart3, Check, ShieldCheck, Sprout } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { LegalLinks } from '@/components/legal/LegalLinks';
 
 const outcomes = [
   'Accurate farm input, usage, and request records',
@@ -53,7 +54,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <footer className="border-t border-slate-200 py-5 text-xs text-slate-500">StockIntel Agri · Secure, tenant-aware farm operations software</footer>
+        <footer className="flex flex-col gap-3 border-t border-slate-200 py-5 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between"><span>StockIntel Agri · Secure, tenant-aware farm operations software</span><LegalLinks className="flex flex-wrap gap-4" /></footer>
       </section>
     </main>
   );

@@ -19,6 +19,12 @@
     "app/api/webhooks/stripe/route.ts": {
       "maxDuration": 10
     },
+    "app/api/webhooks/paystack/route.ts": {
+      "maxDuration": 15
+    },
+    "app/api/payments/paystack/callback/route.ts": {
+      "maxDuration": 15
+    },
     "app/api/checkout/route.ts": {
       "maxDuration": 15
     }

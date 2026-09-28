@@ -1,17 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAppStore } from '@/lib/store';
 import { CreditCard, Calendar, AlertCircle, CheckCircle, Loader2, ShieldCheck } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
 import { isSuperAdminEmail } from '@/lib/access-control';
+import Link from 'next/link';
+
+interface BillingCatalog {
+    provider: 'paystack' | 'stripe';
+    currency: string;
+    termsVersion: string;
+    plans: Record<'pro' | 'enterprise', { amountMinor: number; configured: boolean }>;
+}
 
 export default function BillingPage() {
     const { user, organization } = useAppStore();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [notice, setNotice] = useState<string | null>(null);
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
+    const [catalog, setCatalog] = useState<BillingCatalog | null>(null);
 
     const subscription = organization?.subscription;
     const isSuperAdmin = isSuperAdminEmail(user?.email);
@@ -28,9 +39,39 @@ export default function BillingPage() {
         ? Math.ceil((trialEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
         : 0;
 
+    useEffect(() => {
+        const payment = new URLSearchParams(window.location.search).get('payment');
+        if (payment === 'success') setNotice('Payment confirmed. Your subscription is active.');
+        if (payment === 'verification-failed') setError('We could not verify that payment yet. Your access has not been changed. Contact support with the Paystack reference if you were charged.');
+        if (new URLSearchParams(window.location.search).get('canceled') === 'true') setNotice('Checkout was cancelled. No subscription change was made.');
+        let active = true;
+        void authenticatedFetch('/api/billing/plans').then(async response => {
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Unable to load subscription prices');
+            if (active) setCatalog(payload as BillingCatalog);
+        }).catch(reason => {
+            if (active) setError(reason instanceof Error ? reason.message : 'Unable to load subscription prices');
+        });
+        return () => { active = false; };
+    }, []);
+
+    const price = (plan: 'pro' | 'enterprise') => {
+        const item = catalog?.plans[plan];
+        if (!item) return 'Loading price…';
+        return new Intl.NumberFormat('en-GH', { style: 'currency', currency: catalog.currency }).format(item.amountMinor / 100);
+    };
+
     const handleUpgrade = async (plan: 'pro' | 'enterprise') => {
         if (!organization?.id || !user?.id) {
             setError('Missing organization or user information');
+            return;
+        }
+        if (!catalog || !catalog.plans[plan].configured) {
+            setError('This payment plan is not configured yet.');
+            return;
+        }
+        if (!acceptedTerms) {
+            setError('Accept the subscription, privacy, and refund terms before continuing.');
             return;
         }
 
@@ -45,6 +86,8 @@ export default function BillingPage() {
                     plan,
                     organizationId: organization.id,
                     userId: user.id,
+                    acceptedTerms: true,
+                    termsVersion: catalog.termsVersion,
                 }),
             });
 
@@ -54,7 +97,7 @@ export default function BillingPage() {
                 throw new Error(data.error || 'Failed to create checkout session');
             }
 
-            if (!data.url) throw new Error('Stripe checkout URL was not returned');
+            if (!data.url) throw new Error('The secure checkout URL was not returned');
             window.location.href = data.url;
         } catch (err: unknown) {
             console.error('Upgrade error:', err);
@@ -100,6 +143,10 @@ export default function BillingPage() {
                         </div>
                     </CardContent>
                 </Card>
+            )}
+
+            {notice && (
+                <Card className="border-emerald-200 bg-emerald-50"><CardContent className="pt-6"><div className="flex items-center gap-2 text-emerald-800"><CheckCircle className="h-5 w-5" /><span>{notice}</span></div></CardContent></Card>
             )}
 
             {isSuperAdmin && (
@@ -158,12 +205,17 @@ export default function BillingPage() {
 
             {/* Pricing Plans */}
             {isFreeTrial && !isSuperAdmin && (
-                <div className="grid md:grid-cols-2 gap-6">
+                <div className="space-y-5">
+                <div className="rounded-xl border bg-card p-4 text-sm">
+                    <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" className="mt-1 h-4 w-4" checked={acceptedTerms} onChange={event => setAcceptedTerms(event.target.checked)} /><span>I authorize the displayed monthly recurring charge until cancellation and agree to the <Link className="font-medium text-primary underline" href="/legal/terms" target="_blank">Terms</Link>, <Link className="font-medium text-primary underline" href="/legal/privacy" target="_blank">Privacy Policy</Link>, and <Link className="font-medium text-primary underline" href="/legal/refunds" target="_blank">Refund and Cancellation Policy</Link>.</span></label>
+                    <p className="mt-3 text-xs text-muted-foreground">Payment is completed on {catalog?.provider === 'paystack' ? 'Paystack’s' : 'the payment provider’s'} secure hosted checkout. StockIntel does not store your full card number, PIN, or CVV. Paid access starts only after server verification.</p>
+                </div>
+                <div className="grid gap-6 md:grid-cols-2">
                     {/* Pro Plan */}
                     <Card className="border-2 border-blue-200">
                         <CardHeader>
                             <CardTitle>Pro Plan</CardTitle>
-                            <div className="text-3xl font-bold">$9<span className="text-lg text-muted-foreground">/month</span></div>
+                            <div className="text-3xl font-bold">{price('pro')}<span className="text-lg text-muted-foreground">/month</span></div>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <ul className="space-y-2">
@@ -187,7 +239,7 @@ export default function BillingPage() {
                             <Button
                                 className="w-full"
                                 onClick={() => handleUpgrade('pro')}
-                                disabled={loading}
+                                disabled={loading || !catalog?.plans.pro.configured}
                             >
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Upgrade to Pro'}
                             </Button>
@@ -201,7 +253,7 @@ export default function BillingPage() {
                                 Enterprise
                                 <span className="px-2 py-0.5 bg-purple-600 text-white text-xs rounded-full">Popular</span>
                             </CardTitle>
-                            <div className="text-3xl font-bold">$27<span className="text-lg text-muted-foreground">/month</span></div>
+                            <div className="text-3xl font-bold">{price('enterprise')}<span className="text-lg text-muted-foreground">/month</span></div>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <ul className="space-y-2">
@@ -225,12 +277,13 @@ export default function BillingPage() {
                             <Button
                                 className="w-full bg-purple-600 hover:bg-purple-700"
                                 onClick={() => handleUpgrade('enterprise')}
-                                disabled={loading}
+                                disabled={loading || !catalog?.plans.enterprise.configured}
                             >
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Upgrade to Enterprise'}
                             </Button>
                         </CardContent>
                     </Card>
+                </div>
                 </div>
             )}
 
@@ -254,6 +307,7 @@ export default function BillingPage() {
                             <span className="font-medium">Monthly</span>
                         </div>
                         {!isSuperAdmin && <Button className="mt-4" variant="outline" disabled={loading} onClick={handlePortal}>Manage Payment Method or Cancel</Button>}
+                        <p className="pt-2 text-xs text-muted-foreground">Cancellation stops future renewal. Refund eligibility and digital delivery terms are available in our <Link className="underline" href="/legal/refunds">Refund and Cancellation Policy</Link>.</p>
                     </CardContent>
                 </Card>
             )}

@@ -12,7 +12,7 @@ StockIntel Agri is a production-focused agriculture SaaS platform for farm stock
 - Expense categories, budgets, and spending tracking per tenant.
 - Firestore persistence and PWA service worker support for previously loaded data and supported offline writes.
 - Per-farm installable app: each organization sets its own app name, colours, and icon in Settings, and installs from its own manifest at `/api/pwa/manifest?org=<id>`. Installed apps reopen their own workspace.
-- Stripe subscriptions, referral rewards, and superadmin controls.
+- Paystack-hosted GHS subscriptions with verified, idempotent webhooks, referral rewards, and superadmin controls.
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ Visit `http://localhost:3000`.
 
 - Firebase Authentication with Google sign-in enabled.
 - Firestore with `firestore.rules` deployed.
-- Stripe for subscription billing.
+- Paystack account with two monthly GHS plans for subscription billing. Stripe remains an optional fallback.
 - Optional AI provider for agriculture report generation: OpenAI or Google Gemini via `AI_PROVIDER` and the matching API key.
 
 ## Project Structure
@@ -58,7 +58,7 @@ lib/
 
 - Deploy Firestore rules: `firebase deploy --only firestore:rules`.
 - Configure Firebase Admin credentials in Vercel.
-- Configure Stripe keys, price IDs, and webhook secret.
+- Configure Paystack live keys, plan codes, webhook, registered merchant details, and support contact.
 - Configure `NEXT_PUBLIC_APP_URL`.
 - Configure AI provider variables if report generation is enabled.
 - Run `npm run build` before every deployment.

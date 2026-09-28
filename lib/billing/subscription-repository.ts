@@ -5,6 +5,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { isSupabaseBackendActive } from '@/lib/supabase/config';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { paystackPlanCode } from '@/lib/payments/paystack';
 
 export type PaidPlan = 'pro' | 'enterprise';
 export type StoredSubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'expired' | 'cancelled';
@@ -13,7 +14,9 @@ export interface CheckoutBillingState {
   organizationExists: boolean;
   customerId: string | null;
   amountMinor: number;
+  currency: 'GHS' | 'USD';
   stripePriceId: string | null;
+  paystackPlanCode: string | null;
 }
 
 export interface SubscriptionWrite {
@@ -31,13 +34,10 @@ function assertSuccessful(error: { message?: string } | null, operation: string)
   if (error) throw new Error(`${operation}: ${error.message ?? 'database operation failed'}`);
 }
 
-function defaultAmountMinor(plan: PaidPlan) {
-  return plan === 'pro' ? 900 : 2700;
-}
-
 export async function getCheckoutBillingState(
   organizationId: string,
   plan: PaidPlan,
+  currency: 'GHS' | 'USD' = 'USD',
 ): Promise<CheckoutBillingState> {
   if (isSupabaseBackendActive()) {
     const client = getSupabaseAdminClient();
@@ -48,9 +48,9 @@ export async function getCheckoutBillingState(
         .eq('organization_id', organizationId)
         .maybeSingle(),
       client.from('plan_prices')
-        .select('amount_minor, stripe_price_id')
+        .select('amount_minor, stripe_price_id, paystack_plan_code')
         .eq('plan_id', plan)
-        .eq('currency', 'USD')
+        .eq('currency', currency)
         .eq('interval', 'monthly')
         .eq('active', true)
         .maybeSingle(),
@@ -60,12 +60,14 @@ export async function getCheckoutBillingState(
     assertSuccessful(subscriptionResult.error, 'Unable to load the subscription');
     assertSuccessful(priceResult.error, 'Unable to load the plan price');
 
-    const amountMinor = Number(priceResult.data?.amount_minor ?? defaultAmountMinor(plan));
+    const amountMinor = priceResult.data ? Number(priceResult.data.amount_minor) : 0;
     return {
       organizationExists: Boolean(organizationResult.data),
       customerId: String(subscriptionResult.data?.provider_customer_id ?? '').trim() || null,
       amountMinor,
+      currency,
       stripePriceId: String(priceResult.data?.stripe_price_id ?? '').trim() || null,
+      paystackPlanCode: String(priceResult.data?.paystack_plan_code ?? '').trim() || paystackPlanCode(plan),
     };
   }
 
@@ -75,6 +77,7 @@ export async function getCheckoutBillingState(
   ]);
   const pricing = configSnapshot.data()?.subscriptionPricing;
   const baseUSD = Number(pricing?.baseUSD ?? 9);
+  const baseGHS = Number(pricing?.baseGHS ?? baseUSD);
   const multiplier = Number(plan === 'pro'
     ? pricing?.proPlanMultiplier ?? 1
     : pricing?.enterprisePlanMultiplier ?? 3);
@@ -82,8 +85,10 @@ export async function getCheckoutBillingState(
   return {
     organizationExists: organizationSnapshot.exists,
     customerId: String(organizationSnapshot.data()?.subscription?.stripeCustomerId ?? '').trim() || null,
-    amountMinor: Math.round(baseUSD * multiplier * 100),
+    amountMinor: Math.round((currency === 'GHS' ? baseGHS : baseUSD) * multiplier * 100),
+    currency,
     stripePriceId: null,
+    paystackPlanCode: paystackPlanCode(plan),
   };
 }
 
