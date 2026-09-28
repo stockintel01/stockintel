@@ -1,5 +1,5 @@
 import type { PlanFeature, SubscriptionLike } from './plans';
-import { canUseFeature, isSubscriptionActive } from './plans';
+import { canUseFeature } from './plans';
 
 interface DashboardRouteGuardInput {
     authLoading: boolean;
@@ -12,9 +12,13 @@ interface DashboardRouteGuardInput {
 }
 
 /**
- * Returns the authentication or subscription destination for a dashboard request.
+ * Returns the authentication or premium-feature destination for a dashboard request.
  * A missing organization is never treated as an unpaid organization: it means either
  * onboarding is unfinished or the workspace could not be loaded yet.
+ *
+ * Expired accounts retain access to their workspace and historical records. Paid
+ * operations remain protected by API entitlement checks, while premium pages send
+ * an owner to Billing only when that specific feature is opened.
  */
 export function dashboardRouteDestination(input: DashboardRouteGuardInput): string | null {
     if (input.authLoading) return null;
@@ -27,11 +31,6 @@ export function dashboardRouteDestination(input: DashboardRouteGuardInput): stri
 
     const subscription = input.organization?.subscription;
     if (!input.organization || !subscription) return null;
-
-    if (!isSubscriptionActive(subscription)) {
-        const recoveryRoutes = ['/dashboard/billing', '/dashboard/rewards'];
-        return recoveryRoutes.some(path => input.pathname.startsWith(path)) ? null : '/dashboard/billing';
-    }
 
     if (input.requiredFeature && !canUseFeature(subscription, input.requiredFeature)) {
         return input.pathname === '/dashboard/billing' ? null : '/dashboard/billing';

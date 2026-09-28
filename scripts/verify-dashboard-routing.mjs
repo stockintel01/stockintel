@@ -26,7 +26,8 @@ assert.equal(
 assert.equal(dashboardRouteDestination(base), null);
 assert.equal(
   dashboardRouteDestination({ ...base, organization: { subscription: { ...activeTrial, trialEndsAt: past } } }),
-  '/dashboard/billing',
+  null,
+  'an expired workspace remains navigable instead of trapping every route on Billing',
 );
 assert.equal(
   dashboardRouteDestination({ ...base, pathname: '/dashboard/billing', organization: { subscription: { ...activeTrial, trialEndsAt: past } } }),
@@ -37,6 +38,11 @@ assert.equal(
   dashboardRouteDestination({ ...base, pathname: '/dashboard/rewards', organization: { subscription: { ...activeTrial, trialEndsAt: past } } }),
   null,
   'an owner must be able to activate earned credit after a subscription expires',
+);
+assert.equal(
+  dashboardRouteDestination({ ...base, requiredFeature: 'advancedReports', organization: { subscription: { ...activeTrial, trialEndsAt: past } } }),
+  '/dashboard/billing',
+  'opening a premium feature still presents the upgrade path',
 );
 assert.equal(
   dashboardRouteDestination({ ...base, requiredFeature: 'advancedReports' }),

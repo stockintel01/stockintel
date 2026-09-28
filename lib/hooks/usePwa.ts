@@ -14,6 +14,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 
 interface UsePwaReturn {
     isOnline: boolean;
+    connectionStatus: 'checking' | 'online' | 'offline' | 'unreachable';
     canInstall: boolean;
     install: () => Promise<void>;
     updateAvailable: boolean;
@@ -22,7 +23,7 @@ interface UsePwaReturn {
 }
 
 export function usePwa(): UsePwaReturn {
-    const [isOnline, setIsOnline]             = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
+    const [connectionStatus, setConnectionStatus] = useState<UsePwaReturn['connectionStatus']>('checking');
     const [canInstall, setCanInstall]         = useState(false);
     const [updateAvailable, setUpdateAvailable] = useState(false);
     const [swReady, setSwReady]               = useState(false);
@@ -34,16 +35,46 @@ export function usePwa(): UsePwaReturn {
         if (typeof window === 'undefined') return;
 
         // ── Online / offline ──────────────────────────────────────────────
-        const handleOnline = () => {
-            setIsOnline(true);
+        // navigator.onLine can remain stale after sleep, VPN changes, or switching
+        // networks. Confirm connectivity against an endpoint the service worker skips.
+        let active = true;
+        let probeController: AbortController | null = null;
+        const checkConnectivity = async () => {
+            probeController?.abort();
+            const controller = new AbortController();
+            probeController = controller;
+            const timeout = window.setTimeout(() => controller.abort(), 5_000);
+
+            try {
+                const response = await fetch(`/api/connectivity?probe=${Date.now()}`, {
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                    signal: controller.signal,
+                });
+                if (!response.ok) throw new Error(`Connectivity check returned ${response.status}`);
+                if (active && probeController === controller) setConnectionStatus('online');
+            } catch {
+                if (active && probeController === controller) {
+                    setConnectionStatus(navigator.onLine ? 'unreachable' : 'offline');
+                }
+            } finally {
+                window.clearTimeout(timeout);
+                if (probeController === controller) probeController = null;
+            }
         };
 
-        const handleOffline = () => {
-            setIsOnline(false);
+        const handleConnectivityChange = () => void checkConnectivity();
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') void checkConnectivity();
         };
 
-        if (typeof window !== 'undefined') window.addEventListener('online',  handleOnline);
-        if (typeof window !== 'undefined') window.addEventListener('offline', handleOffline);
+        void checkConnectivity();
+        const probeInterval = window.setInterval(checkConnectivity, 30_000);
+        window.addEventListener('online', handleConnectivityChange);
+        window.addEventListener('offline', handleConnectivityChange);
+        window.addEventListener('focus', handleConnectivityChange);
+        window.addEventListener('pageshow', handleConnectivityChange);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         // ── Install prompt ────────────────────────────────────────────────
         const handleInstallPrompt = (e: Event) => {
@@ -79,8 +110,14 @@ export function usePwa(): UsePwaReturn {
         }
 
         return () => {
-            window.removeEventListener('online',  handleOnline);
-            window.removeEventListener('offline', handleOffline);
+            active = false;
+            probeController?.abort();
+            window.clearInterval(probeInterval);
+            window.removeEventListener('online', handleConnectivityChange);
+            window.removeEventListener('offline', handleConnectivityChange);
+            window.removeEventListener('focus', handleConnectivityChange);
+            window.removeEventListener('pageshow', handleConnectivityChange);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
         };
     }, []);
@@ -100,5 +137,13 @@ export function usePwa(): UsePwaReturn {
         if (typeof window !== 'undefined') window.location.reload();
     }, []);
 
-    return { isOnline, canInstall, install, updateAvailable, applyUpdate, swReady };
+    return {
+        isOnline: connectionStatus === 'online' || connectionStatus === 'checking',
+        connectionStatus,
+        canInstall,
+        install,
+        updateAvailable,
+        applyUpdate,
+        swReady,
+    };
 }
