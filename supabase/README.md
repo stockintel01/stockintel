@@ -88,6 +88,50 @@ referral credits, rewards activation and the join flow now select the same backe
 authentication. Firebase remains compiled as the rollback adapter; keep its variables
 available during the rollback window even after the production flag moves to Supabase.
 
+## Platform administrator setup
+
+StockIntel platform administrators are ordinary Supabase Auth users whose identity is
+also active in `public.platform_admins`. The foundation migration seeds these approved
+emails:
+
+- `mawuklegodson@gmail.com`
+- `enochapafloe@gmail.com`
+- `stockintel01@gmail.com`
+
+For one of these accounts, open **Authentication > Users** in the Supabase dashboard
+and create the user or let the person complete the normal StockIntel sign-up/Google
+sign-in flow. Confirm the email address. The `on_auth_user_created` trigger links the
+Auth UUID to the matching `platform_admins` row automatically. Sign out and sign in
+again after the account is created so the application loads a fresh admin session.
+
+Verify the link in the SQL editor:
+
+```sql
+select email, user_id, active, updated_at
+from public.platform_admins
+order by email;
+```
+
+An approved administrator must have `active = true` and a non-null `user_id`. If the
+Auth account existed before the migration, link it once from the SQL editor:
+
+```sql
+update public.platform_admins administrator
+set user_id = auth_user.id,
+    active = true,
+    updated_at = now()
+from auth.users auth_user
+where lower(auth_user.email) = lower(administrator.email)
+  and administrator.email = 'stockintel01@gmail.com';
+```
+
+Do not put a service-role key in the browser and do not assign tenant `owner` records
+to simulate a platform administrator. To approve a different email, add it to
+`public.platform_admins`, add the same normalized email to `SUPER_ADMIN_EMAILS` in
+`lib/access-control.ts`, deploy that reviewed change, and then create or link its Auth
+user. This two-part approval prevents a database typo or an ordinary tenant role from
+silently granting platform-wide access.
+
 ## What the repository already provides
 
 - **Module access policies** — `20260918090000_module_access_policies.sql` gives every organization-scoped table a read rule and, where clients write directly, insert/update/delete rules. Without it, forced row-level security with no policy silently hides equipment, packhouse, sales, expenses, crops, livestock and scouting data.
