@@ -1,6 +1,6 @@
 # StockIntel Supabase Migration
 
-This directory contains the production PostgreSQL schema and the controlled cutover plan from Firebase. Firebase remains the active backend until every cutover gate below passes.
+This directory contains the production PostgreSQL schema and the controlled cutover plan from Firebase. The application can run against either backend, but production must remain on Firebase until the remote Supabase schema, migrated data, role journeys and rollback procedure pass every cutover gate below.
 
 ## Target
 
@@ -83,16 +83,10 @@ What differs from Firebase, and why each one needed handling:
 7. **Server-side authorisation reads with the service role.** `requireUser` decides what
    a caller may do, so it must not be filtered by the policies it is about to authorise.
 
-Still on Firebase after this: `POST /api/organizations`, `/api/invitations/[inviteId]`
-and the `/join` acceptance flow. They write Firestore, so moving only their
-authentication would not make them work — Postgres already has `accept_invitation` for
-the invitation half. `requireFirebaseUser` returns 501 rather than an invalid-token
-error when the Supabase backend is active, so an unported route says which it is.
-
-Two gaps to close before cutover: a referral code is kept in `organizations.settings`
-because Postgres has no column for one, and the Firestore route's referral credit has
-no Supabase equivalent; and the deployment must keep the Firebase public variables set
-through the rollback window, since both providers are compiled into the same build.
+Organization creation and switching, invitations, invitation acceptance, team access,
+referral credits, rewards activation and the join flow now select the same backend as
+authentication. Firebase remains compiled as the rollback adapter; keep its variables
+available during the rollback window even after the production flag moves to Supabase.
 
 ## What the repository already provides
 
@@ -100,7 +94,7 @@ through the rollback window, since both providers are compiled into the same bui
 - **Settling a sale** — `record_sale_payment`, `issue_sales_receipt` and `void_sales_receipt` complete the payment and receipt path, which is otherwise append-only with no writer. `shipments` stays read-only for clients because `create_shipment` writes the shipment, its allocations and the stock movements together.
 - **Alerts and the deletion log** — `record_alert` and `record_deletion_audit` write the two tables that are closed to clients on purpose (`alerts` grants only `update (read_at)`, and inserts on `deletion_audit` are revoked). `record_alert` returns the existing unread alert about the same entity rather than raising a duplicate.
 - **Per-farm apps** — `20260918130000_organization_app_branding.sql` adds `organizations.app_branding`, read by the manifest route with the service role because a browser fetches a manifest without a session. Only the farm's own settings screen can change it, and the importer carries it across.
-- **Realtime** — `20260918110000_realtime_publication.sql` registers the tables behind the live subscriptions in `lib/agric/agric-service.ts` and `lib/expenses/`. The publication only makes the changes available; a screen still has to open a channel, and so far only the expense ledger does.
+- **Realtime** — `20260918110000_realtime_publication.sql` and the later runtime migrations register the tables used by expenses, stock, requests, equipment, spray plans, packing, shipping, weather, scouting, livestock and rewards. Each Supabase adapter reloads its paged snapshot after subscription and reconnection, so a missed socket event does not leave a stale screen.
 - **Names on a record** — `20260922090000_workspace_member_directory.sql` adds `organization_member_directory`. Firestore stores the author's name on each document, so everyone sees who did what. Postgres keeps names in `profiles`, whose policy shows a member only their own row unless they can manage the farm, so without this a worker reads an expense ledger with nobody against the amounts. Every ported screen that shows a person needs it.
 - **Sign-in** — ported. `components/auth/AuthContext.tsx` picks a provider from the backend flag, and both put the same user and organization into the store, so no screen knows which one signed the member in. See "Signing in" below.
 - **Google provider** — configured in `config.toml` behind `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` and `SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET`, disabled until those are set. The hosted project is configured in the dashboard, including the `/auth/callback` redirect URL.
@@ -109,8 +103,12 @@ The Data API returns at most `max_rows` (1000) per request, so every migrated li
 
 ## The data layer
 
-Every workspace screen still reads Firestore directly. The expense ledger is ported as
-the pattern the rest follow, and is the only one wired to both backends:
+Workspace services select their adapter from `NEXT_PUBLIC_DATA_BACKEND`. The Supabase
+runtime now covers authentication, onboarding, workspace switching, team and
+invitations, tenant settings, expenses, stock and usage, requests, equipment, spray
+planning, packing and shipping, water records, disease scouting, livestock, rewards,
+billing and the platform-admin console. Firebase implementations remain available for
+rollback rather than being mixed into an active Supabase session.
 
 - `lib/expenses/useExpenses.ts` picks an implementation once at module load from
   `NEXT_PUBLIC_DATA_BACKEND`, so hook order is fixed and rolling back is a redeploy of
@@ -154,12 +152,13 @@ an active subscription, which the trial created with the farm provides. Invitati
 inserted one at a time, because a single statement would be rejected whole when one
 address already has an invitation waiting and the person would not be told which.
 
-The remaining services — `lib/agric/agric-service.ts`, `useLivestock`, and the
-stock, request, packing, equipment and scouting screens — are unported and read
-Firestore whatever the flag says. Cutover gate 9 cannot pass until they follow.
-`app/dashboard/team/page.tsx` is the nearest one: it still invites through
-`POST /api/invitations` into Firestore, so under Supabase an invitation created during
-onboarding and one created from the team screen would land in different databases.
+The remaining cutover work is operational, not a hidden mixed-backend code path:
+apply and validate every migration on the target project, migrate Auth and Firestore
+data, reconcile counts and balances, test every role in a preview deployment, and then
+change the production backend flag. Durable offline writes also need an explicit
+acceptance run: the installed app caches its shell and Supabase listeners recover after
+reconnection, but every mutation must be tested under connection loss before claiming
+that arbitrary offline edits are queued safely.
 
 ### Currency
 

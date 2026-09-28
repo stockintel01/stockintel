@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { ApiError, requireRole, requireUser } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
+import { isSupabaseBackendActive } from '@/lib/supabase/config';
+import { getSupabaseRequestClient } from '@/lib/supabase/request';
 
 export async function POST(request: NextRequest) {
     try {
@@ -9,6 +11,12 @@ export async function POST(request: NextRequest) {
         requireRole(user, ['owner']);
         const { creditId } = await request.json();
         if (!creditId) throw new ApiError('Credit ID is required', 400);
+
+        if (isSupabaseBackendActive()) {
+            const { data, error } = await getSupabaseRequestClient(request).rpc('activate_referral_credit', { p_credit_id: creditId });
+            if (error) throw new ApiError(error.message, error.code === 'P0002' ? 404 : error.code === '23514' ? 409 : 400);
+            return NextResponse.json({ success: true, currentPeriodEnd: data });
+        }
 
         const orgRef = adminDb.collection('organizations').doc(user.organizationId);
         const creditRef = orgRef.collection('credits').doc(creditId);

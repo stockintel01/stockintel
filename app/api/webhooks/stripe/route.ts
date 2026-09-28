@@ -1,13 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStripeClient } from '@/lib/stripe';
-import { adminDb } from '@/lib/firebase-admin';
-import { Timestamp } from 'firebase-admin/firestore';
+import {
+    claimStripeWebhookEvent,
+    completeStripeWebhookEvent,
+    updateSubscriptionByProviderId,
+    writeSubscription,
+    type PaidPlan,
+    type StoredSubscriptionStatus,
+} from '@/lib/billing/subscription-repository';
 import Stripe from 'stripe';
+
+function getCurrentPeriodStart(subscription: Stripe.Subscription | Stripe.Response<Stripe.Subscription>) {
+    const legacyValue = (subscription as unknown as { current_period_start?: unknown }).current_period_start;
+    if (typeof legacyValue === 'number') return legacyValue;
+    return subscription.items.data[0]?.current_period_start;
+}
 
 function getCurrentPeriodEnd(subscription: Stripe.Subscription | Stripe.Response<Stripe.Subscription>) {
     const legacyValue = (subscription as unknown as { current_period_end?: unknown }).current_period_end;
     if (typeof legacyValue === 'number') return legacyValue;
     return subscription.items.data[0]?.current_period_end;
+}
+
+function stripeStatus(status: Stripe.Subscription.Status): StoredSubscriptionStatus {
+    if (status === 'trialing') return 'trialing';
+    if (status === 'active') return 'active';
+    if (status === 'canceled') return 'cancelled';
+    if (status === 'incomplete_expired') return 'expired';
+    return 'past_due';
+}
+
+function paidPlan(value: unknown): PaidPlan {
+    return value === 'enterprise' ? 'enterprise' : 'pro';
+}
+
+function referenceId(value: string | { id: string } | null | undefined) {
+    return typeof value === 'string' ? value : value?.id ?? null;
+}
+
+function invoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+    const legacy = (invoice as unknown as { subscription?: string | { id: string } | null }).subscription;
+    if (legacy) return referenceId(legacy);
+    const parent = invoice.parent;
+    if (parent?.type !== 'subscription_details') return null;
+    return referenceId(parent.subscription_details?.subscription);
 }
 
 export async function POST(req: NextRequest) {
@@ -28,6 +64,16 @@ export async function POST(req: NextRequest) {
     } catch (err: unknown) {
         console.error('Webhook signature verification failed:', err instanceof Error ? err.message : err);
         return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
+    }
+
+    const claim = await claimStripeWebhookEvent({
+        eventId: event.id,
+        eventType: event.type,
+        apiVersion: event.api_version,
+        createdAt: new Date(event.created * 1000),
+    });
+    if (claim !== 'claimed') {
+        return NextResponse.json({ received: true, duplicate: true });
     }
 
     try {
@@ -61,9 +107,19 @@ export async function POST(req: NextRequest) {
                 console.log(`Unhandled event type: ${event.type}`);
         }
 
+        await completeStripeWebhookEvent(event.id, true);
         return NextResponse.json({ received: true });
     } catch (error: unknown) {
         console.error('Webhook handler error:', error);
+        try {
+            await completeStripeWebhookEvent(
+                event.id,
+                false,
+                error instanceof Error ? error.message : 'Webhook failed',
+            );
+        } catch (completionError) {
+            console.error('Unable to record webhook failure:', completionError);
+        }
         return NextResponse.json({ error: error instanceof Error ? error.message : 'Webhook failed' }, { status: 500 });
     }
 }
@@ -73,34 +129,35 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     const { organizationId, plan } = session.metadata || {};
 
     if (!organizationId) {
-        console.error('No organizationId in session metadata');
-        return;
+        throw new Error('No organizationId in session metadata');
     }
 
-    // ✅ Use 'any' to bypass Response<Subscription> wrapper
-    const subscription = await stripe.subscriptions.retrieve(
-        session.subscription as string
-    );
+    const subscriptionId = referenceId(session.subscription);
+    if (!subscriptionId) throw new Error('Checkout session has no subscription ID');
+
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
     if (subscription.status === 'canceled') {
-        console.error('Subscription is canceled');
-        return;
+        throw new Error('Checkout completed with a canceled subscription');
     }
 
+    const currentPeriodStartValue = getCurrentPeriodStart(subscription);
     const currentPeriodEndValue = getCurrentPeriodEnd(subscription);
     if (typeof currentPeriodEndValue !== 'number') {
-        console.error('Subscription missing valid current_period_end');
-        return;
+        throw new Error('Subscription missing valid current_period_end');
     }
 
-    const currentPeriodEnd = new Date(currentPeriodEndValue * 1000);
-
-    await adminDb.collection('organizations').doc(organizationId).update({
-        'subscription.plan': plan || 'pro',
-        'subscription.status': 'active',
-        'subscription.currentPeriodEnd': Timestamp.fromDate(currentPeriodEnd),
-        'subscription.stripeSubscriptionId': subscription.id,
-        'subscription.stripeCustomerId': subscription.customer as string,
+    await writeSubscription({
+        organizationId,
+        plan: paidPlan(plan),
+        status: stripeStatus(subscription.status),
+        currentPeriodStart: typeof currentPeriodStartValue === 'number'
+            ? new Date(currentPeriodStartValue * 1000)
+            : null,
+        currentPeriodEnd: new Date(currentPeriodEndValue * 1000),
+        subscriptionId: subscription.id,
+        customerId: referenceId(subscription.customer),
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
     });
 
     console.log(`Subscription activated for org: ${organizationId}`);
@@ -110,22 +167,26 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     const { organizationId } = subscription.metadata || {};
 
     if (!organizationId) {
-        console.error('No organizationId in subscription metadata');
-        return;
+        throw new Error('No organizationId in subscription metadata');
     }
 
+    const currentPeriodStartValue = getCurrentPeriodStart(subscription);
     const currentPeriodEndValue = getCurrentPeriodEnd(subscription);
     if (typeof currentPeriodEndValue !== 'number') {
-        console.error('Subscription missing valid current_period_end');
-        return;
+        throw new Error('Subscription missing valid current_period_end');
     }
 
-    const currentPeriodEnd = new Date(currentPeriodEndValue * 1000);
-    const status = subscription.status === 'active' ? 'active' : 'expired';
-
-    await adminDb.collection('organizations').doc(organizationId).update({
-        'subscription.status': status,
-        'subscription.currentPeriodEnd': Timestamp.fromDate(currentPeriodEnd),
+    const status = stripeStatus(subscription.status);
+    await writeSubscription({
+        organizationId,
+        status,
+        currentPeriodStart: typeof currentPeriodStartValue === 'number'
+            ? new Date(currentPeriodStartValue * 1000)
+            : null,
+        currentPeriodEnd: new Date(currentPeriodEndValue * 1000),
+        subscriptionId: subscription.id,
+        customerId: referenceId(subscription.customer),
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
     });
 
     console.log(`Subscription updated for org: ${organizationId}, status: ${status}`);
@@ -135,21 +196,28 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     const { organizationId } = subscription.metadata || {};
 
     if (!organizationId) {
-        console.error('No organizationId in subscription metadata');
-        return;
+        throw new Error('No organizationId in subscription metadata');
     }
 
-    await adminDb.collection('organizations').doc(organizationId).update({
-        'subscription.status': 'cancelled',
+    await writeSubscription({
+        organizationId,
+        status: 'cancelled',
+        subscriptionId: subscription.id,
+        customerId: referenceId(subscription.customer),
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
     });
 
     console.log(`Subscription cancelled for org: ${organizationId}`);
 }
 
 async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
+    const subscriptionId = invoiceSubscriptionId(invoice);
+    if (subscriptionId) await updateSubscriptionByProviderId(subscriptionId, 'active');
     console.log(`Payment succeeded for invoice: ${invoice.id}`);
 }
 
 async function handlePaymentFailed(invoice: Stripe.Invoice) {
+    const subscriptionId = invoiceSubscriptionId(invoice);
+    if (subscriptionId) await updateSubscriptionByProviderId(subscriptionId, 'past_due');
     console.log(`Payment failed for invoice: ${invoice.id}`);
 }

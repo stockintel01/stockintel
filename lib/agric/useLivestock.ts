@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { addDoc, collection, doc, increment, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { isSupabaseBackendActive } from '@/lib/supabase/config';
 import { useAppStore } from '@/lib/store';
 import { canConvertItemQuantity, convertItemQuantity } from './units';
 import type {
@@ -10,12 +11,13 @@ import type {
   LivestockFeedPlan, LivestockSaleRecord, MilkProductionRecord, MortalityRecord,
   PenHouse, VaccinationRecord, WeightRecord,
 } from './livestock-types';
+import { addSupabaseLivestockRecord, subscribeSupabaseLivestock } from './supabase-livestock-service';
 
 export type LivestockRecordKind =
   | 'flock' | 'pen' | 'eggProduction' | 'eggSale' | 'feedLog' | 'feedPlan'
   | 'mortality' | 'vaccination' | 'weight' | 'milk' | 'livestockSale';
 
-interface LivestockState {
+export interface LivestockState {
   flocks: AnimalFlockHerd[];
   pens: PenHouse[];
   eggRecords: EggProductionRecord[];
@@ -60,6 +62,13 @@ export function useLivestock() {
       setState({ ...EMPTY, loading: false });
       return;
     }
+    if (isSupabaseBackendActive()) {
+      return subscribeSupabaseLivestock(
+        organization.id,
+        next => setState({ ...next, loading: false, error: null }),
+        error => setState(current => ({ ...current, loading: false, error: error.message })),
+      );
+    }
     return onSnapshot(
       collection(db, `organizations/${organization.id}/agric_livestock`),
       snapshot => {
@@ -93,6 +102,11 @@ export function useLivestock() {
       throw new Error('Feed logging requires a connection so available stock can be verified safely.');
     }
     const { id: _id, ...data } = record;
+
+    if (isSupabaseBackendActive()) {
+      await addSupabaseLivestockRecord(organization.id, user.id, kind, record);
+      return;
+    }
 
     if (kind === 'feedLog') {
       const feedLog = data as unknown as Omit<FeedConsumptionLog, 'id'>;

@@ -21,6 +21,8 @@ import {
   runTransaction, writeBatch, increment, limit,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import type { SalesReceiptSettings } from '@/lib/sales/receipt';
+import { isSupabaseBackendActive } from '@/lib/supabase/config';
 import type {
   AgricInventoryItem, UsageLog, StockRequest, EquipmentCheckout,
   SprayPlan, PackingRecord, ShippingRecord, StockAdjustment,
@@ -29,6 +31,43 @@ import type {
 import { convertItemQuantity } from './units';
 import { planRequestDispatch, planRequestIssueReturn, planRequestReceipt } from './request-fulfillment';
 import { getFarmWeek } from './week';
+import {
+  addSupabasePackingRecord,
+  addSupabaseShippingRecord,
+  deleteSupabasePackingRecord,
+  subscribeSupabasePackingRecords,
+  subscribeSupabaseShippingRecords,
+  updateSupabasePackingRecord,
+} from './supabase-packhouse-record-service';
+import {
+  addSupabaseAlert,
+  addSupabaseInventoryItem,
+  addSupabaseUsage,
+  approveSupabaseStockAdjustment,
+  archiveSupabaseInventoryItem,
+  checkoutSupabaseEquipment,
+  checkSupabaseLowStockAlerts,
+  confirmSupabaseRequestReceipt,
+  createSupabaseSprayPlan,
+  createSupabaseStockRequest,
+  dispatchSupabaseRequest,
+  fetchSupabaseReportData,
+  markSupabaseAlertRead,
+  recordSupabaseIssueUsage,
+  recordSupabaseSprayApplication,
+  returnSupabaseEquipment,
+  returnSupabaseIssue,
+  seedSupabaseInventory,
+  submitSupabaseStockAdjustment,
+  subscribeSupabaseAlerts,
+  subscribeSupabaseEquipment,
+  subscribeSupabaseInventory,
+  subscribeSupabaseRequests,
+  subscribeSupabaseSprayPlans,
+  subscribeSupabaseUsage,
+  updateSupabaseInventoryItem,
+  updateSupabaseStockRequest,
+} from './supabase-agric-service';
 
 // -------------------------------------------------------------
 // Collection helpers
@@ -69,6 +108,7 @@ export function subscribeInventory(
   onData: (items: AgricInventoryItem[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
+  if (isSupabaseBackendActive()) return subscribeSupabaseInventory(orgId, onData, onErr);
   const q = query(col(orgId, 'agric_inventory'), where('isActive', '==', true), orderBy('category'), orderBy('name'));
   return onSnapshot(q,
     snap => onData(snap.docs.map(d => ({ ...d.data(), id: d.id } as AgricInventoryItem))),
@@ -79,6 +119,7 @@ export function subscribeInventory(
 export async function addInventoryItem(
   orgId: string, item: Omit<AgricInventoryItem, 'id'>, userId: string,
 ): Promise<string> {
+  if (isSupabaseBackendActive()) return addSupabaseInventoryItem(orgId, item);
   const r = await addDoc(col(orgId, 'agric_inventory'), {
     ...clean(item),
     createdBy: userId,
@@ -93,6 +134,7 @@ export async function addInventoryItem(
 export async function updateInventoryItem(
   orgId: string, itemId: string, fields: Partial<AgricInventoryItem>,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return updateSupabaseInventoryItem(orgId, itemId, fields);
   await updateDoc(ref(orgId, 'agric_inventory', itemId), {
     ...clean(fields),
     lastUpdated: new Date().toISOString().slice(0, 10),
@@ -104,6 +146,7 @@ export async function updateInventoryItem(
 export async function softDeleteInventoryItem(
   orgId: string, itemId: string, deletedBy: string, note: string,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return archiveSupabaseInventoryItem(orgId, itemId, note);
   await updateDoc(ref(orgId, 'agric_inventory', itemId), {
     isActive: false,
     deletedAt: new Date().toISOString(),
@@ -122,6 +165,7 @@ export async function softDeleteInventoryItem(
 export async function submitStockAdjustment(
   orgId: string, adj: Omit<StockAdjustment, 'id'>,
 ): Promise<string> {
+  if (isSupabaseBackendActive()) return submitSupabaseStockAdjustment(orgId, adj);
   const r = await addDoc(col(orgId, 'agric_adjustments'), {
     ...clean(adj),
     status: 'pending_approval',
@@ -135,6 +179,7 @@ export async function approveStockAdjustment(
   orgId: string, adjId: string, itemId: string,
   newQty: number, reviewedBy: string, reviewNote: string,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return approveSupabaseStockAdjustment(adjId, reviewNote);
   await runTransaction(db, async tx => {
     const adjRef = ref(orgId, 'agric_adjustments', adjId);
     const itemDocRef = ref(orgId, 'agric_inventory', itemId);
@@ -151,6 +196,7 @@ export async function approveStockAdjustment(
 export async function seedAgricInventory(
   orgId: string, userId: string, items: Omit<AgricInventoryItem, 'id'>[],
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return seedSupabaseInventory(orgId, items);
   const existing = await getDocs(query(col(orgId, 'agric_inventory'), limit(1)));
   if (!existing.empty) return;
   const CHUNK = 499;
@@ -180,6 +226,7 @@ export function subscribeUsageLogs(
   onData: (logs: UsageLog[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
+  if (isSupabaseBackendActive()) return subscribeSupabaseUsage(orgId, onData, onErr);
   const q = query(col(orgId, 'agric_usage'), orderBy('date', 'desc'), limit(500));
   return onSnapshot(q,
     snap => onData(snap.docs.map(d => ({ ...d.data(), id: d.id } as UsageLog))),
@@ -191,6 +238,7 @@ export async function addUsageLog(
   orgId: string,
   log: Omit<UsageLog, 'id'>,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return addSupabaseUsage(orgId, log);
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     throw new Error('Usage logging requires a connection so available stock can be verified safely.');
   }
@@ -227,6 +275,7 @@ export function subscribeRequests(
   onData: (reqs: StockRequest[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
+  if (isSupabaseBackendActive()) return subscribeSupabaseRequests(orgId, includeDrafts, onData, onErr);
   const q = includeDrafts
     ? query(col(orgId, 'agric_requests'), orderBy('requestDate', 'desc'), limit(200))
     : query(col(orgId, 'agric_requests'), where('status', 'in', ['pending', 'approved', 'partially_fulfilled', 'dispatched', 'received', 'rejected']), limit(200));
@@ -242,6 +291,7 @@ export async function createStockRequest(
   orgId: string,
   req: Omit<StockRequest, 'id'>,
 ): Promise<string> {
+  if (isSupabaseBackendActive()) return createSupabaseStockRequest(orgId, req);
   const year = new Date().getFullYear();
   const requestRef = doc(col(orgId, 'agric_requests'));
   const requestNumber = `REQ-${year}-${requestRef.id.slice(0, 6).toUpperCase()}`;
@@ -271,6 +321,7 @@ export async function updateRequestStatus(
   reqId: string,
   fields: Partial<StockRequest>,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return updateSupabaseStockRequest(orgId, reqId, fields);
   await updateDoc(ref(orgId, 'agric_requests', reqId), {
     ...clean(fields),
     updatedAt: serverTimestamp(),
@@ -292,6 +343,7 @@ export async function dispatchRequest(
     weekStartsOn?: number;
   },
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return dispatchSupabaseRequest(orgId, reqId, dispatchedItems, options);
   await runTransaction(db, async tx => {
     const reqRef = ref(orgId, 'agric_requests', reqId);
     const reqSnap = await tx.get(reqRef);
@@ -413,6 +465,7 @@ export async function recordRequestIssueUsage(
   usedDate: string,
   weekStartsOn = 0,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return recordSupabaseIssueUsage(orgId, issueId, usedDate);
   await runTransaction(db, async tx => {
     const reqRef = ref(orgId, 'agric_requests', reqId);
     const reqSnap = await tx.get(reqRef);
@@ -470,6 +523,7 @@ export async function returnRequestIssue(
   returnedBy: string,
   notes?: string,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return returnSupabaseIssue(orgId, issueId, quantity, condition, notes);
   await runTransaction(db, async tx => {
     const reqRef = ref(orgId, 'agric_requests', reqId);
     const reqSnap = await tx.get(reqRef);
@@ -502,6 +556,7 @@ export async function returnRequestIssue(
 }
 
 export async function confirmRequestReceipt(orgId: string, reqId: string, receivedBy: string): Promise<void> {
+  if (isSupabaseBackendActive()) return confirmSupabaseRequestReceipt(orgId, reqId);
   await runTransaction(db, async tx => {
     const reqRef = ref(orgId, 'agric_requests', reqId);
     const reqSnap = await tx.get(reqRef);
@@ -536,6 +591,7 @@ export function subscribeEquipment(
   onData: (checkouts: EquipmentCheckout[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
+  if (isSupabaseBackendActive()) return subscribeSupabaseEquipment(orgId, onData, onErr);
   // Include open checkouts and recent return history. Restricting this to today
   // caused equipment already issued before midnight to disappear from tracking.
   const q = query(col(orgId, 'agric_equipment'), orderBy('checkoutTime', 'desc'), limit(500));
@@ -548,6 +604,7 @@ export function subscribeEquipment(
 export async function checkoutEquipment(
   orgId: string, checkout: Omit<EquipmentCheckout, 'id'>,
 ): Promise<string> {
+  if (isSupabaseBackendActive()) return checkoutSupabaseEquipment(orgId, checkout);
   const r = await addDoc(col(orgId, 'agric_equipment'), {
     ...clean(checkout),
     isReturned: false,
@@ -563,6 +620,7 @@ export async function returnEquipment(
   condition: 'good' | 'damaged' | 'lost',
   notes?: string,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return returnSupabaseEquipment(orgId, checkoutId, condition, notes);
   await updateDoc(ref(orgId, 'agric_equipment', checkoutId), {
     isReturned: true,
     isOverdue: false,
@@ -582,6 +640,7 @@ export function subscribePlans(
   onData: (plans: SprayPlan[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
+  if (isSupabaseBackendActive()) return subscribeSupabaseSprayPlans(orgId, onData, onErr);
   const q = query(col(orgId, 'agric_plans'), orderBy('createdAt', 'desc'));
   return onSnapshot(q,
     snap => onData(snap.docs.map(d => ({ ...d.data(), id: d.id } as SprayPlan))),
@@ -592,6 +651,7 @@ export function subscribePlans(
 export async function createSprayPlan(
   orgId: string, plan: Omit<SprayPlan, 'id'>,
 ): Promise<string> {
+  if (isSupabaseBackendActive()) return createSupabaseSprayPlan(orgId, plan);
   const r = await addDoc(col(orgId, 'agric_plans'), {
     ...clean(plan),
     status: 'active',
@@ -619,6 +679,7 @@ export async function createSprayPlan(
 export async function logApplicationComplete(
   orgId: string, planId: string, appliedAt: string, recordedBy: string, notes?: string,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return recordSupabaseSprayApplication(orgId, planId, appliedAt, notes);
   await runTransaction(db, async tx => {
     const planRef = ref(orgId, 'agric_plans', planId);
     const planSnap = await tx.get(planRef);
@@ -654,6 +715,7 @@ export function subscribePackingToday(
   onData: (records: PackingRecord[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
+  if (isSupabaseBackendActive()) return subscribeSupabasePackingRecords(orgId, onData, onErr);
   // Packhouse stock is cumulative. Loading only today's records made stock from
   // previous days vanish while shipments still reduced the displayed balance.
   const q = query(col(orgId, 'agric_packing'), orderBy('date', 'desc'), limit(1000));
@@ -666,6 +728,7 @@ export function subscribePackingToday(
 export async function addPackingRecord(
   orgId: string, record: Omit<PackingRecord, 'id'>,
 ): Promise<string> {
+  if (isSupabaseBackendActive()) return addSupabasePackingRecord(orgId, record);
   const r = await addDoc(col(orgId, 'agric_packing'), {
     ...clean(record),
     createdAt: serverTimestamp(),
@@ -678,6 +741,7 @@ export async function updatePackingRecord(
   recordId: string,
   changes: Partial<Omit<PackingRecord, 'id'>>,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return updateSupabasePackingRecord(orgId, recordId, changes);
   await updateDoc(ref(orgId, 'agric_packing', recordId), {
     ...clean(changes),
     updatedAt: serverTimestamp(),
@@ -685,6 +749,7 @@ export async function updatePackingRecord(
 }
 
 export async function deletePackingRecord(orgId: string, recordId: string): Promise<void> {
+  if (isSupabaseBackendActive()) return deleteSupabasePackingRecord(orgId, recordId);
   await deleteDoc(ref(orgId, 'agric_packing', recordId));
 }
 
@@ -697,6 +762,7 @@ export function subscribeShipping(
   onData: (records: ShippingRecord[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
+  if (isSupabaseBackendActive()) return subscribeSupabaseShippingRecords(orgId, onData, onErr);
   // Keep the same history window as packing so stock is not overstated merely
   // because older dispatches disappeared from the client-side balance.
   const q = query(col(orgId, 'agric_shipping'), orderBy('dispatchDate', 'desc'), limit(1000));
@@ -707,8 +773,11 @@ export function subscribeShipping(
 }
 
 export async function addShippingRecord(
-  orgId: string, record: Omit<ShippingRecord, 'id'>,
+  orgId: string,
+  record: Omit<ShippingRecord, 'id'>,
+  receiptSettings?: SalesReceiptSettings,
 ): Promise<string> {
+  if (isSupabaseBackendActive()) return addSupabaseShippingRecord(orgId, record, receiptSettings);
   const r = await addDoc(col(orgId, 'agric_shipping'), {
     ...clean(record),
     createdAt: serverTimestamp(),
@@ -725,6 +794,7 @@ export function subscribeAlerts(
   onData: (alerts: AgricAlert[]) => void,
   onErr?: (e: Error) => void,
 ): Unsub {
+  if (isSupabaseBackendActive()) return subscribeSupabaseAlerts(orgId, onData, onErr);
   const q = query(col(orgId, 'agric_alerts'), orderBy('createdAt', 'desc'), limit(50));
   return onSnapshot(q,
     snap => onData(snap.docs.map(d => ({ ...d.data(), id: d.id } as AgricAlert))),
@@ -735,6 +805,7 @@ export function subscribeAlerts(
 export async function addAgricAlert(
   orgId: string, alert: Omit<AgricAlert, 'id'>,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return addSupabaseAlert(orgId, alert);
   await addDoc(col(orgId, 'agric_alerts'), {
     ...clean(alert),
     createdAt: serverTimestamp(),
@@ -742,6 +813,7 @@ export async function addAgricAlert(
 }
 
 export async function markAlertRead(orgId: string, alertId: string): Promise<void> {
+  if (isSupabaseBackendActive()) return markSupabaseAlertRead(orgId, alertId);
   await updateDoc(ref(orgId, 'agric_alerts', alertId), {
     isRead: true, updatedAt: serverTimestamp(),
   });
@@ -752,6 +824,7 @@ export async function markAlertRead(orgId: string, alertId: string): Promise<voi
 // -------------------------------------------------------------
 
 export async function checkAndFireLowStockAlerts(orgId: string): Promise<void> {
+  if (isSupabaseBackendActive()) return checkSupabaseLowStockAlerts(orgId);
   const items = await getDocs(query(
     col(orgId, 'agric_inventory'),
     where('isActive', '==', true),
@@ -792,6 +865,7 @@ export async function checkAndFireLowStockAlerts(orgId: string): Promise<void> {
 // -------------------------------------------------------------
 
 export async function fetchReportData(orgId: string, startDate: string, endDate: string) {
+  if (isSupabaseBackendActive()) return fetchSupabaseReportData(orgId, startDate, endDate);
   const [invSnap, usageSnap, packingSnap, shippingSnap, equipSnap] = await Promise.all([
     getDocs(query(col(orgId, 'agric_inventory'), where('isActive', '==', true), orderBy('category'))),
     getDocs(query(col(orgId, 'agric_usage'), where('date', '>=', startDate), where('date', '<=', endDate), orderBy('date', 'desc'))),

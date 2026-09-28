@@ -166,10 +166,16 @@ export async function requireSupabaseUser(request: NextRequest): Promise<{ uid: 
 async function requireSupabaseWorkspaceUser(request: NextRequest): Promise<AuthenticatedUser> {
     const decoded = await requireSupabaseUser(request);
     if (isSuperAdminEmail(decoded.email)) {
+        const client = getSupabaseAdminClient();
+        const { data: profile, error } = await client.from('profiles')
+            .select('default_organization_id')
+            .eq('id', decoded.uid)
+            .maybeSingle();
+        if (error) throw new ApiError('Unable to load the active superadmin workspace.', 503);
         return {
             uid: decoded.uid,
             email: decoded.email,
-            organizationId: 'system',
+            organizationId: String(profile?.default_organization_id ?? 'system'),
             role: 'super_admin',
             subscription: { plan: 'enterprise', status: 'active' },
         };

@@ -1,9 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { ApiError, requireFirebaseUser } from '@/lib/api-auth';
+import { ApiError, requireFirebaseUser, requireSupabaseUser } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import { normalizeAccess } from '@/lib/access-permissions';
 import type { IndustryType } from '@/lib/store';
+import { isSuperAdminEmail } from '@/lib/access-control';
+import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { isSupabaseBackendActive } from '@/lib/supabase/config';
+import {
+    newOrganizationRow,
+    superAdminOrganization,
+    toMemberships,
+    toStoreOrganization,
+    type MembershipRow,
+    type OrganizationRow,
+    type SubscriptionRow,
+} from '@/lib/supabase/session-mapping';
 
 function generateReferralCode(name: string): string {
     const random = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -41,8 +53,152 @@ function organizationPayload(id: string, data: FirebaseFirestore.DocumentData) {
     };
 }
 
+async function getSupabaseWorkspaces(request: NextRequest) {
+    const identity = await requireSupabaseUser(request);
+    const client = getSupabaseAdminClient();
+
+    if (isSuperAdminEmail(identity.email)) {
+        const { data, error } = await client.from('organizations')
+            .select('id, name, industry')
+            .order('name')
+            .limit(1000);
+        if (error) throw new ApiError(error.message, 503);
+        return NextResponse.json({
+            memberships: [
+                {
+                    organizationId: 'system',
+                    organizationName: 'StockIntel Platform',
+                    industry: 'agriculture',
+                    role: 'super_admin',
+                    access: [],
+                },
+                ...(data ?? []).map(organization => ({
+                    organizationId: organization.id,
+                    organizationName: organization.name,
+                    industry: 'agriculture',
+                    role: 'super_admin',
+                    access: [],
+                })),
+            ],
+        }, { headers: { 'Cache-Control': 'private, no-store' } });
+    }
+
+    const { data, error } = await client.from('organization_memberships')
+        .select('organization_id, role, permissions, active, organizations(name, industry)')
+        .eq('user_id', identity.uid)
+        .eq('active', true)
+        .limit(1000);
+    if (error) throw new ApiError(error.message, 503);
+    return NextResponse.json({
+        memberships: toMemberships((data ?? []) as unknown as MembershipRow[]),
+    }, { headers: { 'Cache-Control': 'private, no-store' } });
+}
+
+async function switchSupabaseWorkspace(request: NextRequest, organizationId: string) {
+    const identity = await requireSupabaseUser(request);
+    const client = getSupabaseAdminClient();
+    const superAdmin = isSuperAdminEmail(identity.email);
+
+    if (superAdmin && organizationId === 'system') {
+        const { error } = await client.from('profiles')
+            .update({ default_organization_id: null })
+            .eq('id', identity.uid);
+        if (error) throw new ApiError(error.message, 503);
+        return NextResponse.json({
+            organization: superAdminOrganization(),
+            membership: {
+                organizationId: 'system',
+                organizationName: 'StockIntel Platform',
+                industry: 'agriculture',
+                role: 'super_admin',
+                access: [],
+            },
+        }, { headers: { 'Cache-Control': 'private, no-store' } });
+    }
+
+    const [organizationResult, subscriptionResult, membershipResult] = await Promise.all([
+        client.from('organizations').select('*').eq('id', organizationId).maybeSingle(),
+        client.from('organization_subscriptions')
+            .select('plan_id, status, trial_ends_at, current_period_end')
+            .eq('organization_id', organizationId)
+            .maybeSingle(),
+        superAdmin
+            ? Promise.resolve({ data: null, error: null })
+            : client.from('organization_memberships')
+                .select('organization_id, role, permissions, active')
+                .eq('organization_id', organizationId)
+                .eq('user_id', identity.uid)
+                .eq('active', true)
+                .maybeSingle(),
+    ]);
+
+    if (organizationResult.error) throw new ApiError(organizationResult.error.message, 503);
+    if (!organizationResult.data) throw new ApiError('Organization not found', 404);
+    if (membershipResult.error) throw new ApiError(membershipResult.error.message, 503);
+    if (!superAdmin && !membershipResult.data) {
+        throw new ApiError('You are not an active member of this organization', 403);
+    }
+
+    const membershipRow = membershipResult.data as MembershipRow | null;
+    const role = superAdmin
+        ? 'super_admin' as const
+        : membershipRow?.role === 'manager'
+            ? 'manager' as const
+            : membershipRow?.role === 'owner'
+                ? 'owner' as const
+                : 'worker' as const;
+    const access = role === 'owner' || role === 'super_admin'
+        ? []
+        : normalizeAccess(membershipRow?.permissions ?? [], 'agriculture');
+
+    const { error: profileError } = await client.from('profiles')
+        .update({ default_organization_id: organizationId })
+        .eq('id', identity.uid);
+    if (profileError) throw new ApiError(profileError.message, 503);
+
+    const organization = toStoreOrganization(
+        organizationResult.data as OrganizationRow,
+        (subscriptionResult.data ?? null) as SubscriptionRow | null,
+    );
+    return NextResponse.json({
+        organization,
+        membership: {
+            organizationId,
+            organizationName: organization.name,
+            industry: 'agriculture',
+            role,
+            access,
+        },
+    }, { headers: { 'Cache-Control': 'private, no-store' } });
+}
+
+async function createSupabaseWorkspace(request: NextRequest, orgName: unknown, referrerCode: unknown) {
+    const identity = await requireSupabaseUser(request);
+    const safeName = String(orgName ?? '').trim();
+    if (safeName.length < 2) throw new ApiError('Organization name is required', 400);
+
+    const client = getSupabaseAdminClient();
+    const { count, error: countError } = await client.from('organizations')
+        .select('id', { count: 'exact', head: true })
+        .eq('owner_id', identity.uid);
+    if (countError) throw new ApiError(countError.message, 503);
+    if ((count ?? 0) > 0) throw new ApiError('User profile already has an organization', 409);
+
+    const { data, error } = await client.from('organizations')
+        .insert(newOrganizationRow({
+            ownerId: identity.uid,
+            name: safeName,
+            referrerCode: String(referrerCode ?? '').trim() || undefined,
+        }))
+        .select('id')
+        .single();
+    if (error) throw new ApiError(error.message, error.code === '23505' ? 409 : 400);
+    return NextResponse.json({ organizationId: data.id });
+}
+
 export async function GET(request: NextRequest) {
     try {
+        if (isSupabaseBackendActive()) return await getSupabaseWorkspaces(request);
         const user = await requireFirebaseUser(request);
         const [membershipSnapshot, ownedSnapshot] = await Promise.all([
             adminDb.collection('users').doc(user.uid).collection('memberships').limit(100).get(),
@@ -82,9 +238,10 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
     try {
-        const user = await requireFirebaseUser(request);
         const organizationId = String((await request.json()).organizationId ?? '').trim();
         if (!organizationId) throw new ApiError('Organization is required', 400);
+        if (isSupabaseBackendActive()) return await switchSupabaseWorkspace(request, organizationId);
+        const user = await requireFirebaseUser(request);
 
         const userRef = adminDb.collection('users').doc(user.uid);
         const organizationRef = adminDb.collection('organizations').doc(organizationId);
@@ -158,8 +315,9 @@ export async function PATCH(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
     try {
-        const user = await requireFirebaseUser(request);
         const { orgName, referrerCode } = await request.json();
+        if (isSupabaseBackendActive()) return await createSupabaseWorkspace(request, orgName, referrerCode);
+        const user = await requireFirebaseUser(request);
         const industry = 'agriculture';
         const safeName = String(orgName ?? '').trim();
         if (safeName.length < 2) throw new ApiError('Organization name is required', 400);

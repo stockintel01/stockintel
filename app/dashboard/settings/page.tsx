@@ -9,10 +9,8 @@ import { AppBrandingCard } from '@/components/settings/AppBrandingCard';
 import { User, Globe, Lock, Scroll, Leaf, MapPin, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import Link from 'next/link';
-import { doc, updateDoc } from 'firebase/firestore';
-import { updateProfile } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
 import { isSuperAdminEmail } from '@/lib/access-control';
+import { saveAgricultureWorkspaceSettings, saveGeneralWorkspaceSettings } from '@/lib/settings/workspace-settings';
 import {
     agricultureProfileLabel,
     buildAgricultureProfile,
@@ -73,30 +71,23 @@ export default function SettingsPage() {
     };
 
     const handleSave = async () => {
-        if (!user || !auth.currentUser) return;
+        if (!user || !organization?.id) return;
         setSaving(true);
         try {
-            await Promise.all([
-                updateProfile(auth.currentUser, { displayName: name.trim() }),
-                updateDoc(doc(db, 'users', user.id), { displayName: name.trim(), updatedAt: new Date() }),
-                organization?.id ? updateDoc(doc(db, 'organizations', organization.id), {
-                    name: businessName.trim() || organization.name,
-                    currency,
-                    settings: {
-                        ...(organization.settings ?? {}),
-                        tax: taxSettings,
-                    },
-                    updatedAt: new Date(),
-                }) : Promise.resolve(),
-            ]);
+            const settings = { ...(organization.settings ?? {}), tax: taxSettings };
+            await saveGeneralWorkspaceSettings({
+                userId: user.id,
+                organizationId: organization.id,
+                displayName: name,
+                businessName: businessName || organization.name,
+                currency,
+                settings,
+            });
             setStoreUser({ ...user, name: name.trim() }, organization ? {
                 ...organization,
                 name: businessName.trim() || organization.name,
                 currency,
-                settings: {
-                    ...(organization.settings ?? {}),
-                    tax: taxSettings,
-                },
+                    settings,
             } : null);
             setSuccessMsg('Settings saved!');
             setTimeout(() => setSuccessMsg(''), 3000);
@@ -129,7 +120,7 @@ export default function SettingsPage() {
                 livestockTypes: parseAgricultureList(livestockTypesInput),
             };
             const settings = { ...(organization.settings ?? {}), agriculture: normalizedProfile };
-            await updateDoc(doc(db, 'organizations', organization.id), { settings, updatedAt: new Date() });
+            await saveAgricultureWorkspaceSettings({ organizationId: organization.id, settings, profile: normalizedProfile });
             setStoreUser(user, { ...organization, settings });
             setAgricultureProfile(normalizedProfile);
             setFarmZonesInput(normalizedProfile.farmZones.join(', '));

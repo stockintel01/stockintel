@@ -15,6 +15,7 @@ import {
 import { UserRole, IndustryType, type Organization } from "@/lib/store";
 import { authenticatedFetch } from "@/lib/api-client";
 import type { AccessKey } from "@/lib/access-permissions";
+import { isSupabaseBackendActive } from "@/lib/supabase/config";
 
 export interface FirestoreUser {
     uid: string;
@@ -98,6 +99,7 @@ export async function createOrganization(
 // --- Invitations ---
 
 function shouldUseClientInviteFallback(error: unknown) {
+    if (isSupabaseBackendActive()) return false;
     const message = error instanceof Error ? error.message.toLowerCase() : '';
     return [
         'firebase admin',
@@ -167,6 +169,7 @@ export async function activateCredit(orgId: string, creditId: string, months: nu
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? 'Unable to activate credit');
+    return data as { success: true; currentPeriodEnd?: string };
 }
 
 // ─── Sales ────────────────────────────────────────────────────────────────────

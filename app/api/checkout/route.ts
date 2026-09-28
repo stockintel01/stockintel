@@ -5,9 +5,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { getPriceId, getProductId, getStripeClient } from '@/lib/stripe';
-import { adminDb } from '@/lib/firebase-admin';
+import { getProductId, getStripeClient } from '@/lib/stripe';
 import { ApiError, requireRole, requireUser } from '@/lib/api-auth';
+import { getCheckoutBillingState, type PaidPlan } from '@/lib/billing/subscription-repository';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
 
@@ -25,8 +25,8 @@ export async function POST(req: NextRequest) {
 
         // ── Customer portal ───────────────────────────────────────────────
         if (action === 'portal') {
-            const orgSnap = await adminDb.collection('organizations').doc(organizationId).get();
-            const customerId = orgSnap.data()?.subscription?.stripeCustomerId;
+            const billing = await getCheckoutBillingState(organizationId, 'pro');
+            const customerId = billing.customerId;
             if (!customerId) {
                 return NextResponse.json({ error: 'No active subscription found' }, { status: 404 });
             }
@@ -44,26 +44,25 @@ export async function POST(req: NextRequest) {
         if (plan !== 'pro' && plan !== 'enterprise') {
             return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
         }
-        const configSnapshot = await adminDb.collection('system').doc('config').get();
-        const pricing = configSnapshot.data()?.subscriptionPricing;
-        const baseUSD = Number(pricing?.baseUSD ?? 9);
-        const multiplier = Number(plan === 'pro' ? pricing?.proPlanMultiplier ?? 1 : pricing?.enterprisePlanMultiplier ?? 3);
-        const unitAmount = Math.round(baseUSD * multiplier * 100);
+        const selectedPlan = plan as PaidPlan;
+        const billing = await getCheckoutBillingState(organizationId, selectedPlan);
+        if (!billing.organizationExists) throw new ApiError('Organization not found', 404);
+        const unitAmount = billing.amountMinor;
         if (!Number.isSafeInteger(unitAmount) || unitAmount < 50) throw new ApiError('The configured subscription amount is invalid', 503);
 
-        const productId = getProductId(plan);
-        const priceId = getPriceId(plan);
-        const lineItem: Stripe.Checkout.SessionCreateParams.LineItem = productId
-            ? { price_data: { currency: 'usd', unit_amount: unitAmount, recurring: { interval: 'month' }, product: productId }, quantity: 1 }
-            : { price: priceId, quantity: 1 };
-        if (!productId && (!priceId.startsWith('price_') || priceId === 'price_pro_monthly' || priceId === 'price_enterprise_monthly')) {
-            throw new ApiError(`Configure a Stripe product or price for ${plan} before accepting payments`, 503);
-        }
-
-        // Check if org already has a Stripe customer ID (reuse it)
-        const orgSnap = await adminDb.collection('organizations').doc(organizationId).get();
-        if (!orgSnap.exists) throw new ApiError('Organization not found', 404);
-        const existingCustomerId = orgSnap.data()?.subscription?.stripeCustomerId;
+        const productId = getProductId(selectedPlan);
+        const priceData: Stripe.Checkout.SessionCreateParams.LineItem.PriceData = {
+            currency: 'usd',
+            unit_amount: unitAmount,
+            recurring: { interval: 'month' },
+            ...(productId
+                ? { product: productId }
+                : { product_data: { name: selectedPlan === 'pro' ? 'StockIntel Pro' : 'StockIntel Enterprise' } }),
+        };
+        const lineItem: Stripe.Checkout.SessionCreateParams.LineItem = {
+            price_data: priceData,
+            quantity: 1,
+        };
 
         
         const sessionConfig: Stripe.Checkout.SessionCreateParams = {
@@ -77,8 +76,8 @@ export async function POST(req: NextRequest) {
             allow_promotion_codes:  true,
             billing_address_collection: 'auto',
         };
-        if (existingCustomerId) {
-            sessionConfig.customer = existingCustomerId;
+        if (billing.customerId) {
+            sessionConfig.customer = billing.customerId;
         } else if (user.email) {
             sessionConfig.customer_email = user.email;
         }

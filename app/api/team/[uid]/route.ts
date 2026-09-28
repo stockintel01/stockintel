@@ -4,6 +4,8 @@ import { ApiError, requireAccess, requireActiveSubscription, requireRole, requir
 import { adminDb } from '@/lib/firebase-admin';
 import { canDelegateAccess, normalizeAccess, normalizeAccessForRole } from '@/lib/access-permissions';
 import type { IndustryType } from '@/lib/store';
+import { isSupabaseBackendActive } from '@/lib/supabase/config';
+import { getSupabaseRequestClient } from '@/lib/supabase/request';
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ uid: string }> }) {
     try {
@@ -14,6 +16,34 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ u
         const { uid } = await context.params;
         const { role, access } = await request.json();
         if (!['manager', 'worker'].includes(role)) throw new ApiError('Valid role is required', 400);
+
+        const industry = 'agriculture' as IndustryType;
+        if (!Array.isArray(access)) throw new ApiError('Access permissions are required', 400);
+        const recognizedAccess = normalizeAccess(access, industry);
+        if (recognizedAccess.length !== access.length) throw new ApiError('One or more access permissions are invalid', 400);
+        if (!canDelegateAccess(user, role, recognizedAccess, industry)) {
+            throw new ApiError('You cannot grant owner-only access or permissions beyond your own access level', 403);
+        }
+        const normalizedAccess = normalizeAccessForRole(recognizedAccess, industry, role);
+
+        if (isSupabaseBackendActive()) {
+            const client = getSupabaseRequestClient(request);
+            const { error } = await client.rpc('update_member_access', {
+                p_organization_id: user.organizationId,
+                p_user_id: uid,
+                p_role: role,
+                p_permissions: normalizedAccess,
+                p_active: true,
+            });
+            if (error) {
+                const message = error.message.toLowerCase();
+                const status = message.includes('not found') ? 404
+                    : message.includes('permission') || message.includes('owner') ? 403
+                        : 400;
+                throw new ApiError(error.message, status);
+            }
+            return NextResponse.json({ uid, role, access: normalizedAccess });
+        }
 
         const targetRef = adminDb.collection('users').doc(uid);
         const membershipRef = targetRef.collection('memberships').doc(user.organizationId);
@@ -38,14 +68,6 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ u
         if (!tenantMembership || tenantMembership.status === 'inactive') throw new ApiError('Team member not found', 404);
         if (tenantMembership.role === 'owner' || tenantMembership.role === 'super_admin') throw new ApiError('Owner access cannot be changed here', 403);
 
-        const industry = 'agriculture' as IndustryType;
-        if (!Array.isArray(access)) throw new ApiError('Access permissions are required', 400);
-        const recognizedAccess = normalizeAccess(access, industry);
-        if (recognizedAccess.length !== access.length) throw new ApiError('One or more access permissions are invalid', 400);
-        if (!canDelegateAccess(user, role, recognizedAccess, industry)) {
-            throw new ApiError('You cannot grant owner-only access or permissions beyond your own access level', 403);
-        }
-        const normalizedAccess = normalizeAccessForRole(recognizedAccess, industry, role);
         const updates: Array<Promise<unknown>> = [
             membershipRef.set({
                 organizationId: user.organizationId,

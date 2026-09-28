@@ -1,25 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { addDoc, collection, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sprout, Plus, X } from 'lucide-react';
-import { db } from '@/lib/firebase';
 import { useAppStore } from '@/lib/store';
+import { addCropPlan, subscribeCropPlans, type CropPlanRecord } from '@/lib/agric/crop-service';
 
-interface CropPlan {
-  id: string;
-  cropName: string;
-  fieldName: string;
-  season: string;
-  startDate: string;
-  expectedHarvestDate: string;
-  status: 'planned' | 'planted' | 'growing' | 'harvesting' | 'completed';
-  progress: number;
-  notes?: string;
-}
+type CropPlan = CropPlanRecord;
 
 const EMPTY_FORM = {
   cropName: '', fieldName: '', season: '', startDate: '', expectedHarvestDate: '',
@@ -34,19 +23,12 @@ export default function CropCalendarPage() {
 
   useEffect(() => {
     if (!organization?.id) return;
-    return onSnapshot(collection(db, `organizations/${organization.id}/agric_crop_plans`), snapshot => {
-      setPlans(snapshot.docs.map(document => ({ id: document.id, ...document.data() } as CropPlan)).sort((a, b) => a.startDate.localeCompare(b.startDate)));
-    });
+    return subscribeCropPlans(organization.id, setPlans, error => console.error('[crop plans]', error));
   }, [organization?.id]);
 
   async function addPlan() {
-    if (!organization?.id || !form.cropName || !form.fieldName || !form.startDate) return;
-    await addDoc(collection(db, `organizations/${organization.id}/agric_crop_plans`), {
-      ...form,
-      createdBy: user?.id,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    if (!organization?.id || !user?.id || !form.cropName || !form.fieldName || !form.startDate) return;
+    await addCropPlan(organization.id, user.id, form);
     setForm(EMPTY_FORM);
     setShowForm(false);
   }

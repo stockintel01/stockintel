@@ -12,7 +12,9 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { isSupabaseBackendActive } from '@/lib/supabase/config';
 import { calculateSigatokaMetrics, normalizeSigatokaAdvancedStageObservation, type SigatokaSessionRecord } from './sigatoka';
+import { loadSupabaseSigatokaSessions, manageSupabaseSigatokaSession, saveSupabaseSigatokaSession, subscribeSupabaseSigatokaSessions, updateSupabaseSigatokaSession, updateSupabaseSigatokaStatus } from './supabase-sigatoka-service';
 
 const collectionPath = (orgId: string) => collection(db, `organizations/${orgId}/agric_sigatoka_observations`);
 const auditCollectionPath = (orgId: string) => collection(db, `organizations/${orgId}/agric_deletion_log`);
@@ -36,6 +38,7 @@ export function subscribeSigatokaSessions(
   onData: (sessions: SigatokaSessionRecord[], hasPendingWrites: boolean) => void,
   onError?: (error: Error) => void,
 ): () => void {
+  if (isSupabaseBackendActive()) return subscribeSupabaseSigatokaSessions(orgId, onData, onError);
   return onSnapshot(
     query(collectionPath(orgId), orderBy('observedAt', 'desc')),
     { includeMetadataChanges: true },
@@ -51,6 +54,7 @@ export async function addSigatokaSession(
   orgId: string,
   session: Omit<SigatokaSessionRecord, 'id' | 'createdAt' | 'updatedAt'>,
 ): Promise<string> {
+  if (isSupabaseBackendActive()) return saveSupabaseSigatokaSession(orgId, session);
   const result = await addDoc(collectionPath(orgId), {
     ...session,
     createdAt: serverTimestamp(),
@@ -63,6 +67,10 @@ export async function addSigatokaSessions(
   orgId: string,
   sessions: Array<Omit<SigatokaSessionRecord, 'id' | 'createdAt' | 'updatedAt'>>,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) {
+    for (const session of sessions) await saveSupabaseSigatokaSession(orgId, session);
+    return;
+  }
   for (let start = 0; start < sessions.length; start += 400) {
     const batch = writeBatch(db);
     for (const session of sessions.slice(start, start + 400)) {
@@ -79,6 +87,7 @@ export async function updateSigatokaSessionStatus(
   metrics?: SigatokaSessionRecord['metrics'],
   verifiedBy?: string,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return updateSupabaseSigatokaStatus(orgId, sessionId, status, metrics);
   await updateDoc(doc(db, `organizations/${orgId}/agric_sigatoka_observations/${sessionId}`), {
     status,
     ...(status === 'verified' && metrics && verifiedBy ? { metrics, verifiedBy, verifiedAt: serverTimestamp() } : {}),
@@ -92,6 +101,7 @@ export async function updateSigatokaSession(
   session: Partial<Omit<SigatokaSessionRecord, 'id' | 'createdAt' | 'updatedAt'>>,
   clearVerification = false,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) return updateSupabaseSigatokaSession(orgId, sessionId, session, clearVerification);
   await updateDoc(doc(db, `organizations/${orgId}/agric_sigatoka_observations/${sessionId}`), {
     ...session,
     ...(clearVerification ? { verifiedBy: deleteField(), verifiedAt: deleteField() } : {}),
@@ -120,6 +130,10 @@ export async function archiveSigatokaSessions(orgId: string, sessionIds: string[
   if (uniqueIds.length === 0) throw new Error('Select at least one observation to archive.');
   if (normalizedReason.length < 5) throw new Error('Enter a clear reason for archiving these observations.');
   const batchId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `archive-${Date.now()}`;
+  if (isSupabaseBackendActive()) {
+    for (const sessionId of uniqueIds) await manageSupabaseSigatokaSession(orgId, sessionId, 'archive', normalizedReason, batchId);
+    return;
+  }
   for (let start = 0; start < uniqueIds.length; start += 350) {
     const ids = uniqueIds.slice(start, start + 350);
     const batch = writeBatch(db);
@@ -140,6 +154,7 @@ export async function archiveSigatokaSessions(orgId: string, sessionIds: string[
 }
 
 export async function restoreSigatokaSession(orgId: string, sessionId: string, userId: string): Promise<void> {
+  if (isSupabaseBackendActive()) return manageSupabaseSigatokaSession(orgId, sessionId, 'restore');
   const batch = writeBatch(db);
   batch.update(doc(db, `organizations/${orgId}/agric_sigatoka_observations/${sessionId}`), {
     archivedAt: deleteField(),
@@ -167,6 +182,10 @@ export async function permanentlyDeleteSigatokaSessions(orgId: string, sessionId
   if (uniqueIds.length === 0) throw new Error('Select at least one observation to delete.');
   if (normalizedReason.length < 5) throw new Error('Enter a clear reason for permanently deleting these observations.');
   const batchId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `delete-${Date.now()}`;
+  if (isSupabaseBackendActive()) {
+    for (const sessionId of uniqueIds) await manageSupabaseSigatokaSession(orgId, sessionId, 'permanent_delete', normalizedReason, batchId);
+    return;
+  }
   for (let start = 0; start < uniqueIds.length; start += 350) {
     const ids = uniqueIds.slice(start, start + 350);
     const batch = writeBatch(db);

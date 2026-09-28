@@ -9,8 +9,8 @@ const migrationNames = (await readdir(migrationsDirectory))
 
 const failures = [];
 
-if (migrationNames.length < 5) {
-  failures.push(`Expected at least five Supabase migrations, found ${migrationNames.length}.`);
+if (migrationNames.length < 23) {
+  failures.push(`Expected at least 23 Supabase migrations, found ${migrationNames.length}.`);
 }
 
 if (new Set(migrationNames.map(name => name.slice(0, 14))).size !== migrationNames.length) {
@@ -40,6 +40,13 @@ const requiredFragments = [
   'mawuklegodson@gmail.com',
   'enochapafloe@gmail.com',
   'grant select, insert, update, delete on all tables in schema public to authenticated',
+  'create_packhouse_dispatch',
+  'create_inventory_item',
+  'confirm_stock_request_receipt',
+  'record_livestock_event',
+  'save_sigatoka_observation',
+  'manage_sigatoka_observation',
+  'activate_referral_credit',
 ];
 
 for (const fragment of requiredFragments) {
@@ -82,6 +89,23 @@ for (const variable of [
 const proxySource = await readFile(join(projectRoot, 'proxy.ts'), 'utf8');
 if (!proxySource.includes('isSupabaseBackendActive() || !isSupabaseConfigured()')) {
   failures.push('The Next.js proxy must not initialize Supabase while Firebase is active.');
+}
+
+const requiredRuntimeFiles = [
+  'lib/agric/supabase-agric-service.ts',
+  'lib/agric/supabase-livestock-service.ts',
+  'lib/agric/supabase-packhouse-record-service.ts',
+  'lib/agric/supabase-packing-service.ts',
+  'lib/agric/supabase-sigatoka-service.ts',
+  'lib/agric/supabase-water-service.ts',
+  'lib/supabase/workspace-session.ts',
+];
+for (const file of requiredRuntimeFiles) {
+  try {
+    await readFile(join(projectRoot, file), 'utf8');
+  } catch {
+    failures.push(`Supabase runtime adapter is missing: ${file}.`);
+  }
 }
 
 if (failures.length > 0) {

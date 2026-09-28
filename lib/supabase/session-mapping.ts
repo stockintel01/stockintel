@@ -50,6 +50,22 @@ export interface SubscriptionRow {
 
 const ROLES: UserRole[] = ['owner', 'manager', 'worker'];
 
+export function superAdminOrganization(): Organization {
+  return {
+    id: 'system',
+    name: 'StockIntel System Preview',
+    industry: 'agriculture',
+    ownerId: 'system',
+    referralCode: 'SYSTEM',
+    subscription: {
+      plan: 'enterprise',
+      status: 'active',
+      trialEndsAt: new Date('2099-12-31'),
+      currentPeriodEnd: new Date('2099-12-31'),
+    },
+  };
+}
+
 function role(value: string): UserRole {
   return ROLES.includes(value as UserRole) ? (value as UserRole) : 'worker';
 }

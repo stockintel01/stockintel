@@ -1,12 +1,12 @@
 import 'server-only';
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { getSupabasePublicConfig } from '@/lib/supabase/config';
 
-let adminClient: ReturnType<typeof createClient> | null = null;
+let adminClient: SupabaseClient | null = null;
 
-export function getSupabaseAdminClient(): ReturnType<typeof createClient> {
+export function getSupabaseAdminClient(): SupabaseClient {
   if (adminClient) return adminClient;
 
   const secretKey = process.env.SUPABASE_SECRET_KEY?.trim();
@@ -21,6 +21,6 @@ export function getSupabaseAdminClient(): ReturnType<typeof createClient> {
       detectSessionInUrl: false,
       persistSession: false,
     },
-  });
+  }) as unknown as SupabaseClient;
   return adminClient;
 }

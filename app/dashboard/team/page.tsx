@@ -1,13 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/lib/store';
 import { inviteMember } from '@/lib/firebase-utils';
-import { addDoc, collection, doc, query, where, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { Users, Shield, Mail, UserPlus, Clock, Calendar as CalendarIcon, ChevronDown, ChevronUp } from 'lucide-react';
 import { authenticatedFetch } from '@/lib/api-client';
 import {
@@ -79,39 +77,30 @@ export default function TeamPage() {
     const accessOptionsForRole = (role: 'manager' | 'worker') => assignableAccessForRole(role, industry)
         .filter(key => user?.role === 'owner' || user?.role === 'super_admin' || userHasAccess(user, key));
 
-    // Listen to team members
-    useEffect(() => {
+    const loadTeam = useCallback(async () => {
         if (!organization?.id) return;
-
-        const usersQuery = query(
-            collection(db, 'users'),
-            where('organizationId', '==', organization.id)
-        );
-
-        const unsubscribe = onSnapshot(usersQuery, (snapshot) => {
-            const members: TeamMember[] = snapshot.docs.map(doc => {
-                const data = doc.data();
-                return {
-                    id: doc.id,
-                    name: data.displayName || data.name || 'Unknown',
-                    email: data.email,
-                    role: data.role,
-                    access: Array.isArray(data.access) ? data.access : undefined,
-                    status: 'Active'
-                };
-            });
-            setTeam(members);
-        });
-
-        return () => unsubscribe();
+        const response = await authenticatedFetch('/api/team', { cache: 'no-store' });
+        const data = await response.json() as { members?: TeamMember[]; shifts?: Shift[]; error?: string };
+        if (!response.ok) throw new Error(data.error ?? 'Unable to load the team');
+        setTeam(data.members ?? []);
+        setShifts(data.shifts ?? []);
     }, [organization?.id]);
 
     useEffect(() => {
-        if (!organization?.id) return;
-        return onSnapshot(collection(db, `organizations/${organization.id}/shifts`), snapshot => {
-            setShifts(snapshot.docs.map(shift => ({ id: shift.id, ...shift.data() } as Shift)));
+        let active = true;
+        const refresh = () => void loadTeam().catch(error => {
+            if (active) setError(error instanceof Error ? error.message : 'Unable to load the team');
         });
-    }, [organization?.id]);
+        refresh();
+        const interval = window.setInterval(refresh, 30000);
+        const onFocus = () => refresh();
+        window.addEventListener('focus', onFocus);
+        return () => {
+            active = false;
+            window.clearInterval(interval);
+            window.removeEventListener('focus', onFocus);
+        };
+    }, [loadTeam]);
 
     const [inviteLink, setInviteLink] = useState('');
     const [copied, setCopied] = useState(false);
@@ -161,38 +150,8 @@ export default function TeamPage() {
             setTeam(current => current.map(item => item.id === member.id ? { ...item, role, access } : item));
             setSavedMemberId(member.id);
         } catch (err) {
-            const message = err instanceof Error ? err.message.toLowerCase() : '';
-            const canFallback = message.includes('firebase admin') ||
-                message.includes('default credentials') ||
-                message.includes('unable to load your user profile') ||
-                message.includes('authentication token') ||
-                message.includes('service account');
-            if (!canFallback || !organization?.id) {
-                setError(err instanceof Error ? err.message : 'Unable to update member access');
-                return false;
-            }
-            try {
-                await setDoc(doc(db, 'users', member.id), {
-                    role,
-                    access,
-                    updatedAt: serverTimestamp(),
-                }, { merge: true });
-                await setDoc(doc(db, `users/${member.id}/memberships/${organization.id}`), {
-                    role,
-                    access,
-                    updatedAt: serverTimestamp(),
-                }, { merge: true });
-                await setDoc(doc(db, `organizations/${organization.id}/members/${member.id}`), {
-                    role,
-                    access,
-                    updatedAt: serverTimestamp(),
-                }, { merge: true }).catch(() => undefined);
-                setTeam(current => current.map(item => item.id === member.id ? { ...item, role, access } : item));
-                setSavedMemberId(member.id);
-            } catch (fallbackErr) {
-                setError(fallbackErr instanceof Error ? fallbackErr.message : 'Unable to update member access');
-                return false;
-            }
+            setError(err instanceof Error ? err.message : 'Unable to update member access');
+            return false;
         } finally {
             setSavingMemberId('');
             setTimeout(() => setSavedMemberId(current => current === member.id ? '' : current), 2500);
@@ -283,11 +242,21 @@ export default function TeamPage() {
         setIsSubmitting(true);
         setError('');
         try {
-            await addDoc(collection(db, `organizations/${organization.id}/shifts`), {
-                userId: member.id, userName: member.name, date: shiftDate,
-                startTime: shiftStart, endTime: shiftEnd, status: 'Scheduled',
-                createdBy: user?.id ?? '', createdAt: serverTimestamp(),
+            const response = await authenticatedFetch('/api/team', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: member.id,
+                    date: shiftDate,
+                    startTime: shiftStart,
+                    endTime: shiftEnd,
+                }),
             });
+            const data = await response.json() as { error?: string };
+            if (!response.ok) throw new Error(data.error ?? 'Unable to assign shift');
+            await loadTeam();
+            setShiftUserId('');
+            setShiftDate('');
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Unable to assign shift');
         } finally {

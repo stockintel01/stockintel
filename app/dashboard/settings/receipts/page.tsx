@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import {
   ArrowLeft, BadgeCheck, Building2, Check, CloudUpload, FileText,
   ImagePlus, Loader2, Palette, Printer, ReceiptText, RotateCcw,
@@ -14,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { isSuperAdminEmail } from '@/lib/access-control';
-import { db, storage } from '@/lib/firebase';
+import { saveReceiptDesign, uploadReceiptLogo } from '@/lib/settings/workspace-settings';
 import {
   buildSalesReceiptHtml, DEFAULT_SALES_RECEIPT_SETTINGS,
   normalizeSalesReceiptSettings, printSalesReceipt,
@@ -119,14 +117,12 @@ export default function ReceiptDesignerPage() {
     setMessage(null);
     try {
       const extension = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
-      const target = storageRef(storage, `organizations/${organization.id}/branding/sales-receipt-logo.${extension}`);
-      await uploadBytes(target, file, { contentType: file.type, cacheControl: 'public,max-age=3600' });
-      const logoUrl = await getDownloadURL(target);
+      const logoUrl = await uploadReceiptLogo(organization.id, file, extension);
       setSettings(current => ({ ...current, logoUrl, showLogo: true }));
       setMessage({ tone: 'info', text: 'Logo uploaded. Save the design to publish it to customer receipts.' });
     } catch (error) {
       console.error('[receipt designer] logo upload failed:', error);
-      setMessage({ tone: 'error', text: 'Logo upload failed. Check the connection and Firebase Storage permissions.' });
+      setMessage({ tone: 'error', text: 'Logo upload failed. Check the connection and storage permissions.' });
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -143,7 +139,7 @@ export default function ReceiptDesignerPage() {
     setSaving(true);
     setMessage(null);
     try {
-      await updateDoc(doc(db, 'organizations', organization.id), { receiptSettings: normalized, updatedAt: serverTimestamp() });
+      await saveReceiptDesign(organization.id, normalized);
       updateReceiptSettings(normalized);
       setStoreUser(user, { ...organization, receiptSettings: normalized });
       setSettings(normalized);

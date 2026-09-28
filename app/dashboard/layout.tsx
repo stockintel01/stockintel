@@ -14,14 +14,18 @@ import {
     FlaskConical, CalendarDays, Tractor, PackageCheck, Bug
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { canUseFeature, isSubscriptionActive, type PlanFeature } from '@/lib/plans';
+import type { PlanFeature } from '@/lib/plans';
+import { dashboardRouteDestination } from '@/lib/dashboard-route-guard';
 import { getAgricultureProfile } from '@/lib/agric/config';
-import { useAgric } from '@/lib/agric/useAgric';
+import { subscribeInventory } from '@/lib/agric/agric-service';
 import { userCanAccessHref } from '@/lib/access-permissions';
 import { TenantAppManifest } from '@/components/pwa/TenantAppManifest';
 import { activateWorkspace } from '@/lib/workspace/activate';
 import { db } from '@/lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { isSupabaseBackendActive } from '@/lib/supabase/config';
+import { getBrowserSupabaseClient } from '@/lib/supabase/browser';
+import { normalizeAccess } from '@/lib/access-permissions';
 
 interface NavItem {
     name: string;
@@ -38,22 +42,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const router = useRouter();
     const pathname = usePathname();
     const { user, organization, activeIndustry, setIndustry, isAuthenticated, setStoreUser } = useAppStore();
-    const { inventory } = useAgric();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [attentionCount, setAttentionCount] = useState(0);
     const [tenantSwitching, setTenantSwitching] = useState(false);
     const [tenantError, setTenantError] = useState('');
 
-    // Live stock attention badge count
+    // The shell only needs the stock badge. Mounting useAgric here would open every
+    // agriculture subscription on every dashboard page, including Billing and Settings.
     useEffect(() => {
-        const check = () => {
-            const count = inventory.filter(item => item.isActive && item.currentStock <= item.minimumStock).length;
-            setAttentionCount(count);
-        };
-        check();
-        const interval = setInterval(check, 60000);
-        return () => clearInterval(interval);
-    }, [inventory]);
+        const organizationId = organization?.id;
+        if (!organizationId || organizationId === 'system' || !userCanAccessHref(user, '/dashboard/agriculture/stock-management')) {
+            setAttentionCount(0);
+            return;
+        }
+        return subscribeInventory(
+            organizationId,
+            inventory => setAttentionCount(inventory.filter(item => item.isActive && item.currentStock <= item.minimumStock).length),
+            () => setAttentionCount(0),
+        );
+    }, [organization?.id, user]);
 
     const { loading: authLoading, logout } = useAuth();
     const superAdmin = isSuperAdminEmail(user?.email);
@@ -66,6 +73,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     useEffect(() => {
         if (!user?.id || !user.organizationId || user.role === 'owner' || user.role === 'super_admin') return;
+        if (isSupabaseBackendActive()) {
+            const client = getBrowserSupabaseClient();
+            let active = true;
+            const refresh = async () => {
+                const { data, error } = await client.from('organization_memberships')
+                    .select('role, permissions, active')
+                    .eq('organization_id', user.organizationId)
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+                if (!active || error || !data?.active) return;
+                const nextRole = data.role === 'manager' ? 'manager' : 'worker';
+                const nextAccess = normalizeAccess(data.permissions ?? [], 'agriculture');
+                if (nextRole !== user.role || JSON.stringify(nextAccess) !== JSON.stringify(user.access ?? [])) {
+                    setStoreUser({ ...user, role: nextRole, access: nextAccess }, organization);
+                }
+            };
+            void refresh();
+            const channel = client.channel(`membership:${user.organizationId}:${user.id}`)
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'organization_memberships',
+                    filter: `organization_id=eq.${user.organizationId}`,
+                }, () => void refresh())
+                .subscribe();
+            return () => {
+                active = false;
+                void client.removeChannel(channel);
+            };
+        }
         return onSnapshot(doc(db, `users/${user.id}/memberships/${user.organizationId}`), snapshot => {
             if (!snapshot.exists()) return;
             const data = snapshot.data();
@@ -85,20 +122,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // Without the authLoading check, the guard fires with isAuthenticated=false
     // before onAuthStateChanged completes, causing a redirect loop.
     useEffect(() => {
-        if (!authLoading && !user && !isAuthenticated) {
-            router.replace('/login');
-            return;
-        }
-        if (!authLoading && user && !superAdmin && !isSubscriptionActive(organization?.subscription) && pathname !== '/dashboard/billing') {
-            router.replace('/dashboard/billing');
-            return;
-        }
         const featureRoutes: Array<[string, PlanFeature]> = [
             ['/dashboard/agriculture/reports', 'advancedReports'],
         ];
         const required = featureRoutes.find(([path]) => pathname.startsWith(path))?.[1];
-        if (!authLoading && required && !canUseFeature(organization?.subscription, required, superAdmin)) {
-            router.replace('/dashboard/billing');
+        const destination = dashboardRouteDestination({
+            authLoading,
+            isAuthenticated,
+            user,
+            organization,
+            pathname,
+            isSuperAdmin: superAdmin,
+            requiredFeature: required,
+        });
+        if (destination && destination !== pathname) {
+            router.replace(destination);
             return;
         }
         const managerOnlyRoutes = ['/dashboard/team'];
@@ -109,7 +147,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (!authLoading && user && !userCanAccessHref(user, pathname)) {
             router.replace('/dashboard/agriculture');
         }
-    }, [authLoading, user, isAuthenticated, organization?.subscription, pathname, router, superAdmin]);
+    }, [authLoading, user, isAuthenticated, organization, pathname, router, superAdmin]);
 
     // An installed farm app opens with its own workspace in the start URL. The
     // server still re-checks membership, so this only reopens a workspace the

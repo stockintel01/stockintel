@@ -517,7 +517,7 @@ function AuthorizedSuperAdminPage({ email }: { email: string }) {
                             value={u.role}
                             onChange={async e => {
                               try {
-                                await updateUserRole(u.uid, e.target.value as any);
+                                await updateUserRole(u.uid, e.target.value as any, u.organizationId);
                                 await writeAuditLog('change_role', u.uid, 'user', `Role changed to ${e.target.value}`);
                                 notify(`${u.displayName} role updated`);
                                 loadAll();

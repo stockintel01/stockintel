@@ -7,6 +7,8 @@ import { useAppStore } from '@/lib/store';
 import { activateCredit } from '@/lib/firebase-utils';
 import { collection, query, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { isSupabaseBackendActive } from '@/lib/supabase/config';
+import { getBrowserSupabaseClient } from '@/lib/supabase/browser';
 import { Gift, Copy, Check, Calendar, TrendingUp } from 'lucide-react';
 
 interface Credit {
@@ -19,7 +21,7 @@ interface Credit {
 }
 
 export default function RewardsPage() {
-    const { organization } = useAppStore();
+    const { organization, user, setStoreUser } = useAppStore();
     const [credits, setCredits] = useState<Credit[]>([]);
     const [copied, setCopied] = useState(false);
     const [activating, setActivating] = useState<string | null>(null);
@@ -28,6 +30,29 @@ export default function RewardsPage() {
     // Listen to credits
     useEffect(() => {
         if (!organization?.id) return;
+
+        if (isSupabaseBackendActive()) {
+            const client = getBrowserSupabaseClient();
+            let active = true;
+            const refresh = async () => {
+                const { data, error } = await client.from('referral_credits').select('*')
+                    .eq('organization_id', organization.id).order('created_at', { ascending: false });
+                if (!active) return;
+                if (error) {
+                    setActivateMsg(`Rewards could not be loaded: ${error.message}`);
+                    return;
+                }
+                setCredits((data ?? []).map((row: Record<string, unknown>) => ({
+                    id: String(row.id), amountMonths: Number(row.amount_months), reason: row.reason,
+                    status: row.status, fromOrgId: String(row.referred_organization_id), createdAt: row.created_at,
+                })) as Credit[]);
+            };
+            const channel = client.channel(`rewards:${organization.id}`).on('postgres_changes', {
+                event: '*', schema: 'public', table: 'referral_credits', filter: `organization_id=eq.${organization.id}`,
+            }, () => void refresh()).subscribe((status: string) => { if (status === 'SUBSCRIBED') void refresh(); });
+            void refresh();
+            return () => { active = false; void client.removeChannel(channel); };
+        }
 
         const creditsQuery = query(
             collection(db, `organizations/${organization.id}/credits`)
@@ -61,7 +86,20 @@ export default function RewardsPage() {
 
         setActivating(creditId);
         try {
-            await activateCredit(organization.id, creditId, months);
+            const result = await activateCredit(organization.id, creditId, months);
+            if (result.currentPeriodEnd && user) {
+                setStoreUser(user, {
+                    ...organization,
+                    subscription: {
+                        ...organization.subscription,
+                        status: 'active',
+                        currentPeriodEnd: result.currentPeriodEnd,
+                        trialEndsAt: organization.subscription.plan === 'free_trial'
+                            ? result.currentPeriodEnd
+                            : organization.subscription.trialEndsAt,
+                    },
+                });
+            }
             setActivateMsg(`${months} month(s) of free credit activated!`);
             setTimeout(() => setActivateMsg(''), 4000);
         } catch (error) {

@@ -8,6 +8,7 @@ import { getBrowserSupabaseClient } from './browser';
 import {
   activeOrganizationId,
   newOrganizationRow,
+  superAdminOrganization,
   toMemberships,
   toStoreOrganization,
   toStoreUser,
@@ -38,22 +39,6 @@ export interface WorkspaceSession {
   needsWorkspace: boolean;
 }
 
-function superAdminOrganization(): Organization {
-  return {
-    id: 'system',
-    name: 'StockIntel System Preview',
-    industry: 'agriculture',
-    ownerId: 'system',
-    referralCode: 'SYSTEM',
-    subscription: {
-      plan: 'enterprise',
-      status: 'active',
-      trialEndsAt: new Date('2099-12-31'),
-      currentPeriodEnd: new Date('2099-12-31'),
-    },
-  };
-}
-
 export async function loadWorkspaceSession(identity: { id: string; email: string; name: string; photoURL: string }): Promise<WorkspaceSession> {
   const client = db();
   const isSuperAdmin = isSuperAdminEmail(identity.email);
@@ -80,12 +65,40 @@ export async function loadWorkspaceSession(identity: { id: string; email: string
     default_organization_id: null,
   };
 
-  const memberships = toMemberships((membershipResult.data ?? []) as unknown as MembershipRow[]);
-  const activeId = activeOrganizationId(profile, memberships);
+  let memberships = toMemberships((membershipResult.data ?? []) as unknown as MembershipRow[]);
+  let activeId = activeOrganizationId(profile, memberships);
+
+  if (isSuperAdmin) {
+    const { data: organizations, error } = await client.from('organizations')
+      .select('id, name, industry')
+      .order('name')
+      .limit(1000);
+    if (error) throw new Error(error.message);
+    memberships = [
+      {
+        organizationId: 'system',
+        organizationName: 'StockIntel Platform',
+        industry: 'agriculture',
+        role: 'super_admin',
+        access: [],
+      },
+      ...(organizations ?? []).map(organization => ({
+        organizationId: String(organization.id),
+        organizationName: String(organization.name ?? 'Workspace'),
+        industry: 'agriculture' as const,
+        role: 'super_admin' as const,
+        access: [],
+      })),
+    ];
+    activeId = profile.default_organization_id
+      && memberships.some(item => item.organizationId === profile.default_organization_id)
+      ? profile.default_organization_id
+      : 'system';
+  }
 
   const user = toStoreUser({ profile, memberships, activeOrganizationId: activeId, isSuperAdmin });
 
-  if (!activeId) {
+  if (!activeId || activeId === 'system') {
     return {
       user,
       organization: isSuperAdmin ? superAdminOrganization() : null,
@@ -101,11 +114,13 @@ export async function loadWorkspaceSession(identity: { id: string; email: string
   ]);
 
   if (organizationResult.error) throw new Error(organizationResult.error.message);
+  if (subscriptionResult.error) throw new Error(subscriptionResult.error.message);
 
   const organizationRow = organizationResult.data as OrganizationRow | null;
-  const organization = organizationRow
-    ? toStoreOrganization(organizationRow, subscriptionResult.data as SubscriptionRow | null)
-    : (isSuperAdmin ? superAdminOrganization() : null);
+  if (!organizationRow) {
+    throw new Error('Your active workspace could not be loaded. Ask an administrator to check its membership and database access.');
+  }
+  const organization = toStoreOrganization(organizationRow, subscriptionResult.data as SubscriptionRow | null);
 
   return { user, organization, needsWorkspace: false };
 }

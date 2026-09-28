@@ -114,7 +114,7 @@ export interface AgricActions {
 // ─────────────────────────────────────────────────────────────
 
 export function useAgric(): AgricState & AgricActions {
-  const { user, organization } = useAppStore();
+  const { user, organization, receiptSettings } = useAppStore();
   const orgId = organization?.id ?? null;
   const userId = user?.id ?? null;
   const isLive = !!(orgId && userId);
@@ -334,8 +334,8 @@ export function useAgric(): AgricState & AgricActions {
 
     addShipping: useCallback(async (record) => {
       const ctx = requireLiveContext();
-      await addShippingRecord(ctx.orgId, record);
-    }, [requireLiveContext]),
+      await addShippingRecord(ctx.orgId, record, receiptSettings);
+    }, [receiptSettings, requireLiveContext]),
 
     savePackingPlan: useCallback(async (plan, id) => {
       const ctx = requireLiveContext();

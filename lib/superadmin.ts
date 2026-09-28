@@ -10,6 +10,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { isSuperAdminEmail, SUPER_ADMIN_EMAILS } from '@/lib/access-control';
+import { authenticatedFetch } from '@/lib/api-client';
+import { isSupabaseBackendActive } from '@/lib/supabase/config';
 
 export const SUPER_ADMIN_EMAIL = SUPER_ADMIN_EMAILS[0];
 
@@ -87,15 +89,46 @@ export interface SystemConfig {
   }>;
 }
 
+interface SupabaseAdminConsole {
+  organizations: OrgSummary[];
+  users: UserSummary[];
+  stats: SystemStats;
+  config: SystemConfig;
+}
+
+let adminConsolePromise: Promise<SupabaseAdminConsole> | null = null;
+
+async function adminRequest(body?: Record<string, unknown>): Promise<any> {
+  const response = await authenticatedFetch('/api/admin/control', body ? {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  } : undefined);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Admin operation failed');
+  if (body) adminConsolePromise = null;
+  return payload;
+}
+
+function loadSupabaseAdminConsole() {
+  if (!adminConsolePromise) adminConsolePromise = adminRequest() as Promise<SupabaseAdminConsole>;
+  return adminConsolePromise;
+}
+
 // ── System Config ─────────────────────────────────────────────
 
 export async function getSystemConfig(): Promise<SystemConfig> {
+  if (isSupabaseBackendActive()) return (await loadSupabaseAdminConsole()).config;
   const snap = await getDoc(doc(db, 'system', 'config'));
   if (snap.exists()) return snap.data() as SystemConfig;
   return getDefaultConfig();
 }
 
 export async function saveSystemConfig(config: SystemConfig): Promise<void> {
+  if (isSupabaseBackendActive()) {
+    await adminRequest({ action: 'save_config', config });
+    return;
+  }
   await setDoc(doc(db, 'system', 'config'), {
     ...config,
     updatedAt: serverTimestamp(),
@@ -130,6 +163,7 @@ export function getDefaultConfig(): SystemConfig {
 // ── Organisation Management ───────────────────────────────────
 
 export async function getAllOrganisations(): Promise<OrgSummary[]> {
+  if (isSupabaseBackendActive()) return (await loadSupabaseAdminConsole()).organizations;
   const snap = await getDocs(
     query(collection(db, 'organizations'), orderBy('createdAt', 'desc'), limit(500))
   );
@@ -154,6 +188,10 @@ export async function updateOrgPlan(
   status: 'active' | 'expired' | 'cancelled',
   extendDays?: number,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) {
+    await adminRequest({ action: 'update_org_plan', organizationId: orgId, plan, status, extendDays: extendDays ?? 0 });
+    return;
+  }
   const updateData: any = {
     'subscription.plan': plan,
     'subscription.status': status,
@@ -170,6 +208,10 @@ export async function updateOrgPlan(
 }
 
 export async function grantFreeMonths(orgId: string, months: number): Promise<void> {
+  if (isSupabaseBackendActive()) {
+    await adminRequest({ action: 'grant_months', organizationId: orgId, months });
+    return;
+  }
   const orgRef = doc(db, 'organizations', orgId);
   const orgSnap = await getDoc(orgRef);
   if (!orgSnap.exists()) throw new Error('Organisation not found');
@@ -193,6 +235,10 @@ export async function grantFreeMonths(orgId: string, months: number): Promise<vo
 }
 
 export async function suspendOrganisation(orgId: string, reason: string): Promise<void> {
+  if (isSupabaseBackendActive()) {
+    await adminRequest({ action: 'suspend_org', organizationId: orgId, reason });
+    return;
+  }
   await updateDoc(doc(db, 'organizations', orgId), {
     'subscription.status': 'cancelled',
     'subscription.suspendedReason': reason,
@@ -205,6 +251,7 @@ export async function suspendOrganisation(orgId: string, reason: string): Promis
 // ── User Management ───────────────────────────────────────────
 
 export async function getAllUsers(): Promise<UserSummary[]> {
+  if (isSupabaseBackendActive()) return (await loadSupabaseAdminConsole()).users;
   const snap = await getDocs(
     query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(500))
   );
@@ -221,7 +268,13 @@ export async function getAllUsers(): Promise<UserSummary[]> {
 export async function updateUserRole(
   uid: string,
   role: 'owner' | 'manager' | 'worker',
+  organizationId?: string,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) {
+    if (!organizationId) throw new Error('The workspace is required to update this role');
+    await adminRequest({ action: 'update_user_role', userId: uid, organizationId, role });
+    return;
+  }
   await updateDoc(doc(db, 'users', uid), {
     role,
     updatedAt: serverTimestamp(),
@@ -232,6 +285,7 @@ export async function updateUserRole(
 // ── System Stats ──────────────────────────────────────────────
 
 export async function getSystemStats(): Promise<SystemStats> {
+  if (isSupabaseBackendActive()) return (await loadSupabaseAdminConsole()).stats;
   const [orgsSnap, usersSnap] = await Promise.all([
     getDocs(collection(db, 'organizations')),
     getDocs(collection(db, 'users')),
@@ -285,6 +339,10 @@ export async function writeAuditLog(
   targetType: 'org' | 'user' | 'system',
   details: string,
 ): Promise<void> {
+  if (isSupabaseBackendActive()) {
+    await adminRequest({ action: 'write_audit', auditAction: action, targetId, targetType, details });
+    return;
+  }
   await setDoc(doc(collection(db, 'system', 'audit', 'logs')), {
     action, targetId, targetType, details,
     performedBy: SUPER_ADMIN_EMAIL,
